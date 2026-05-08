@@ -7,6 +7,10 @@ app = Celery(
     include=["worker.tasks"]
 )
 
-app.conf.task_routes = {
-    "worker.tasks.*": {"queue": "default"}
-}
+app.conf.update(
+    task_serializer="json",                 
+    accept_content=["json"],                 
+    result_serializer="json",               
+    timezone="UTC",                          
+    enable_utc=True,
+)
