@@ -1,131 +1,113 @@
-# AutoDeploy Project Plan: AsyncTasks Core
+# AutoDeploy Project Plan: The PaaS Vision
 
-## 🚀 PHASE 1 — AsyncTasks Core (Week 1)
-**Goal:** Basic job system working end-to-end.
-
-### 📅 Day-by-Day Progress
-- [x] **Day 1 — Setup + Skeleton**
-    - Setup project structure.
-    - Install: FastAPI, Redis, Celery, PostgreSQL.
-    - Create basic FastAPI app.
-    - *Deliverable: API runs.*
-- [x] **Day 2 — DB + Job Model**
-    - Create job table (id, status, payload).
-    - Connect DB.
-    - *Deliverable: Can create job in DB.*
-- [x] **Day 3 — Job API**
-    - `POST /jobs` implemented.
-    - Store job in DB.
-    - Return `job_id`.
-    - *Deliverable: Job creation works.*
-- [x] **Day 4 — Redis + Celery Setup**
-    - Setup Celery app.
-    - Connect Redis.
-    - Create dummy task (`process_deployment`).
-    - *Deliverable: Worker runs task.*
-- [x] **Day 5 — Connect API → Queue**
-    - When job created → push to queue using `.delay()`.
-    - *Deliverable: API triggers worker.*
-- [x] **Day 6 — Worker Updates DB**
-    - Worker updates status to `running` and `success`.
-    - *Deliverable: Full cycle works.*
-- [x] **Day 7 — Cleanup + Stability**
-    - Fix bugs, clean structure, proper logging.
-    - *Deliverable: Stable MVP.*
+**Goal:** To build a robust, scalable, and developer-friendly Platform as a Service (PaaS) that automates the application lifecycle from Git push to live URL, inspired by the excellence of Railway and Render.
 
 ---
 
-## 🚀 PHASE 2 — Reliability (Week 2)
-**Goal:** Make the system "real" and production-ready.
-
-### 📅 Day-by-Day Progress
-- [x] **Day 1 — Status Lifecycle**
-    - Implement full status transitions (queued -> running -> success/failed).
-    - Ensure status is atomic in the database.
-    - *Deliverable: Job state transitions accurately.*
-- [x] **Day 2 — Retry System**
-    - Configure Celery task retries with exponential backoff.
-    - Add `max_retries` and `retry_delay` configuration.
-    - *Deliverable: Failed tasks auto-retry gracefully.*
-- [x] **Day 3 — Failure Handling**
-    - Implement global error catching in tasks.
-    - Capture and store detailed stack traces/errors in the DB.
-    - *Deliverable: Detailed error reporting for debugging.*
-- [x] **Day 4 — Logging System**
-    - Redirect worker stdout/stderr to a log capture system.
-    - Associate execution logs with specific `job_id`.
-    - *Deliverable: Execution logs viewable via API.*
-- [x] **Day 5 — Job Types & Routing**
-    - Refactor task logic to handle multiple job types (e.g., `DEPLOY`, `SCAN`).
-    - Implement task routing for specialized workers if needed.
-    - *Deliverable: Extensible multi-task system.*
-- [ ] **Day 6 — Idempotency**
-    - Implement locking (Redis) to prevent duplicate job execution.
-    - Handle edge cases where two workers pick up the same job ID.
-    - *Deliverable: Guaranteed single execution per job.*
-- [ ] **Day 7 — Polish & Testing**
-    - Write unit tests for core API and Worker logic.
-    - Refactor database session management for stability.
-    - *Deliverable: Production-ready codebase.*
+## ✅ PHASE 1 — AsyncTasks Core (COMPLETED)
+**Goal:** Establish the foundational asynchronous job system.
+- [x] Infrastructure setup (FastAPI, Redis, Celery, PostgreSQL).
+- [x] Job API (`POST /jobs`) with database persistence.
+- [x] Celery worker integration and Redis message brokering.
+- [x] Full job lifecycle and database state transitions.
 
 ---
 
-## 🚀 PHASE 3 — Dashboard (Week 3)
-**Goal:** Make it visible.
+## 🚀 PHASE 2 — Reliability & Orchestration (CURRENT)
+**Goal:** Make the "Brain" production-ready, fault-tolerant, and collision-proof.
 
 ### 📅 Day-by-Day Progress
-- [ ] **Day 1–2 — Frontend Setup & Jobs List**
-    - Setup UI framework (e.g., FastAPI with Jinja2 or a simple SPA).
-    - Create a paginated list view of all jobs in the system.
-    - *Deliverable: Web UI showing job history.*
-- [ ] **Day 3 — Status View & Details**
-    - Build a detailed view for individual jobs.
-    - Display job metadata, payload, and current status visually.
-    - *Deliverable: Detailed job inspection via UI.*
-- [ ] **Day 4 — Control Actions**
-    - Add UI controls to manually trigger retries.
-    - Implement "Cancel/Abort" button for running tasks.
-    - *Deliverable: Remote control of jobs from dashboard.*
-- [ ] **Day 5 — Filters & Search**
-    - Add filtering by status (Failed, Running, etc.).
-    - Implement search functionality by ID or payload content.
-    - *Deliverable: High-speed job lookup.*
-- [ ] **Day 6–7 — Real-time Updates & Polish**
-    - Implement auto-refresh or WebSockets for live status changes.
-    - Improve UI/UX with modern styling and responsive design.
-    - *Deliverable: Live, responsive deployment dashboard.*
+- [x] **Day 1-2:** Enhanced Job model (`updated_at`, `result`) and Exponential Backoff retries.
+- [x] **Day 3:** API Refinement: Dependency Injection and Full Traceback capture.
+- [x] **Day 4:** Persistent Logging Engine with relational `Log` model.
+- [x] **Day 5:** Multi-Task Router (Universal Worker) for specialized `DEPLOY`/`SCAN` logic.
+- [ ] **Day 6 — Idempotency & Distributed Locking:**
+    - **Task:** Implement Redis-based locking to prevent duplicate job execution.
+    - **Sub-task:** Handle worker crashes and lock timeouts (deadlocks).
+    - *Deliverable: Guaranteed single execution per job ID.*
+- [ ] **Day 7 — System Polish & Heartbeats:**
+    - **Task:** Implement worker health tracking (Heartbeats).
+    - **Sub-task:** Refactor database session management for high-concurrency stability.
+    - *Deliverable: Robust, self-monitoring orchestration layer.*
 
 ---
 
-## 🚀 PHASE 4 — AutoDeploy Integration (Week 4+)
-**Goal:** Transform the engine into a template-driven deployment pipeline.
+## 🎨 PHASE 3 — The "Canvas" Dashboard (V1)
+**Goal:** Visualize the system state early to maintain momentum. Inspired by Railway's service grid.
 
 ### 📅 Day-by-Day Progress
-- [ ] **Day 1 — Repository Discovery**
-    - Implement task to clone remote Git repositories to isolated workspaces.
-    - Ensure secure handling of temporary files and cleanup.
-    - *Deliverable: Worker can access source code.*
-- [ ] **Day 2 — Template-Based Validation**
-    - Instead of auto-detecting, use user-selected categories (e.g., Python, Node).
-    - Logic to verify category-specific files (e.g., `requirements.txt` for Python).
-    - *Deliverable: Reliable "Ready to Deploy" check.*
-- [ ] **Day 3 — Configuration Generation**
-    - Auto-generate Dockerfiles and cloud-specific manifests based on the selected template.
-    - Validate generated configurations before execution.
-    - *Deliverable: Deployment artifacts generated.*
-- [ ] **Day 4 — User Approval & Secrets**
-    - Implement "Paused" state for jobs requiring manual input.
-    - API to allow users to provide environment variables and secrets before build.
-    - *Deliverable: Interactive, gated deployment pipeline.*
-- [ ] **Day 5 — Build & Registry Integration**
-    - Execute Docker builds within the worker environment.
-    - Push images to local or remote registries (Docker Hub/GHCR).
-    - *Deliverable: Built image ready for deployment.*
-- [ ] **Day 6 — Orchestration & Deployment**
-    - Trigger final deployment to target (Docker Compose, K8s, or Cloud).
-    - Monitor initial health status post-deployment.
-    - *Deliverable: Application is live and verified.*
-- [ ] **Day 7 — End-to-End Validation**
-    - Conduct full-cycle tests from Git URL + Category Selection to live application.
-    - Finalize documentation and architecture diagrams.
-    - *Deliverable: Fully automated CI/CD engine.*
+- [ ] **Day 1–2 — Frontend Foundation & Service Grid:**
+    - **Task:** Setup React/Next.js with a modern PaaS aesthetic (Dark Mode).
+    - **Sub-task:** Build the "Canvas" layout where jobs/services are displayed as interactive nodes.
+    - *Deliverable: Visual grid showing all active and historical jobs.*
+- [ ] **Day 3 — Live Streaming Logs (WebSocket):**
+    - **Task:** Implement a real-time log viewer.
+    - **Sub-task:** Connect FastAPI WebSockets to the `Log` model to stream worker output live.
+    - *Deliverable: Terminal-style log window in the browser for every job.*
+- [ ] **Day 4–5 — Action Controls:**
+    - **Task:** Implement remote control buttons on the Canvas.
+    - **Sub-task:** Add "Retry," "Cancel," and "Clear Logs" triggers to the job cards.
+    - *Deliverable: Fully interactive management dashboard.*
+
+---
+
+## 🏗️ PHASE 4 — The Build Engine: Docker Integration
+**Goal:** Teach the worker how to build and run code (The "Body").
+
+### 📅 Day-by-Day Progress
+- [ ] **Day 1–2 — Secure Workspace & Git logic:**
+    - **Task:** Implement isolated workspace management for workers.
+    - **Sub-task:** Securely clone remote Git repositories into temporary build folders.
+    - *Deliverable: Worker can pull source code from any public/private repo.*
+- [ ] **Day 3–4 — Subprocess Engine & Docker Build:**
+    - **Task:** Create a safe wrapper for shell command execution.
+    - **Sub-task:** Execute `docker build` and stream output directly to our Log Engine.
+    - *Deliverable: Automated creation of Docker images from source code.*
+- [ ] **Day 5 — Docker Run & Lifecycle:**
+    - **Task:** Automate `docker run` with dynamic port mapping.
+    - **Sub-task:** Implement container cleanup logic for failed builds.
+    - *Deliverable: Applications running in isolated containers.*
+
+---
+
+## 🌐 PHASE 5 — Networking & Service Discovery
+**Goal:** Automatically route internet traffic to your hosted containers with live URLs.
+
+### 📅 Day-by-Day Progress
+- [ ] **Day 1–2 — Reverse Proxy Integration:**
+    - **Task:** Setup **Traefik** or **Nginx** as the entry point.
+    - **Sub-task:** Configure dynamic routing based on Docker container labels.
+    - *Deliverable: Automated routing from the internet to internal containers.*
+- [ ] **Day 3–4 — Dynamic Subdomains:**
+    - **Task:** Logic to assign internal URLs (e.g., `app-xyz.autodeploy.local`).
+    - **Sub-task:** Update the Canvas UI to display the "Live Link" for every successful deploy.
+    - *Deliverable: One-click access to deployed applications.*
+
+---
+
+## ⚡ PHASE 6 — Developer Experience: Webhooks & Secrets
+**Goal:** Achieve the "Deploy on Push" experience of Render and Railway.
+
+### 📅 Day-by-Day Progress
+- [ ] **Day 1–2 — GitHub Webhook API:**
+    - **Task:** Create an endpoint to receive and verify GitHub/GitLab webhooks.
+    - **Sub-task:** Automatically trigger a `DEPLOY` job on every code push.
+    - *Deliverable: Fully automated CI/CD pipeline.*
+- [ ] **Day 3–4 — Environment & Secrets Management:**
+    - **Task:** Build a secure system for Environment Variables.
+    - **Sub-task:** Inject these secrets into Docker containers at runtime.
+    - *Deliverable: Support for databases, API keys, and sensitive config.*
+
+---
+
+## 🛡️ PHASE 7 — Production Hardening
+**Goal:** Security, Resource Limits, and High Availability.
+
+### 📅 Day-by-Day Progress
+- [ ] **Day 1–2 — Resource Quotas:**
+    - **Task:** Implement CPU and RAM limits for hosted containers using Docker Cgroups.
+- [ ] **Day 3–4 — Rollbacks & Versioning:**
+    - **Task:** Implement "One-click Rollback" to a previous successful image.
+- [ ] **Day 5 — Multi-Node Scaling:**
+    - **Task:** Distribute workers across multiple physical servers.
+    - *Deliverable: A professional, production-grade deployment platform.*

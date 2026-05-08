@@ -1,4 +1,4 @@
-# AsyncTasks (AutoDeploy Core)
+# AutoDeploy: The Next-Gen PaaS (AsyncTasks)
 
 > **MANDATORY PRESERVATION RULE:** The "Persistent Progress Log" section below must NEVER be deleted or concatenated. Every daily log entry must remain present forever. Only the log for the current active day may be modified during a session.
 
@@ -15,85 +15,67 @@
 
 ---
 
-AsyncTasks is the "execution brain" and foundational backend infrastructure for **AutoDeploy**, an automated deployment platform. It manages asynchronous deployment tasks, background workers, and job tracking.
+AsyncTasks is the **"Orchestration Brain"** of **AutoDeploy**, a modern Platform as a Service (PaaS) designed to bridge the gap between source code and live infrastructure. Inspired by the developer experience of **Render** and **Railway**, it manages the complex lifecycle of builds, deployments, and networking.
 
 ## Project Overview
 
 - **Core Goal:** To provide a robust, scalable, and reliable asynchronous job processing system for deployment workflows.
-- **Long-Term Vision (AutoDeploy):**
-    - Analyze repository requirements.
-    - Generate infrastructure/config automatically.
-    - Deploy using Docker and cloud providers.
-    - Manage complex deployment pipelines asynchronously.
+- **The Vision (Inspired by Render/Railway):**
+    - **Seamless Deploys:** Transform `git push` into a live URL automatically.
+    - **Intelligent Orchestration:** Analyze repository needs and generate optimized build artifacts.
+    - **Real-time Visibility:** Provide a high-fidelity "Canvas" dashboard for monitoring and logs.
+    - **Zero-Config Infrastructure:** Manage Docker, Networking, and SSL behind the scenes.
 
 ## Architecture & Technology Stack
 
-The system follows a decoupled architecture separating request handling from task execution.
+The system follows a decoupled "Control Plane vs. Data Plane" architecture.
 
 | Component | Technology | Responsibility |
 | :--- | :--- | :--- |
-| **API Layer** | FastAPI | Receives requests, validates payloads, manages job records. |
-| **Worker System** | Celery | Executes long-running tasks asynchronously. |
-| **Message Broker** | Redis | Orchestrates communication between API and Workers. |
-| **Database** | PostgreSQL | Persists job state, metadata, and execution history. |
-| **ORM** | SQLAlchemy | Direct usage (Synchronous, no SQLModel, no Repository pattern yet). |
-| **Package Mgmt** | `uv` | Dependency and environment management. |
+| **Control Plane (API)** | FastAPI | Receives orders, manages users/state, triggers builds. |
+| **Worker Engine** | Celery | The "Hands" that execute Git clones, Docker builds, and deploys. |
+| **Message Broker** | Redis | High-speed communication and distributed locking. |
+| **State Registry** | PostgreSQL | Source of truth for job history, logs, and environment config. |
+| **ORM** | SQLAlchemy | Direct, synchronous usage for deep execution visibility. |
+| **Package Mgmt** | `uv` | Modern dependency and environment isolation. |
 
 ## Project Structure
 
 ```text
 asynctasks/
-├── api/                # FastAPI application layer
+├── api/                # FastAPI application layer (The Brain)
 │   ├── main.py         # Entry point & App configuration
-│   ├── models.py       # SQLAlchemy ORM models (Job table)
-│   ├── database.py     # Engine, SessionLocal, and Base setup
-│   ├── schemas.py      # Pydantic models for validation
-│   └── routes/         # API endpoint definitions (jobs.py)
-├── worker/             # Celery worker layer
-│   ├── celery_app.py   # Celery configuration & connection to Redis
-│   └── tasks.py        # Asynchronous task definitions
-├── docker-compose.yml  # Local infra (Postgres, Redis)
-├── pyproject.toml      # Dependency management via uv
-└── plan.md             # Detailed development roadmap
+│   ├── models.py       # SQLAlchemy ORM models
+│   ├── database.py     # Engine and Session management
+│   ├── schemas.py      # Pydantic validation models
+│   └── routes/         # API endpoint definitions
+├── worker/             # Celery worker layer (The Hands)
+│   ├── celery_app.py   # Celery & Redis configuration
+│   └── tasks.py        # Asynchronous task definitions (Deploy/Scan/Build)
+├── docker-compose.yml  # Local infrastructure (Postgres, Redis, Proxy)
+├── pyproject.toml      # Modern dependency management via uv
+└── plan.md             # The 7-Phase Strategic Roadmap
 ```
 
-## Current State & Roadmap
+## Strategic Roadmap (7 Phases)
 
-### Status: Phase 1 (COMPLETED)
-- [x] **Day 1-2:** Infrastructure setup (FastAPI, Redis, Celery, Postgres) and DB/Job model creation.
-- [x] **Day 3:** API implemented (`POST /jobs`) with DB persistence.
-- [x] **Day 4:** Worker infrastructure confirmed with dummy tasks.
-- [x] **Day 5:** Connect API → Queue (Enqueuing tasks).
-- [x] **Day 6:** Worker Updates DB (State transitions).
-- [x] **Day 7:** Cleanup + Stability (Error handling & session management).
-
-### Immediate Priority: Phase 2 — Reliability
-The next milestone is to make the system production-ready:
-1. Enhancing the Job model with `updated_at` and `result` fields.
-2. Implementing retries and better logging.
+1.  **Phase 1 (COMPLETED):** AsyncTasks Core & Basic Job Lifecycle.
+2.  **Phase 2 (IN PROGRESS):** Reliability, Distributed Locking, and Orchestration.
+3.  **Phase 3:** The "Canvas" Dashboard (Live logs and visual status).
+4.  **Phase 4:** Build Engine: Native Docker integration and Subprocess logic.
+5.  **Phase 5:** Networking: Dynamic Routing & Reverse Proxy (Traefik).
+6.  **Phase 6:** Dev Experience: Webhooks (Deploy on Push) & Secrets.
+7.  **Phase 7:** Production Hardening: Resource Quotas & High Availability.
 
 ## Engineering Constraints & Decisions
 
-- **Direct SQLAlchemy:** We are using SQLAlchemy directly, not SQLModel.
-- **Simplicity over Abstraction:** No Repository or Service layers yet. Architecture simplicity is prioritized to deeply understand the execution flow.
-- **Synchronous DB:** Database interactions are currently synchronous.
-- **No Migrations:** Alembic is not yet integrated; `Base.metadata.create_all` is used for table generation.
-
-## Development Workflows
-
-### Setup & Running
-1. **Sync Env:** `uv sync`
-2. **Infra:** `docker-compose up -d`
-3. **Run API:** `uv run fastapi dev api/main.py`
-4. **Run Worker:** `uv run celery -A worker.celery_app worker --loglevel=info`
-
-### Job Lifecycle (Target)
-1. `queued`: Record created in DB.
-2. `running`: Worker has picked up the task.
-3. `success` / `failed`: Final execution state.
+- **Direct SQLAlchemy:** No extra abstraction layers (yet) to ensure deep understanding of the DB flow.
+- **Synchronous DB:** Database interactions are currently synchronous for simplicity and debugging.
+- **Distributed First:** Every component (API, Worker, Redis) is designed to run on separate machines eventually.
+- **Idempotency Mandatory:** Every job must be safe to "retry" without causing duplicate side effects.
 
 ## Architectural Philosophy
-This is not a simple CRUD API. It is being built as a scalable CI/CD orchestration engine. Every decision should align with high-availability, failure handling, and event-driven backend principles.
+We are not just building a "Deployer." We are building a **Distributed Orchestrator**. This project focuses on the "Control Plane"—the intelligence that manages how other software (Docker, Traefik) behaves.
 
 ## Response Philosophy
 Always remember you are a senior developer and my mentor, such that, you are helping me along the way, to make this project, while teaching me what code you have given, what it means. You are primarily my educator who is teaching me how to make AutoDeploy, in such a way that the concepts/technologies used, is crystal clear to me, so that I may use them in any possible way they can be used, and not just in the context of this project only.
