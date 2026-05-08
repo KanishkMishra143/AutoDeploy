@@ -21,7 +21,7 @@ def create_job(job: JobCreate):
     db.refresh(new_job)
 
     repo_url = job.payload.get("repo", "unknown-repo")
-    process_deployment.delay(repo_url)
+    process_deployment.delay(str(new_job.id), repo_url)
 
     db.close()
 

@@ -26,10 +26,10 @@
 - [x] **Day 5 — Connect API → Queue**
     - When job created → push to queue using `.delay()`.
     - *Deliverable: API triggers worker.*
-- [ ] **Day 6 — Worker Updates DB**
+- [x] **Day 6 — Worker Updates DB**
     - Worker updates status to `running` and `success`.
     - *Deliverable: Full cycle works.*
-- [ ] **Day 7 — Cleanup + Stability**
+- [x] **Day 7 — Cleanup + Stability**
     - Fix bugs, clean structure, proper logging.
     - *Deliverable: Stable MVP.*
 
@@ -38,42 +38,94 @@
 ## 🚀 PHASE 2 — Reliability (Week 2)
 **Goal:** Make the system "real" and production-ready.
 
-- [ ] **Day 1:** Status lifecycle (queued / running / success / failed).
-- [ ] **Day 2:** Retry system (max retries, retry delay).
-- [ ] **Day 3:** Failure handling (catch exceptions, mark failed).
-- [ ] **Day 4:** Logging system (store logs in DB or file).
-- [ ] **Day 5:** Job types system (type field, handler per type).
-- [ ] **Day 6:** Idempotency (prevent duplicate execution).
-- [ ] **Day 7:** Polish (refactor + test).
+### 📅 Day-by-Day Progress
+- [ ] **Day 1 — Status Lifecycle**
+    - Implement full status transitions (queued -> running -> success/failed).
+    - Ensure status is atomic in the database.
+    - *Deliverable: Job state transitions accurately.*
+- [ ] **Day 2 — Retry System**
+    - Configure Celery task retries with exponential backoff.
+    - Add `max_retries` and `retry_delay` configuration.
+    - *Deliverable: Failed tasks auto-retry gracefully.*
+- [ ] **Day 3 — Failure Handling**
+    - Implement global error catching in tasks.
+    - Capture and store detailed stack traces/errors in the DB.
+    - *Deliverable: Detailed error reporting for debugging.*
+- [ ] **Day 4 — Logging System**
+    - Redirect worker stdout/stderr to a log capture system.
+    - Associate execution logs with specific `job_id`.
+    - *Deliverable: Execution logs viewable via API.*
+- [ ] **Day 5 — Job Types & Routing**
+    - Refactor task logic to handle multiple job types (e.g., `DEPLOY`, `SCAN`).
+    - Implement task routing for specialized workers if needed.
+    - *Deliverable: Extensible multi-task system.*
+- [ ] **Day 6 — Idempotency**
+    - Implement locking (Redis) to prevent duplicate job execution.
+    - Handle edge cases where two workers pick up the same job ID.
+    - *Deliverable: Guaranteed single execution per job.*
+- [ ] **Day 7 — Polish & Testing**
+    - Write unit tests for core API and Worker logic.
+    - Refactor database session management for stability.
+    - *Deliverable: Production-ready codebase.*
 
 ---
 
 ## 🚀 PHASE 3 — Dashboard (Week 3)
 **Goal:** Make it visible.
 
-- [ ] **Day 1–2:** Simple frontend OR FastAPI templates (Show jobs list).
-- [ ] **Day 3:** Status view.
-- [ ] **Day 4:** Retry button.
-- [ ] **Day 5:** Filters (failed jobs).
-- [ ] **Day 6–7:** UI polish.
+### 📅 Day-by-Day Progress
+- [ ] **Day 1–2 — Frontend Setup & Jobs List**
+    - Setup UI framework (e.g., FastAPI with Jinja2 or a simple SPA).
+    - Create a paginated list view of all jobs in the system.
+    - *Deliverable: Web UI showing job history.*
+- [ ] **Day 3 — Status View & Details**
+    - Build a detailed view for individual jobs.
+    - Display job metadata, payload, and current status visually.
+    - *Deliverable: Detailed job inspection via UI.*
+- [ ] **Day 4 — Control Actions**
+    - Add UI controls to manually trigger retries.
+    - Implement "Cancel/Abort" button for running tasks.
+    - *Deliverable: Remote control of jobs from dashboard.*
+- [ ] **Day 5 — Filters & Search**
+    - Add filtering by status (Failed, Running, etc.).
+    - Implement search functionality by ID or payload content.
+    - *Deliverable: High-speed job lookup.*
+- [ ] **Day 6–7 — Real-time Updates & Polish**
+    - Implement auto-refresh or WebSockets for live status changes.
+    - Improve UI/UX with modern styling and responsive design.
+    - *Deliverable: Live, responsive deployment dashboard.*
 
 ---
 
 ## 🚀 PHASE 4 — AutoDeploy Integration (Week 4+)
 **Goal:** Transform the engine into an intelligent, multi-step deployment pipeline.
 
-- [ ] **Phase 4A: Discovery & Analysis (Workers)**
-    - Clone target repository into an isolated workspace.
-    - Analyze repository structure (e.g., detect `package.json`, `requirements.txt`, `Dockerfile`).
-    - Determine project category and infrastructure requirements.
-- [ ] **Phase 4B: User Interaction / Approvals (API)**
-    - Pause pipeline and store analysis results in DB.
-    - Present deployment plan to user via API (e.g., "React App detected, requires AWS keys").
-    - Accept user configuration, environment variables, and approvals.
-- [ ] **Phase 4C: Generation & Configuration (Workers)**
-    - Generate CI/CD configuration (e.g., GitHub Actions).
-    - Generate or configure infrastructure manifests (`docker-compose.yml`, AWS/Azure specs).
-- [ ] **Phase 4D: Execution & Deployment (Workers)**
-    - Build Docker images.
-    - Push images to a registry.
-    - Execute deployment to target cloud provider.
+### 📅 Day-by-Day Progress
+- [ ] **Day 1 — Repository Discovery**
+    - Implement task to clone remote Git repositories to isolated workspaces.
+    - Ensure secure handling of temporary files and cleanup.
+    - *Deliverable: Worker can access source code.*
+- [ ] **Day 2 — Automated Analysis**
+    - Build logic to detect framework (e.g., React, Python, Node).
+    - Scan repo for dependency files and configuration requirements.
+    - *Deliverable: Automated analysis report generated.*
+- [ ] **Day 3 — User Approval Workflow**
+    - Implement "Paused" state for jobs requiring manual input.
+    - API to allow users to provide environment variables and secrets.
+    - *Deliverable: Interactive, gated deployment pipeline.*
+- [ ] **Day 4 — Configuration Generation**
+    - Auto-generate Dockerfiles and cloud-specific manifests.
+    - Validate generated configurations before execution.
+    - *Deliverable: Deployment artifacts generated.*
+- [ ] **Day 5 — Build & Registry Integration**
+    - Execute Docker builds within the worker environment.
+    - Push images to local or remote registries (Docker Hub/GHCR).
+    - *Deliverable: Built image ready for deployment.*
+- [ ] **Day 6 — Orchestration & Deployment**
+    - Trigger final deployment to target (Docker Compose, K8s, or Cloud).
+    - Monitor initial health status post-deployment.
+    - *Deliverable: Application is live and verified.*
+- [ ] **Day 7 — End-to-End Validation**
+    - Conduct full-cycle tests from Git URL to live application.
+    - Finalize documentation and architecture diagrams.
+    - *Deliverable: Fully automated CI/CD engine.*
