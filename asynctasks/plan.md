@@ -39,23 +39,23 @@
 **Goal:** Make the system "real" and production-ready.
 
 ### 📅 Day-by-Day Progress
-- [ ] **Day 1 — Status Lifecycle**
+- [x] **Day 1 — Status Lifecycle**
     - Implement full status transitions (queued -> running -> success/failed).
     - Ensure status is atomic in the database.
     - *Deliverable: Job state transitions accurately.*
-- [ ] **Day 2 — Retry System**
+- [x] **Day 2 — Retry System**
     - Configure Celery task retries with exponential backoff.
     - Add `max_retries` and `retry_delay` configuration.
     - *Deliverable: Failed tasks auto-retry gracefully.*
-- [ ] **Day 3 — Failure Handling**
+- [x] **Day 3 — Failure Handling**
     - Implement global error catching in tasks.
     - Capture and store detailed stack traces/errors in the DB.
     - *Deliverable: Detailed error reporting for debugging.*
-- [ ] **Day 4 — Logging System**
+- [x] **Day 4 — Logging System**
     - Redirect worker stdout/stderr to a log capture system.
     - Associate execution logs with specific `job_id`.
     - *Deliverable: Execution logs viewable via API.*
-- [ ] **Day 5 — Job Types & Routing**
+- [x] **Day 5 — Job Types & Routing**
     - Refactor task logic to handle multiple job types (e.g., `DEPLOY`, `SCAN`).
     - Implement task routing for specialized workers if needed.
     - *Deliverable: Extensible multi-task system.*
@@ -98,25 +98,25 @@
 ---
 
 ## 🚀 PHASE 4 — AutoDeploy Integration (Week 4+)
-**Goal:** Transform the engine into an intelligent, multi-step deployment pipeline.
+**Goal:** Transform the engine into a template-driven deployment pipeline.
 
 ### 📅 Day-by-Day Progress
 - [ ] **Day 1 — Repository Discovery**
     - Implement task to clone remote Git repositories to isolated workspaces.
     - Ensure secure handling of temporary files and cleanup.
     - *Deliverable: Worker can access source code.*
-- [ ] **Day 2 — Automated Analysis**
-    - Build logic to detect framework (e.g., React, Python, Node).
-    - Scan repo for dependency files and configuration requirements.
-    - *Deliverable: Automated analysis report generated.*
-- [ ] **Day 3 — User Approval Workflow**
-    - Implement "Paused" state for jobs requiring manual input.
-    - API to allow users to provide environment variables and secrets.
-    - *Deliverable: Interactive, gated deployment pipeline.*
-- [ ] **Day 4 — Configuration Generation**
-    - Auto-generate Dockerfiles and cloud-specific manifests.
+- [ ] **Day 2 — Template-Based Validation**
+    - Instead of auto-detecting, use user-selected categories (e.g., Python, Node).
+    - Logic to verify category-specific files (e.g., `requirements.txt` for Python).
+    - *Deliverable: Reliable "Ready to Deploy" check.*
+- [ ] **Day 3 — Configuration Generation**
+    - Auto-generate Dockerfiles and cloud-specific manifests based on the selected template.
     - Validate generated configurations before execution.
     - *Deliverable: Deployment artifacts generated.*
+- [ ] **Day 4 — User Approval & Secrets**
+    - Implement "Paused" state for jobs requiring manual input.
+    - API to allow users to provide environment variables and secrets before build.
+    - *Deliverable: Interactive, gated deployment pipeline.*
 - [ ] **Day 5 — Build & Registry Integration**
     - Execute Docker builds within the worker environment.
     - Push images to local or remote registries (Docker Hub/GHCR).
@@ -126,6 +126,6 @@
     - Monitor initial health status post-deployment.
     - *Deliverable: Application is live and verified.*
 - [ ] **Day 7 — End-to-End Validation**
-    - Conduct full-cycle tests from Git URL to live application.
+    - Conduct full-cycle tests from Git URL + Category Selection to live application.
     - Finalize documentation and architecture diagrams.
     - *Deliverable: Fully automated CI/CD engine.*
