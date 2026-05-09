@@ -1,9 +1,12 @@
-from worker.celery_app import app
+from worker.celery_app import app, redis_client
 import traceback
 import time
-from api.database import SessionLocal
-from api.models import Job, Log
-from celery.exceptions import MaxRetriesExceededError
+from api.database import session_scope
+from api.models import Job, Log, Worker
+from celery.utils.log import get_task_logger
+import socket
+
+logger = get_task_logger(__name__)
 
 def save_log(db, job_id, message):
     """Helper to save a log message to the database instantly"""
@@ -11,8 +14,6 @@ def save_log(db, job_id, message):
     db.add(new_log)
     db.commit()
     print(f"DEBUG LOG: {message}")
-
-
 def run_deploy_logic(db, job_id, payload):
     """Contains the specific steps for a DEPLOYMENT job."""
     repo_url = payload.get("repo", "unknown")
@@ -35,7 +36,6 @@ def run_deploy_logic(db, job_id, payload):
         "message": "Deployment successful",
         "url": f"https://{repo_url.split('/')[-1]}.deploy.com"
     }
-
 def run_scan_logic(db, job_id, payload):
     """Contains the specific steps for a SECURITY SCAN job."""
     repo_url = payload.get("repo", "unknown")
@@ -62,49 +62,59 @@ def run_scan_logic(db, job_id, payload):
     max_retries=3,
     default_retry_delay=5
  )
-
 def process_job(self, job_id: str):
-    db = SessionLocal()
+    lock_key = f"lock:job:{job_id}"
+    lock_acquired = redis_client.set(lock_key, "processing", ex=600, nx=True)
+
+    if not lock_acquired:
+        print(f"DEBUG: Job {job_id} is already being handled by another worker. Skipping")
+        return "Locked"
+
     try:
-        # Fetch the job from DB to see its type and payload
-        job = db.query(Job).filter(Job.id == job_id).first()
-        if not job: 
-            return "Job not found"
-        # Update status to running
-        job.status = "running"
-        job.result = {"attempt": self.request.retries + 1, "status": "processing"}
-        db.commit()
-        # ROUTING: Decide which logic to run
-        if job.type == "DEPLOY":
-            result_data = run_deploy_logic(db, job_id, job.payload)
-        elif job.type == "SCAN":
-            result_data = run_scan_logic(db, job_id, job.payload)
-        else:
-            save_log(db, job_id, f"❌ Unknown job type: {job.type}")
-            raise ValueError(f"Unsupported job type: {job.type}")
-        # Final Success Update
-        job.status = "success"
-        job.result = result_data
-        db.commit()
+        with session_scope() as db:
+            # Fetch the job from DB to see its type and payload
+            job = db.query(Job).filter(Job.id == job_id).first()
+            if not job or job.status in ["success", "failed"]: 
+                return "Skipped"
+
+            # Update status to running
+            job.status = "running"
+            job.result = {"attempt": self.request.retries + 1, "status": "processing"}
+            
+            # ROUTING: Decide which logic to run
+            if job.type == "DEPLOY":
+                result_data = run_deploy_logic(db, job_id, job.payload)
+            else:
+                result_data = run_scan_logic(db, job_id, job.payload)
+            
+            # Final Success Update
+            job.status = "success"
+            job.result = result_data
+
     except Exception as exc:
-        db.rollback()
-        error_trace = traceback.format_exc()
         if self.request.retries < self.max_retries:
             # Exponential Backoff
             countdown = self.default_retry_delay * (2 ** self.request.retries)
-            save_log(db, job_id, f"⚠️ Attempt {self.request.retries + 1} failed. Retrying in {countdown}s...")
             raise self.retry(exc=exc, countdown=countdown)
         else:
-            # Final Failure
-            save_log(db, job_id, f"❌ Max retries reached. Marking job as failed.")
-            job = db.query(Job).filter(Job.id == job_id).first()
-            if job:
-                job.status = "failed"
-                job.result = {
-                    "error": str(exc),
-                    "traceback": error_trace,
-                    "total_attempts": self.request.retries + 1
-                }
-                db.commit()
+            with session_scope() as error_db:
+                job = error_db.query(Job).filter(Job.id == job_id).first()
+                if job:
+                    job.status = "failed"
+                    job.result = {"error": str(exc)}
+        raise
     finally:
-        db.close()
+        redis_client.delete(lock_key)
+
+@app.task(name="worker.heartbeat")
+def worker_heartbeat():
+    """Periodic task to update worker status in the DB."""
+    worker_id = socket.gethostname()
+    with session_scope() as db:
+        worker = db.query(Worker).filter(Worker.id == worker_id).first()
+        if not worker:
+            worker = Worker(id=worker_id, status="online")
+            db.add(worker)
+        else:
+            worker.status = "online"
+        print(f"💓 Heartbeat sent from {worker_id}")

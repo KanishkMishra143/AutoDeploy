@@ -26,3 +26,9 @@ class Log(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     job = relationship("Job", back_populates="logs")
+
+class Worker(Base):
+    __tablename__ = "workers"
+    id = Column(String, primary_key=True)
+    status = Column(String, default="online")
+    last_heartbeat = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

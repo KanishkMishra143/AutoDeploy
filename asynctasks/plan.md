@@ -21,7 +21,7 @@
 - [x] **Day 3:** API Refinement: Dependency Injection and Full Traceback capture.
 - [x] **Day 4:** Persistent Logging Engine with relational `Log` model.
 - [x] **Day 5:** Multi-Task Router (Universal Worker) for specialized `DEPLOY`/`SCAN` logic.
-- [ ] **Day 6 — Idempotency & Distributed Locking:**
+- [x] **Day 6 — Idempotency & Distributed Locking:**
     - **Task:** Implement Redis-based locking to prevent duplicate job execution.
     - **Sub-task:** Handle worker crashes and lock timeouts (deadlocks).
     - *Deliverable: Guaranteed single execution per job ID.*

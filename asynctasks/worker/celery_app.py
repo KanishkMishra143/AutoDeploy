@@ -1,4 +1,5 @@
 from celery import Celery
+import redis
 
 app = Celery(
     "worker",
@@ -7,10 +8,19 @@ app = Celery(
     include=["worker.tasks"]
 )
 
+# We use DB 2 to separate locks from Celery's broker (DB 0) and backend (DB 1)
+redis_client = redis.from_url("redis://localhost:6379/2", decode_responses=True)
+
 app.conf.update(
     task_serializer="json",                 
     accept_content=["json"],                 
     result_serializer="json",               
     timezone="UTC",                          
     enable_utc=True,
+    beat_schedule = {
+        "worker-heartbeat-every-10-seconds": {
+            "task": "worker.heartbeat",
+            "schedule": 10.0,
+        },
+    }
 )
