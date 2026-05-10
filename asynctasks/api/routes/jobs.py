@@ -2,10 +2,11 @@ from fastapi import APIRouter, HTTPException, Query, Depends
 from sqlalchemy.orm import Session
 from typing import List
 from api.database import get_db
-from api.models import Job
+from api.models import Job, Worker
 from api.schemas import JobCreate, JobResponse, JobListResponse, JobLogsResponse
 from worker.tasks import process_job
 from uuid import UUID
+from datetime import datetime, timedelta
 
 router = APIRouter()
 
@@ -19,9 +20,7 @@ def create_job(job: JobCreate, db: Session = Depends(get_db)):
     db.add(new_job)
     db.commit()
     db.refresh(new_job)
-
     process_job.delay(str(new_job.id))
-
     return new_job
 
 
@@ -29,7 +28,7 @@ def create_job(job: JobCreate, db: Session = Depends(get_db)):
 @router.get("/jobs", response_model=JobListResponse)
 def list_jobs(skip: int = 0, limit: int = 10, db: Session = Depends(get_db)):
     total = db.query(Job).count()
-    jobs = db.query(Job).offset(skip).limit(limit).all()
+    jobs = db.query(Job).order_by(Job.created_at.desc()).offset(skip).limit(limit).all()
     return {"total": total, "jobs": jobs}
 
 @router.get("/jobs/{job_id}", response_model=JobResponse)
@@ -46,3 +45,13 @@ def get_job_logs(job_id: UUID, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Job not found")
 
     return {"job_id": job.id, "logs": job.logs}
+
+@router.get("/workers")
+def list_workers(db: Session = Depends(get_db)):
+    # A worker is considered "online" if it sent a heartbeat in the last 10 seconds
+    threshold = datetime.utcnow() - timedelta(seconds=10)
+    workers = db.query(Worker).filter(Worker.last_heartbeat > threshold).all()
+    return {
+        "count": len(workers),
+        "workers": workers
+    }  

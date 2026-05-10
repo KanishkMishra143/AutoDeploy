@@ -18,9 +18,9 @@ app.conf.update(
     timezone="UTC",                          
     enable_utc=True,
     beat_schedule = {
-        "worker-heartbeat-every-10-seconds": {
+        "worker-heartbeat-every-2-seconds": {
             "task": "worker.heartbeat",
-            "schedule": 10.0,
+            "schedule": 2.0,
         },
     }
 )

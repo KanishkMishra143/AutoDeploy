@@ -106,6 +106,8 @@ def process_job(self, job_id: str):
     finally:
         redis_client.delete(lock_key)
 
+from datetime import datetime
+
 @app.task(name="worker.heartbeat")
 def worker_heartbeat():
     """Periodic task to update worker status in the DB."""
@@ -113,8 +115,9 @@ def worker_heartbeat():
     with session_scope() as db:
         worker = db.query(Worker).filter(Worker.id == worker_id).first()
         if not worker:
-            worker = Worker(id=worker_id, status="online")
+            worker = Worker(id=worker_id, status="online", last_heartbeat=datetime.utcnow())
             db.add(worker)
         else:
             worker.status = "online"
+            worker.last_heartbeat = datetime.utcnow()
         print(f"💓 Heartbeat sent from {worker_id}")
