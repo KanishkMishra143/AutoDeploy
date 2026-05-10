@@ -51,26 +51,26 @@
 
 ---
 
-## 🚀 PHASE 4 — The Build Engine: Docker Integration (CURRENT)
+## ✅ PHASE 4 — The Build Engine: Docker Integration (COMPLETED)
 **Goal:** Teach the worker how to build and run code (The "Body").
 
 ### 📅 Day-by-Day Progress
-- [ ] **Day 1–2 — Secure Workspace & Git logic:**
+- [x] **Day 1–2 — Secure Workspace & Git logic:**
     - **Task:** Implement isolated workspace management for workers.
     - **Sub-task:** Securely clone remote Git repositories into temporary build folders.
     - *Deliverable: Worker can pull source code from any public/private repo.*
-- [ ] **Day 3–4 — Subprocess Engine & Docker Build:**
+- [x] **Day 3–4 — Subprocess Engine & Docker Build:**
     - **Task:** Create a safe wrapper for shell command execution.
     - **Sub-task:** Execute `docker build` and stream output directly to our Log Engine.
     - *Deliverable: Automated creation of Docker images from source code.*
-- [ ] **Day 5 — Docker Run & Lifecycle:**
+- [x] **Day 5 — Docker Run & Lifecycle:**
     - **Task:** Automate `docker run` with dynamic port mapping.
     - **Sub-task:** Implement container cleanup logic for failed builds.
     - *Deliverable: Applications running in isolated containers.*
 
 ---
 
-## 🌐 PHASE 5 — Networking & Service Discovery
+## 🚀 PHASE 5 — Networking & Service Discovery (CURRENT)
 **Goal:** Automatically route internet traffic to your hosted containers with live URLs.
 
 ### 📅 Day-by-Day Progress
@@ -111,3 +111,75 @@
 - [ ] **Day 5 — Multi-Node Scaling:**
     - **Task:** Distribute workers across multiple physical servers.
     - *Deliverable: A professional, production-grade deployment platform.*
+
+---
+
+## 🏗️ PHASE 8 — Full-Stack Control & Topology Map
+**Goal:** Evolve the dashboard from a "Viewer" to a "Controller" with an interactive Visual Topology.
+
+### 📅 Day-by-Day Progress
+- [ ] **Day 1–2 — GUI Project Creation & Forms:**
+    - **Task:** Build interactive forms for new deployments (Name, Git URL, Environment Variables).
+    - **Sub-task:** Add support for direct Dockerfile uploads via the GUI.
+    - *Deliverable: Users can trigger full deployments without touching the terminal or API directly.*
+- [ ] **Day 3–5 — Visual Topology Map:**
+    - **Task:** Upgrade the Service Grid into a node-based network map (like Railway's canvas).
+    - **Sub-task:** Visually draw connections between a deployed app and its connected databases/services.
+    - *Deliverable: A beautiful, drag-and-drop architectural map of the user's infrastructure.*
+
+---
+
+## 🧠 PHASE 9 — Smart Templates & Custom Plans
+**Goal:** Introduce intelligent project detection, customizable deployment pipelines, and auto-healing.
+
+### 📅 Day-by-Day Progress
+- [ ] **Day 1–2 — Auto-Detection & Proposed Plans:**
+    - **Task:** Worker analyzes uploaded Dockerfiles or Git repos to determine the tech stack.
+    - **Sub-task:** Present a "Proposed Deployment Plan" to the user based on pre-defined templates (e.g., Next.js Template, Python API Template).
+    - *Deliverable: Frictionless onboarding for standard frameworks.*
+- [ ] **Day 3–4 — Customizable Deployment DAG (Directed Acyclic Graph):**
+    - **Task:** Allow users to insert manual steps (e.g., "Run DB Migration") before or after the standard build step.
+    - **Sub-task:** Refactor Celery tasks into 'Chains' to execute these custom steps sequentially.
+    - *Deliverable: Highly flexible deployment pipelines that adapt to complex user needs.*
+- [ ] **Day 5–6 — Error-Handling Sub-Templates:**
+    - **Task:** Create specific worker logic triggered by known log errors (e.g., 'Port in use', 'Missing dependency').
+    - **Sub-task:** Automatically pause the build, suggest the fix via the UI, or execute an auto-healing script.
+    - *Deliverable: A self-diagnosing platform that actively helps developers fix failed builds.*
+
+---
+
+## 💻 PHASE 10 — The AutoDeploy CLI
+**Goal:** Provide professional developers with total terminal control, running parallel to the GUI.
+
+### 📅 Day-by-Day Progress
+- [ ] **Day 1–2 — CLI Foundation:**
+    - **Task:** Build a CLI tool using Python (Click/Typer) or Go.
+    - **Sub-task:** Implement authentication and secure session management.
+    - *Deliverable: A lightweight command-line tool connected to the AutoDeploy API.*
+- [ ] **Day 3–4 — CLI/GUI Parity:**
+    - **Task:** Implement commands like `deploy login`, `deploy init`, `deploy up`, and `deploy logs`.
+    - **Sub-task:** Ensure any action taken in the CLI instantly reflects on the live Canvas GUI.
+    - *Deliverable: True parallel workflows—start in the terminal, monitor in the dashboard.*
+
+---
+
+## 📦 PHASE 12 — Enterprise-Grade Distribution
+**Goal:** Deliver a "Big Tech" installation experience where the GUI, CLI, and Engine are seamlessly deployed as a single, professional product.
+
+### 📅 Day-by-Day Progress
+- [ ] **Day 1–2 — The Unified Service Bundle:**
+    - **Task:** Bundle the FastAPI server, Celery Worker, Redis, and Postgres into a managed background service.
+    - **Sub-task:** Ensure the desktop app can start/stop these services automatically upon launch.
+    - *Deliverable: A self-contained "PaaS-in-a-Box" that requires no manual setup.*
+- [ ] **Day 3–4 — System PATH & IDE Integration:**
+    - **Task:** Automate the injection of the AutoDeploy CLI binary into the Windows System PATH.
+    - **Sub-task:** Create a specific integration script to ensure the CLI is instantly recognized by VS Code terminals.
+    - *Deliverable: Users can open any terminal and type `deploy` immediately after installation.*
+- [ ] **Day 5–6 — The Universal Installer:**
+    - **Task:** Create a professional `.msi` or `.exe` installer (using tools like WiX or NSIS).
+    - **Sub-task:** Implement a "One-Click Setup" that handles all prerequisites (including Docker Desktop detection).
+    - *Deliverable: A premium installation wizard that feels like a finished, multi-billion dollar product.*
+- [ ] **Day 7 — Branding & Quality Assurance:**
+    - **Task:** Finalize custom app icons, splash screens, and digitally sign the installer.
+    - **Sub-task:** Perform "Clean Install" tests on fresh Windows machines to guarantee consistent GUI/CLI results.
+    - *Deliverable: A high-fidelity, production-ready release package.*

@@ -28,9 +28,9 @@ export default function CanvasPage() {
               </span>
             </div>
             <div className="bg-card border border-card-border px-4 py-2 rounded-lg flex items-center gap-2">
-              <Server className={`w-4 h-4 ${workerCount > 0 ? "text-blue-500" : "text-red-500"}`} />
+              <Server className={`w-4 h-4 ${workerCount > 0 ? "text-green-500" : "text-red-500"}`} />
               <span className="text-sm font-medium">
-                {error ? "Workers: Unknown" : `Workers: ${workerCount} Active`}
+                {error ? "Workers: Unknown" : workerCount > 0 ? "Workers: Online" : "Workers: Offline"}
               </span>
             </div>
           </div>
