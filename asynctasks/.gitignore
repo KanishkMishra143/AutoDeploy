@@ -35,8 +35,12 @@ build/
 .env.production.local
 *.env*
 
+# Celery
+celerybeat-schedule*
+*.db
+
 # Database
-db/data/
+db/
 
 # OS specific files
 .DS_Store

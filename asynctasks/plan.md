@@ -32,26 +32,26 @@
 
 ---
 
-## 🚀 PHASE 3 — The "Canvas" Dashboard (V1) (CURRENT)
+## ✅ PHASE 3 — The "Canvas" Dashboard (V1) (COMPLETED)
 **Goal:** Visualize the system state early to maintain momentum. Inspired by Railway's service grid.
 
 ### 📅 Day-by-Day Progress
-- [ ] **Day 1–2 — Frontend Foundation & Service Grid:**
+- [x] **Day 1–2 — Frontend Foundation & Service Grid:**
     - **Task:** Setup React/Next.js with a modern PaaS aesthetic (Dark Mode).
     - **Sub-task:** Build the "Canvas" layout where jobs/services are displayed as interactive nodes.
     - *Deliverable: Visual grid showing all active and historical jobs.*
-- [ ] **Day 3 — Live Streaming Logs (WebSocket):**
+- [x] **Day 3 — Live Streaming Logs (WebSocket):**
     - **Task:** Implement a real-time log viewer.
     - **Sub-task:** Connect FastAPI WebSockets to the `Log` model to stream worker output live.
     - *Deliverable: Terminal-style log window in the browser for every job.*
-- [ ] **Day 4–5 — Action Controls:**
-    - **Task:** Implement remote control buttons on the Canvas.
-    - **Sub-task:** Add "Retry," "Cancel," and "Clear Logs" triggers to the job cards.
-    - *Deliverable: Fully interactive management dashboard.*
+- [x] **Day 4–5 — Action Controls & Heartbeats:**
+    - **Task:** Implement remote control buttons on the Canvas and dynamic health monitoring.
+    - **Sub-task:** Connect API and Worker heartbeats to the dashboard badges.
+    - *Deliverable: Fully interactive management dashboard with real-time health metrics.*
 
 ---
 
-## 🏗️ PHASE 4 — The Build Engine: Docker Integration
+## 🚀 PHASE 4 — The Build Engine: Docker Integration (CURRENT)
 **Goal:** Teach the worker how to build and run code (The "Body").
 
 ### 📅 Day-by-Day Progress

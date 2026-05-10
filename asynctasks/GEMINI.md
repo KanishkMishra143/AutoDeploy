@@ -4,16 +4,19 @@
 
 ## Persistent Progress Log
 
-### 📅 Friday, May 8, 2026
-- **Status:** Phase 2, Day 5 Complete. (Ahead of Schedule!)
+### 📅 Sunday, May 10, 2026
+- **Status:** Phase 3 Complete! (Visual Control Plane established).
 - **Milestones:**
-    - **Day 1 & 2:** Enhanced Job model (`updated_at`, `result`) and implemented **Exponential Backoff** retries (5s, 10s, 20s).
-    - **Day 3:** API Refinement: Implemented `GET` detail/list endpoints using **Dependency Injection** and added full **Traceback** capture for failures.
-    - **Day 4:** Built a persistent **Logging Engine** with a relational `Log` model and One-to-Many mapping.
-    - **Day 5:** Transformed the worker into a **Multi-Task Router** (Universal Worker) that can handle specialized logic for `DEPLOY` and `SCAN` jobs.
-    - **Day 6:** Implemented **Distributed Locking** using Redis and **Idempotency** checks to prevent duplicate job execution.
-    - **Day 7:** System Polish & Heartbeats: Implemented **Worker Health Tracking** and refactored DB session management with a robust **Context Manager**.
-- **Next Task:** Phase 3 — The "Canvas" Dashboard (Visual status and live logs).
+    - **Day 8:** Initialized the "Canvas" Dashboard using **Next.js 15** and **Tailwind CSS**. Built the service grid and established the "PaaS" aesthetic.
+    - **Day 9:** Dynamic Connectivity: Enabled **CORS** on the backend and implemented the `useJobs` hook with polling.
+    - **Day 10:** Real-time Health & Logs: Implemented dynamic **API/Worker heartbeats** (2s pulse) and built a **WebSocket-powered Terminal Modal** for live log streaming.
+- **Next Task:** Phase 4 — The Build Engine (Git clones and Docker integration).
+
+## Mentor Memory (Architectural Notes)
+- **Timezone Sync:** Always use `datetime.utcnow()` for heartbeats to ensure the API, Worker, and DB are synchronized regardless of local machine settings.
+- **Vertical vs. Horizontal Scaling:** A single Celery worker node can handle multiple tasks (Vertical/Concurrency) via prefork processes, while multiple nodes (Horizontal) provide redundancy and cross-machine scale.
+- **Lazy WebSockets:** To save resources, only open WebSocket connections when a user explicitly requests data (e.g., clicking a job card to open a log modal).
+- **WSL Interop:** When working in WSL, ensure the Linux toolchain (node/npm) is used to avoid path and permission collisions with Windows binaries.
 
 ---
 
