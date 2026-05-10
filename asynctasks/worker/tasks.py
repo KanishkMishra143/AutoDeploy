@@ -40,40 +40,72 @@ def run_command(db, job_id, command, cwd=None):
     if return_code != 0:
         raise subprocess.CalledProcessError(return_code, command)
 
-def run_container(db, job_id, image_tag):
-    """Starts a Docker container from an image and returns its metadata."""
-    container_name = f"autodeploy_{str(job_id)[:8]}"
+def run_container(db, job_id, image_tag, env_vars=None, app_name=None):
+    """Starts a Docker container with Hardened Resource Quotas and Traefik labels."""
+    # Use app_name for stable naming if available, otherwise fallback to job_id
+    if app_name:
+        # Sanitize: lowercase, alphanumeric and hyphens only
+        clean_name = "".join(e for e in app_name.lower() if e.isalnum() or e == "-")
+        container_name = f"autodeploy_{clean_name}"
+    else:
+        container_name = f"autodeploy_{str(job_id)[:8]}"
+        
+    hostname = f"{container_name}.localhost"
+    network_name = "autodeploy-net"
     
-    # 1. Clean up any existing container with this name
+    # 1. Resource Quotas
+    resource_flags = [
+        "--memory", "512m",
+        "--cpus", "0.5"
+    ]
+
+    # Clean up any existing container with this name (Crucial for App-centric model!)
+    # This kills the OLD version before starting the NEW one.
     subprocess.run(["docker", "rm", "-f", container_name], capture_output=True)
 
-    save_log(db, job_id, f"🚀 Starting container: {container_name}...")
+    save_log(db, job_id, f"🚀 Hardening container: {container_name} (Limits: 512MB RAM, 0.5 CPU)...")
     
-    # 2. Run in detached mode with random port mapping (0:8000)
-    result = subprocess.run(
-        ["docker", "run", "-d", "--name", container_name, "-p", "0:8000", image_tag],
-        capture_output=True,
-        text=True,
-        check=True
-    )
-    
+    # 2. Traefik Labels
+    labels = [
+        "--label", "traefik.enable=true",
+        "--label", f"traefik.http.routers.{container_name}.rule=Host(`{hostname}`)",
+        "--label", f"traefik.http.services.{container_name}.loadbalancer.server.port=8000",
+    ]
+
+    # 3. Environment Variables
+    env_flags = []
+    if env_vars:
+        for key, value in env_vars.items():
+            env_flags.extend(["-e", f"{key}={value}"])
+        save_log(db, job_id, f"🔑 Injected {len(env_vars)} environment variables.")
+
+    # 4. Assemble command
+    command = [
+        "docker", "run", "-d", 
+        "--name", container_name, 
+        "--network", network_name,
+        "--restart", "unless-stopped"
+    ] + resource_flags + labels + env_flags + ["-p", "0:8000", image_tag]
+
+    result = subprocess.run(command, capture_output=True, text=True, check=True)
     container_id = result.stdout.strip()
-    save_log(db, job_id, f"✅ Container started! ID: {container_id[:12]}")
-    
-    # 3. Inspect to find the host port Docker assigned
+
+    # Find host port
     inspect_result = subprocess.run(
         ["docker", "inspect", "--format", "{{(index (index .NetworkSettings.Ports \"8000/tcp\") 0).HostPort}}", container_name],
-        capture_output=True,
-        text=True,
-        check=True
+        capture_output=True, text=True, check=True
     )
     assigned_port = inspect_result.stdout.strip()
-    save_log(db, job_id, f"🌐 Application is live at: http://localhost:{assigned_port}")
-    
+
+    save_log(db, job_id, f"✅ Container hardened and started! ID: {container_id[:12]}")
+    save_log(db, job_id, f"🌐 Dynamic URL: http://{hostname}")
+
     return {
         "container_id": container_id,
         "container_name": container_name,
-        "port": assigned_port
+        "hostname": hostname,
+        "port": assigned_port,
+        "url": f"http://{hostname}"
     }
 
 def clone_repository(repo_url: str, dest_dir: str) -> None:
@@ -91,6 +123,9 @@ def clone_repository(repo_url: str, dest_dir: str) -> None:
 def run_deploy_logic(db, job_id, payload):
     """Contains the specific steps for a DEPLOYMENT job."""
     repo_url = payload.get("repo")
+    env_vars = payload.get("env", {})
+    app_name = payload.get("app_name") # Extract the identity
+    
     if not repo_url:
         raise ValueError("Repository URL is missing in the payload.")
         
@@ -117,8 +152,8 @@ def run_deploy_logic(db, job_id, payload):
             save_log(db, job_id, f"❌ Docker build failed: {str(e)}")
             raise
 
-        # 4. Docker Run
-        deploy_info = run_container(db, job_id, image_tag)
+        # 4. Docker Run (Passing the app_name for stable naming)
+        deploy_info = run_container(db, job_id, image_tag, env_vars=env_vars, app_name=app_name)
         
         save_log(db, job_id, "Deployment finished successfully!")
         
@@ -126,7 +161,7 @@ def run_deploy_logic(db, job_id, payload):
             "message": "Deployment successful",
             "image": image_tag,
             "container": deploy_info,
-            "url": f"http://localhost:{deploy_info['port']}"
+            "url": deploy_info["url"]
         }
     finally:
         # 5. Mandatory Cleanup
@@ -220,3 +255,29 @@ def worker_heartbeat():
             worker.status = "online"
             worker.last_heartbeat = datetime.utcnow()
         print(f"💓 Heartbeat sent from {worker_id}")
+        
+@app.task(name="worker.tasks.stop_job")
+def stop_job(job_id: str):
+    """Kills a running container and removes its associated Docker image."""
+    container_name = f"autodeploy_{str(job_id)[:8]}"
+    image_tag = f"autodeploy-app:{str(job_id)[:8]}"
+    
+    with session_scope() as db:
+        job = db.query(Job).filter(Job.id == job_id).first()
+        if not job:
+            return "Job not found"
+
+        save_log(db, job_id, f"🛑 Terminating service: {container_name}...")
+        
+        # 1. Force remove the container
+        subprocess.run(["docker", "rm", "-f", container_name], capture_output=True)
+        
+        # 2. Remove the image to save disk space
+        subprocess.run(["docker", "rmi", image_tag], capture_output=True)
+        
+        # 3. Update DB state
+        job.status = "stopped"
+        job.result = {**job.result, "status": "stopped", "stopped_at": datetime.utcnow().isoformat()}
+        
+        save_log(db, job_id, "✅ Service and Image successfully cleaned up.")
+        return "Stopped"

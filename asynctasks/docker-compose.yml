@@ -12,3 +12,28 @@ services:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+
+  traefik:
+    image: traefik:v2.11
+    user: root
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.endpoint=unix:///var/run/docker.sock"
+      - "--entrypoints.web.address=:80"
+    ports:
+      - "80:80"
+      - "8080:8080"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    networks:
+      - autodeploy-net
+
+networks:
+  autodeploy-net:
+    name: autodeploy-net
+
+volumes:
+  postgres_data:
+  redis_data:

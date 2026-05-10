@@ -2,21 +2,28 @@
 
 > **MANDATORY PRESERVATION RULE:** The "Persistent Progress Log" section below must NEVER be deleted or concatenated. Every daily log entry must remain present forever. Only the log for the current active day may be modified during a session.
 
+> **MANDATORY NON-DESTRUCTIVE LOGGING RULE:** Never delete or simplify detailed project information or architectural notes in this file. Only add new information to maintain a complete history of the project's evolution.
+
 ## Persistent Progress Log
 
 ### 📅 Sunday, May 10, 2026
-- **Status:** Phase 3 Complete! (Visual Control Plane established).
+- **Status:** Phase 8 Complete — Phase 9 In Progress.
 - **Milestones:**
-    - **Day 8:** Initialized the "Canvas" Dashboard using **Next.js 15** and **Tailwind CSS**. Built the service grid and established the "PaaS" aesthetic.
-    - **Day 9:** Dynamic Connectivity: Enabled **CORS** on the backend and implemented the `useJobs` hook with polling.
-    - **Day 10:** Real-time Health & Logs: Implemented dynamic **API/Worker heartbeats** (2s pulse) and built a **WebSocket-powered Terminal Modal** for live log streaming.
-- **Next Task:** Phase 4 — The Build Engine (Git clones and Docker integration).
+    - **Day 8-10:** Established the Visual Control Plane, Heartbeats, and WebSocket log streaming.
+    - **Day 11:** Finalized Build Engine & Networking: Verified Git-to-Docker pipeline with Traefik v2.11 and "VIEW LIVE" dashboard links.
+    - **Day 12:** Developer Experience Overhaul: Implemented GitHub Webhooks and a visual "Deploy New" modal with integrated Secret/Env Management.
+    - **Day 13:** Production Hardening: Enforced CPU/RAM quotas, implemented container auto-recovery, and built a persistent volume infrastructure for Postgres/Redis.
+    - **Day 14:** Architectural Evolution: Performed a "Heart Transplant" from Job-Centric to Application-Centric deployments. Built a Versioned History system with stable Application URLs.
+    - **Day 15 (Final Today):** Visual Sovereignty: Implemented a professional **Interactive Topology Map** using React Flow. Enhanced the App Deep-Dive with a **Tabbed UI**, **Provenance Tracking** (Manual/Webhook/Rollback), and human-readable **Rollback Metadata** (e.g., "Restored from Version 4").
+- **Next Task:** Phase 9 — Smart Templates & Custom Plans (Auto-detection of tech stacks).
 
 ## Mentor Memory (Architectural Notes)
 - **Timezone Sync:** Always use `datetime.utcnow()` for heartbeats to ensure the API, Worker, and DB are synchronized regardless of local machine settings.
 - **Vertical vs. Horizontal Scaling:** A single Celery worker node can handle multiple tasks (Vertical/Concurrency) via prefork processes, while multiple nodes (Horizontal) provide redundancy and cross-machine scale.
-- **Lazy WebSockets:** To save resources, only open WebSocket connections when a user explicitly requests data (e.g., clicking a job card to open a log modal).
 - **WSL Interop:** When working in WSL, ensure the Linux toolchain (node/npm) is used to avoid path and permission collisions with Windows binaries.
+- **Traefik v2.11:** Use v2.11 for better WSL compatibility. Ensure labels use backticks (`` ` ``) for Host rules and the container is on the `autodeploy-net` network.
+- **App Identity**: Containers are now named `autodeploy_{app_name}`, ensuring that new deployments replace old ones automatically while maintaining stable URLs.
+- **Job Provenance**: Track the `trigger_reason` and `trigger_metadata` for every job to provide a clear audit trail for the developer.
 
 ---
 
@@ -62,15 +69,17 @@ asynctasks/
 └── plan.md             # The 7-Phase Strategic Roadmap
 ```
 
-## Strategic Roadmap (7 Phases)
+## Strategic Roadmap (9 Phases)
 
 1.  **Phase 1 (COMPLETED):** AsyncTasks Core & Basic Job Lifecycle.
-2.  **Phase 2 (IN PROGRESS):** Reliability, Distributed Locking, and Orchestration.
-3.  **Phase 3:** The "Canvas" Dashboard (Live logs and visual status).
-4.  **Phase 4:** Build Engine: Native Docker integration and Subprocess logic.
-5.  **Phase 5:** Networking: Dynamic Routing & Reverse Proxy (Traefik).
-6.  **Phase 6:** Dev Experience: Webhooks (Deploy on Push) & Secrets.
-7.  **Phase 7:** Production Hardening: Resource Quotas & High Availability.
+2.  **Phase 2 (COMPLETED):** Reliability, Distributed Locking, and Orchestration.
+3.  **Phase 3 (COMPLETED):** The "Canvas" Dashboard (Live logs and visual status).
+4.  **Phase 4 (COMPLETED):** Build Engine: Native Docker integration and Subprocess logic.
+5.  **Phase 5 (COMPLETED):** Networking: Dynamic Routing & Reverse Proxy (Traefik).
+6.  **Phase 6 (COMPLETED):** Dev Experience: Webhooks (Deploy on Push) & Secrets.
+7.  **Phase 7 (COMPLETED):** Production Hardening: Resource Quotas & Rollbacks.
+8.  **Phase 8 (COMPLETED):** Full-Stack Control & Topology Map.
+9.  **Phase 9:** Smart Templates & Custom Plans.
 
 ## Engineering Constraints & Decisions
 

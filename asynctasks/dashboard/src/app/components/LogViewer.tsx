@@ -1,11 +1,31 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
-import { X, ExternalLink } from "lucide-react";
+import { X, ExternalLink, Globe } from "lucide-react";
+import { Job } from "../useJobs";
 
 export default function LogViewer({ jobId, onClose }: { jobId: string; onClose: () => void }) {
   const [logs, setLogs] = useState<any[]>([]);
+  const [job, setJob] = useState<Job | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
+
+  // Fetch job details to check status/result
+  useEffect(() => {
+    const fetchJob = async () => {
+      try {
+        const res = await fetch(`http://localhost:8000/jobs/${jobId}`);
+        if (res.ok) {
+          const data = await res.json();
+          setJob(data);
+        }
+      } catch (err) {
+        console.error("Failed to fetch job info:", err);
+      }
+    };
+    fetchJob();
+    const interval = setInterval(fetchJob, 2000);
+    return () => clearInterval(interval);
+  }, [jobId]);
 
   useEffect(() => {
     const ws = new WebSocket(`ws://localhost:8000/ws/logs/${jobId}`);
@@ -20,7 +40,6 @@ export default function LogViewer({ jobId, onClose }: { jobId: string; onClose: 
   const handleScroll = () => {
     if (!scrollRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
-    // If we are within 50px of the bottom, we consider it "at bottom"
     const atBottom = scrollHeight - scrollTop - clientHeight < 50;
     setIsAtBottom(atBottom);
   };
@@ -41,7 +60,6 @@ export default function LogViewer({ jobId, onClose }: { jobId: string; onClose: 
     return () => window.removeEventListener("keydown", handleEsc);
   }, [onClose]);
 
-  // Helper to detect and linkify URLs while highlighting the live line
   const renderLogMessage = (message: string) => {
     const urlRegex = /(https?:\/\/[^\s]+)/g;
     const parts = message.split(urlRegex);
@@ -114,17 +132,31 @@ export default function LogViewer({ jobId, onClose }: { jobId: string; onClose: 
             })}
           </div>
           
-          {!isAtBottom && logs.length > 0 && (
-            <button 
-              onClick={() => {
-                setIsAtBottom(true);
-                if(scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-              }}
-              className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-accent/90 hover:bg-accent text-white px-4 py-1.5 rounded-full text-xs font-bold shadow-lg transition-all animate-in fade-in slide-in-from-bottom-2"
-            >
-              Resume Auto-scroll
-            </button>
-          )}
+          <div className="absolute bottom-6 right-6 flex gap-3">
+             {job?.status === "success" && job.result?.url && (
+                <a 
+                  href={job.result.url} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="bg-green-500 hover:bg-green-600 text-white px-6 py-2 rounded-full text-xs font-bold shadow-lg transition-all flex items-center gap-2 animate-in fade-in zoom-in"
+                >
+                  <Globe className="w-3.5 h-3.5" />
+                  VIEW LIVE SITE
+                </a>
+             )}
+
+             {!isAtBottom && logs.length > 0 && (
+                <button 
+                  onClick={() => {
+                    setIsAtBottom(true);
+                    if(scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+                  }}
+                  className="bg-accent/90 hover:bg-accent text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg transition-all animate-in fade-in slide-in-from-bottom-2"
+                >
+                  Resume Auto-scroll
+                </button>
+             )}
+          </div>
         </div>
 
       </div>

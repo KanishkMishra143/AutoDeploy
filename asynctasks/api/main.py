@@ -4,6 +4,8 @@ from api.models import Base, Log
 from api.routes.jobs import router as jobs_router
 from fastapi.middleware.cors import CORSMiddleware
 import asyncio
+from api.routes.webhooks import router as webhooks_router
+from api.routes.apps import router as apps_router
 
 Base.metadata.create_all(bind=engine)
 app = FastAPI(title="AsyncTasks API")
@@ -15,6 +17,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(jobs_router)
+app.include_router(webhooks_router)
+app.include_router(apps_router)
+
 
 @app.get("/health")
 def health_check():

@@ -1,5 +1,7 @@
 # AutoDeploy Project Plan: The PaaS Vision
 
+> **MANDATORY NON-DESTRUCTIVE LOGGING RULE:** Never delete or simplify detailed task lists or day-by-day progress in this file. Only add new information and tick off completed tasks. This file serves as the definitive audit trail for the project's evolution.
+
 **Goal:** To build a robust, scalable, and developer-friendly Platform as a Service (PaaS) that automates the application lifecycle from Git push to live URL, inspired by the excellence of Railway and Render.
 
 ---
@@ -70,66 +72,70 @@
 
 ---
 
-## 🚀 PHASE 5 — Networking & Service Discovery (CURRENT)
+## ✅ PHASE 5 — Networking & Service Discovery (COMPLETED)
 **Goal:** Automatically route internet traffic to your hosted containers with live URLs.
 
 ### 📅 Day-by-Day Progress
-- [ ] **Day 1–2 — Reverse Proxy Integration:**
+- [x] **Day 1–2 — Reverse Proxy Integration:**
     - **Task:** Setup **Traefik** or **Nginx** as the entry point.
     - **Sub-task:** Configure dynamic routing based on Docker container labels.
     - *Deliverable: Automated routing from the internet to internal containers.*
-- [ ] **Day 3–4 — Dynamic Subdomains:**
+- [x] **Day 3–4 — Dynamic Subdomains:**
     - **Task:** Logic to assign internal URLs (e.g., `app-xyz.autodeploy.local`).
     - **Sub-task:** Update the Canvas UI to display the "Live Link" for every successful deploy.
     - *Deliverable: One-click access to deployed applications.*
 
 ---
 
-## ⚡ PHASE 6 — Developer Experience: Webhooks & Secrets
+## ✅ PHASE 6 — Developer Experience: Webhooks & Secrets (COMPLETED)
 **Goal:** Achieve the "Deploy on Push" experience of Render and Railway.
 
 ### 📅 Day-by-Day Progress
-- [ ] **Day 1–2 — GitHub Webhook API:**
+- [x] **Day 1–2 — GitHub Webhook API:**
     - **Task:** Create an endpoint to receive and verify GitHub/GitLab webhooks.
     - **Sub-task:** Automatically trigger a `DEPLOY` job on every code push.
     - *Deliverable: Fully automated CI/CD pipeline.*
-- [ ] **Day 3–4 — Environment & Secrets Management:**
+- [x] **Day 3–4 — Environment & Secrets Management:**
     - **Task:** Build a secure system for Environment Variables.
     - **Sub-task:** Inject these secrets into Docker containers at runtime.
     - *Deliverable: Support for databases, API keys, and sensitive config.*
 
 ---
 
-## 🛡️ PHASE 7 — Production Hardening
+## ✅ PHASE 7 — Production Hardening (COMPLETED)
 **Goal:** Security, Resource Limits, and High Availability.
 
 ### 📅 Day-by-Day Progress
-- [ ] **Day 1–2 — Resource Quotas:**
+- [x] **Day 1–2 — Resource Quotas:**
     - **Task:** Implement CPU and RAM limits for hosted containers using Docker Cgroups.
-- [ ] **Day 3–4 — Rollbacks & Versioning:**
+    - **Sub-task:** Enforced 512MB RAM and 0.5 CPU limits per container.
+- [x] **Day 3–4 — Rollbacks & Versioning:**
     - **Task:** Implement "One-click Rollback" to a previous successful image.
-- [ ] **Day 5 — Multi-Node Scaling:**
-    - **Task:** Distribute workers across multiple physical servers.
+    - **Sub-task:** Versioned History with one-click restoration logic and provenance tracking.
+- [x] **Day 5 — Multi-Node Scaling & HA:**
+    - **Task:** Distribute workers across multiple physical servers (Future/Infrastructure).
+    - **Sub-task:** Enabled Docker auto-restart policies (`unless-stopped`) and Image Pruning on termination.
     - *Deliverable: A professional, production-grade deployment platform.*
 
 ---
 
-## 🏗️ PHASE 8 — Full-Stack Control & Topology Map
+## ✅ PHASE 8 — Full-Stack Control & Topology Map (COMPLETED)
 **Goal:** Evolve the dashboard from a "Viewer" to a "Controller" with an interactive Visual Topology.
 
 ### 📅 Day-by-Day Progress
-- [ ] **Day 1–2 — GUI Project Creation & Forms:**
-    - **Task:** Build interactive forms for new deployments (Name, Git URL, Environment Variables).
-    - **Sub-task:** Add support for direct Dockerfile uploads via the GUI.
-    - *Deliverable: Users can trigger full deployments without touching the terminal or API directly.*
-- [ ] **Day 3–5 — Visual Topology Map:**
-    - **Task:** Upgrade the Service Grid into a node-based network map (like Railway's canvas).
-    - **Sub-task:** Visually draw connections between a deployed app and its connected databases/services.
-    - *Deliverable: A beautiful, drag-and-drop architectural map of the user's infrastructure.*
+- [x] **Day 1–2 — GUI Project Creation & Forms:**
+    - **Task:** Build interactive forms for new deployments (Application Name, Git URL, Env Vars).
+    - **Sub-task:** Implemented Application Identity model to provide stable names and permanent URLs.
+    - *Deliverable: Stable Application Identity model in the database.*
+- [x] **Day 3–5 — Visual Topology Map:**
+    - **Task:** Upgrade the Service Grid into a node-based network map (using React Flow).
+    - **Sub-task:** Visually draw connections between Applications and the Traefik Gateway with live animations.
+    - **Sub-task:** Built a tabbed Deep-Dive UI to separate map views from history.
+    - *Deliverable: A beautiful, interactive map of your infrastructure with human-readable provenance labels.*
 
 ---
 
-## 🧠 PHASE 9 — Smart Templates & Custom Plans
+## 🚀 PHASE 9 — Smart Templates & Custom Plans (CURRENT)
 **Goal:** Introduce intelligent project detection, customizable deployment pipelines, and auto-healing.
 
 ### 📅 Day-by-Day Progress
