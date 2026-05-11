@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { X, Clock, RotateCcw, AlertCircle, Box, ExternalLink, Globe, Activity, History as HistoryIcon, Layers } from "lucide-react";
+import { X, Clock, RotateCcw, AlertCircle, Box, ExternalLink, Globe, Activity, History as HistoryIcon, Layers, Terminal, Trash2 } from "lucide-react";
 import { Job, Application } from "../useJobs";
 import TopologyMap from "./TopologyMap";
 
@@ -16,6 +16,7 @@ export default function AppDetailModal({ app, onClose, onViewLogs, allJobs, allA
   const [historyJobs, setHistoryJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"topology" | "history">("topology");
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const fetchHistory = async () => {
     try {
@@ -28,6 +29,25 @@ export default function AppDetailModal({ app, onClose, onViewLogs, allJobs, allA
       console.error("Failed to fetch history:", err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDeleteApp = async () => {
+    if (!confirm(`Are you sure you want to delete "${app.name}"? This will permanently remove all deployment history and stop the running container.`)) return;
+    
+    setIsDeleting(true);
+    try {
+      const res = await fetch(`http://localhost:8000/apps/${app.id}`, { method: "DELETE" });
+      if (res.ok) {
+        onClose();
+      } else {
+        alert("Failed to delete application");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error deleting application");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -92,9 +112,19 @@ export default function AppDetailModal({ app, onClose, onViewLogs, allJobs, allA
                 </div>
              </div>
           </div>
-          <button onClick={onClose} className="p-2 bg-white/5 hover:bg-white/10 rounded-full text-gray-400 hover:text-white transition-all">
-            <X className="w-6 h-6" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button 
+                onClick={handleDeleteApp}
+                disabled={isDeleting}
+                className="flex items-center gap-2 px-4 py-2 bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white text-[10px] font-black rounded-xl transition-all uppercase tracking-widest border border-red-500/20 disabled:opacity-50"
+            >
+                <Trash2 className="w-3.5 h-3.5" />
+                {isDeleting ? "DELETING..." : "DELETE APP"}
+            </button>
+            <button onClick={onClose} className="p-2 bg-white/5 hover:bg-white/10 rounded-full text-gray-400 hover:text-white transition-all">
+                <X className="w-6 h-6" />
+            </button>
+          </div>
         </div>
 
         {/* Tab Navigation */}
@@ -183,7 +213,7 @@ export default function AppDetailModal({ app, onClose, onViewLogs, allJobs, allA
                               className="p-2.5 bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white rounded-xl transition-all"
                               title="Terminal Logs"
                             >
-                              <RotateCcw className="w-4 h-4 rotate-180" />
+                              <Terminal className="w-4 h-4" />
                             </button>
                             {job.status === 'success' && !isLatest && (
                                <button 

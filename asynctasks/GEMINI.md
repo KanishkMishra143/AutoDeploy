@@ -6,16 +6,18 @@
 
 ## Persistent Progress Log
 
-### 📅 Sunday, May 10, 2026
-- **Status:** Phase 8 Complete — Phase 9 In Progress.
+### 📅 Monday, May 11, 2026
+- **Status:** Phase 9 In Progress.
 - **Milestones:**
-    - **Day 8-10:** Established the Visual Control Plane, Heartbeats, and WebSocket log streaming.
-    - **Day 11:** Finalized Build Engine & Networking: Verified Git-to-Docker pipeline with Traefik v2.11 and "VIEW LIVE" dashboard links.
-    - **Day 12:** Developer Experience Overhaul: Implemented GitHub Webhooks and a visual "Deploy New" modal with integrated Secret/Env Management.
-    - **Day 13:** Production Hardening: Enforced CPU/RAM quotas, implemented container auto-recovery, and built a persistent volume infrastructure for Postgres/Redis.
-    - **Day 14:** Architectural Evolution: Performed a "Heart Transplant" from Job-Centric to Application-Centric deployments. Built a Versioned History system with stable Application URLs.
-    - **Day 15 (Final Today):** Visual Sovereignty: Implemented a professional **Interactive Topology Map** using React Flow. Enhanced the App Deep-Dive with a **Tabbed UI**, **Provenance Tracking** (Manual/Webhook/Rollback), and human-readable **Rollback Metadata** (e.g., "Restored from Version 4").
-- **Next Task:** Phase 9 — Smart Templates & Custom Plans (Auto-detection of tech stacks).
+    - **Smart Templates & Stacks:** Implemented explicit "Stack Selection" (Python, Node.js, Static) during application creation.
+    - **Template Injection:** Built a worker engine that injects standard `Dockerfile` templates if a native one is missing, supporting multiple frameworks.
+    - **Branch Awareness:** Integrated dynamic branch discovery using `git ls-remote` and updated the worker to support targeted branch cloning.
+    - **Dynamic Port Routing:** Resolved "Bad Gateway" issues by implementing dynamic internal port mapping (e.g., port 80 for Static Nginx, 8000 for APIs).
+    - **GUI Management:** Added a "Delete Application" feature to the dashboard that cleans up both the database and the running Docker container.
+    - **UX Enhancements:** Improved the Deployment History UI with a dedicated "Terminal" icon for instant log access.
+- **Next Task:** 
+    1. **Urgent Fix:** Repair the "Terminal" log button in the Deployment History tab (Deep-Dive Modal) which is currently non-functional.
+    2. Phase 9 Day 3-4 — Customizable Deployment DAG (Directed Acyclic Graph).
 
 ## Mentor Memory (Architectural Notes)
 - **Timezone Sync:** Always use `datetime.utcnow()` for heartbeats to ensure the API, Worker, and DB are synchronized regardless of local machine settings.

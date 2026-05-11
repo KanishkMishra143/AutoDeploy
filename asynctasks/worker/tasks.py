@@ -10,6 +10,32 @@ from api.models import Job, Log, Worker
 from celery.utils.log import get_task_logger
 import socket
 
+STACK_TEMPLATES = {
+    "python": """
+FROM python:3.11-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY . .
+EXPOSE 8000
+CMD ["python", "main.py"]
+""",
+    "nodejs":"""
+FROM node:20-slim
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+COPY . .
+EXPOSE 8000
+CMD ["npm", "start"]    
+""",
+    "static": """
+FROM nginx:alpine
+COPY . /usr/share/nginx/html
+EXPOSE 80    
+"""
+}
+
 logger = get_task_logger(__name__)
 
 def save_log(db, job_id, message):
@@ -40,7 +66,7 @@ def run_command(db, job_id, command, cwd=None):
     if return_code != 0:
         raise subprocess.CalledProcessError(return_code, command)
 
-def run_container(db, job_id, image_tag, env_vars=None, app_name=None):
+def run_container(db, job_id, image_tag, env_vars=None, app_name=None, internal_port=8000):
     """Starts a Docker container with Hardened Resource Quotas and Traefik labels."""
     # Use app_name for stable naming if available, otherwise fallback to job_id
     if app_name:
@@ -69,7 +95,7 @@ def run_container(db, job_id, image_tag, env_vars=None, app_name=None):
     labels = [
         "--label", "traefik.enable=true",
         "--label", f"traefik.http.routers.{container_name}.rule=Host(`{hostname}`)",
-        "--label", f"traefik.http.services.{container_name}.loadbalancer.server.port=8000",
+        "--label", f"traefik.http.services.{container_name}.loadbalancer.server.port={internal_port}",
     ]
 
     # 3. Environment Variables
@@ -85,14 +111,14 @@ def run_container(db, job_id, image_tag, env_vars=None, app_name=None):
         "--name", container_name, 
         "--network", network_name,
         "--restart", "unless-stopped"
-    ] + resource_flags + labels + env_flags + ["-p", "0:8000", image_tag]
+    ] + resource_flags + labels + env_flags + ["-p", f"0:{internal_port}", image_tag]
 
     result = subprocess.run(command, capture_output=True, text=True, check=True)
     container_id = result.stdout.strip()
 
     # Find host port
     inspect_result = subprocess.run(
-        ["docker", "inspect", "--format", "{{(index (index .NetworkSettings.Ports \"8000/tcp\") 0).HostPort}}", container_name],
+        ["docker", "inspect", "--format", f"{{{{(index (index .NetworkSettings.Ports \"{internal_port}/tcp\") 0).HostPort}}}}", container_name],
         capture_output=True, text=True, check=True
     )
     assigned_port = inspect_result.stdout.strip()
@@ -108,11 +134,11 @@ def run_container(db, job_id, image_tag, env_vars=None, app_name=None):
         "url": f"http://{hostname}"
     }
 
-def clone_repository(repo_url: str, dest_dir: str) -> None:
-    """Clones a git repository into a destination directory using the OS git binary."""
+def clone_repository(repo_url: str, dest_dir: str, branch: str = "main") -> None:
+    """Clones a specific branch of a git repository."""
     try:
         subprocess.run(
-            ["git", "clone", repo_url, dest_dir],
+            ["git", "clone", "-b", branch, repo_url, dest_dir],
             capture_output=True,
             text=True,
             check=True
@@ -123,25 +149,47 @@ def clone_repository(repo_url: str, dest_dir: str) -> None:
 def run_deploy_logic(db, job_id, payload):
     """Contains the specific steps for a DEPLOYMENT job."""
     repo_url = payload.get("repo")
+    branch = payload.get("branch", "main")
     env_vars = payload.get("env", {})
-    app_name = payload.get("app_name") # Extract the identity
+    app_name = payload.get("app_name") 
+    stack = payload.get("stack", "dockerfile")
     
     if not repo_url:
         raise ValueError("Repository URL is missing in the payload.")
         
-    save_log(db, job_id, f"Starting deployment process for: {repo_url}")
+    save_log(db, job_id, f"Starting deployment process for: {repo_url} (branch: {branch})")
     
-    # 1. Create an isolated temporary workspace
+    # Create an isolated temporary workspace
     workspace_dir = tempfile.mkdtemp(prefix=f"build_{job_id}_")
     save_log(db, job_id, f"Created isolated workspace: {workspace_dir}")
 
     try:
-        # 2. Clone the repository into the workspace
-        save_log(db, job_id, "Cloning repository...")
-        clone_repository(repo_url, workspace_dir)
+        # Clone the repository into the workspace
+        save_log(db, job_id, f"Cloning repository branch: {branch}...")
+        clone_repository(repo_url, workspace_dir, branch=branch)
         save_log(db, job_id, "Repository successfully cloned.")
 
-        # 3. Docker Build
+        dockerfile_path = os.path.join(workspace_dir, "Dockerfile")
+
+        # Determine the internal port based on the stack
+        # Static Nginx uses 80, our Node/Python templates use 8000
+        internal_port = 80 if stack == "static" else 8000
+
+        if not os.path.exists(dockerfile_path):
+            if stack == "dockerfile":
+                raise ValueError("No Dockerfile found in repository, and no stack template selected.")
+
+            if stack in STACK_TEMPLATES:
+                save_log(db, job_id, f"💡 No Dockerfile found. Injecting template for stack: {stack}...")
+                with open(dockerfile_path, "w") as f:
+                    f.write(STACK_TEMPLATES[stack].strip())
+                save_log(db, job_id, "✅ Template injected successfully.")
+            else:
+                raise ValueError(f"Unknown stack template: {stack}")
+        else:
+            save_log(db, job_id, "Native Dockerfile detected. Using repository's own build configuration.")
+
+        # Docker Build
         image_tag = f"autodeploy-app:{str(job_id)[:8]}" 
         save_log(db, job_id, f"📦 Starting Docker build for image: {image_tag}...")
         
@@ -152,9 +200,9 @@ def run_deploy_logic(db, job_id, payload):
             save_log(db, job_id, f"❌ Docker build failed: {str(e)}")
             raise
 
-        # 4. Docker Run (Passing the app_name for stable naming)
-        deploy_info = run_container(db, job_id, image_tag, env_vars=env_vars, app_name=app_name)
-        
+        # Docker Run (Passing the app_name for stable naming)
+        deploy_info = run_container(db, job_id, image_tag, env_vars=env_vars, app_name=app_name, internal_port=internal_port)
+    
         save_log(db, job_id, "Deployment finished successfully!")
         
         return {
@@ -164,7 +212,7 @@ def run_deploy_logic(db, job_id, payload):
             "url": deploy_info["url"]
         }
     finally:
-        # 5. Mandatory Cleanup
+        # Mandatory Cleanup
         save_log(db, job_id, "Cleaning up workspace...")
         shutil.rmtree(workspace_dir, ignore_errors=True)
         save_log(db, job_id, "✅ Deployment process complete. Job finished.")

@@ -7,12 +7,15 @@ from datetime import datetime
 class AppCreate(BaseModel):
     name: str
     repo_url: str
+    branch: str = "main"
+    stack: str = "dockerfile"
     env_vars: Optional[Dict[str, str]] = {}
 
 
 class AppUpdate(BaseModel):
     name: Optional[str] = None
     repo_url: Optional[str] = None
+    branch: Optional[str] = None
     env_vars: Optional[Dict[str, str]] = None
 
 
@@ -20,6 +23,8 @@ class AppResponse(BaseModel):
     id: UUID
     name: str
     repo_url: str
+    branch: str
+    stack: str
     env_vars: Dict[str, str]
     created_at: datetime
     updated_at: datetime

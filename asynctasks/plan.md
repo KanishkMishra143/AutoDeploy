@@ -139,10 +139,13 @@
 **Goal:** Introduce intelligent project detection, customizable deployment pipelines, and auto-healing.
 
 ### 📅 Day-by-Day Progress
-- [ ] **Day 1–2 — Auto-Detection & Proposed Plans:**
-    - **Task:** Worker analyzes uploaded Dockerfiles or Git repos to determine the tech stack.
-    - **Sub-task:** Present a "Proposed Deployment Plan" to the user based on pre-defined templates (e.g., Next.js Template, Python API Template).
-    - *Deliverable: Frictionless onboarding for standard frameworks.*
+- [x] **Day 1–2 — Explicit Stacks & Template Injection:**
+    - **Task:** Allow users to choose their tech stack (Python/Node/Static) during creation.
+    - **Sub-task:** Worker injects standard Dockerfiles if native ones are missing.
+    - **Sub-task:** Implemented dynamic branch discovery and targeted branch cloning.
+    - **Sub-task:** Added "Delete Application" GUI feature with full container cleanup.
+    - **Sub-task:** Enhanced History UI with direct "Terminal" log access.
+    - *Deliverable: Frictionless onboarding for standard frameworks with branch support.*
 - [ ] **Day 3–4 — Customizable Deployment DAG (Directed Acyclic Graph):**
     - **Task:** Allow users to insert manual steps (e.g., "Run DB Migration") before or after the standard build step.
     - **Sub-task:** Refactor Celery tasks into 'Chains' to execute these custom steps sequentially.

@@ -7,7 +7,31 @@ from api.schemas import AppCreate, AppResponse, AppListResponse, JobResponse
 from worker.tasks import process_job
 from uuid import UUID
 
+import subprocess
+
 router = APIRouter(prefix="/apps", tags=["apps"])
+
+@router.get("/branches")
+def get_repo_branches(repo_url: str):
+    """Fetches all branches from a remote repository without cloning."""
+    try:
+        result = subprocess.run(
+            ["git", "ls-remote", "--heads", repo_url],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        # Parse the output: refs/heads/main -> main
+        branches = []
+        for line in result.stdout.strip().split("\n"):
+            if line:
+                ref = line.split("\t")[1]
+                branch_name = ref.replace("refs/heads/", "")
+                branches.append(branch_name)
+        
+        return {"branches": branches}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to fetch branches: {str(e)}")
 
 @router.post("", response_model=AppResponse)
 def create_app(app: AppCreate, db: Session = Depends(get_db)):
@@ -19,6 +43,8 @@ def create_app(app: AppCreate, db: Session = Depends(get_db)):
     new_app = Application(
         name=app.name,
         repo_url=app.repo_url,
+        branch=app.branch,
+        stack=app.stack,
         env_vars=app.env_vars
     )
     db.add(new_app)
@@ -54,8 +80,10 @@ def deploy_app(app_id: UUID, db: Session = Depends(get_db)):
         trigger_reason="Manual", # Tracking the reason
         payload={
             "repo": app.repo_url,
+            "branch": app.branch,
             "env": app.env_vars,
-            "app_name": app.name
+            "app_name": app.name,
+            "stack": app.stack
         }
     )
     db.add(new_job)
@@ -67,10 +95,14 @@ def deploy_app(app_id: UUID, db: Session = Depends(get_db)):
 
 @router.delete("/{app_id}")
 def delete_app(app_id: UUID, db: Session = Depends(get_db)):
-    """Deletes an application and all its history."""
+    """Deletes an application and all its history, including the Docker container."""
     app = db.query(Application).filter(Application.id == app_id).first()
     if not app:
         raise HTTPException(status_code=404, detail="Application not found")
+    
+    # Kill the container if it's running
+    container_name = f"autodeploy_{app.name.lower().replace(' ', '')}" # Matches worker's naming logic
+    subprocess.run(["docker", "rm", "-f", container_name], capture_output=True)
     
     db.delete(app)
     db.commit()
