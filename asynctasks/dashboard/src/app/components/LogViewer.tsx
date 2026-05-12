@@ -89,7 +89,7 @@ export default function LogViewer({ jobId, onClose }: { jobId: string; onClose: 
   return (
     <div 
       onClick={(e) => e.target === e.currentTarget && onClose()}
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 cursor-default"
+      className="fixed inset-0 z-[600] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 cursor-default"
     >
       <div className="w-full max-w-4xl bg-card border border-card-border rounded-xl shadow-2xl overflow-hidden flex flex-col h-[80vh] cursor-default">
         

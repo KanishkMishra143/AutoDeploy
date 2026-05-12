@@ -175,7 +175,7 @@ export default function AppDetailModal({ app, onClose, onViewLogs, allJobs, allA
   return (
     <div 
       onClick={(e) => e.target === e.currentTarget && onClose()}
-      className="fixed inset-0 z-[400] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 animate-in fade-in duration-300"
+      className="fixed inset-0 z-[500] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 animate-in fade-in duration-300"
     >
       <div className="w-full max-w-4xl bg-card border border-card-border rounded-[32px] shadow-2xl overflow-hidden flex flex-col h-[90vh] animate-in zoom-in-95 duration-300">
         

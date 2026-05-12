@@ -20,16 +20,34 @@ export default function CanvasPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
 
-  // Pick up jobId from URL if present
+  // Pick up jobId or appId from URL if present
   useEffect(() => {
     const jobId = searchParams.get('jobId');
+    const appId = searchParams.get('appId');
+    
     if (jobId) {
       setSelectedJobId(jobId);
+    }
+    if (appId) {
+      setSelectedAppId(appId);
+    }
+
+    if (jobId || appId) {
       // Clean up URL
       router.replace('/');
     }
   }, [searchParams, router]);
+
+  // Sync selectedApp with selectedAppId
+  useEffect(() => {
+    if (selectedAppId && apps.length > 0) {
+      const app = apps.find(a => a.id === selectedAppId);
+      if (app) setSelectedApp(app);
+      setSelectedAppId(null);
+    }
+  }, [selectedAppId, apps]);
 
   const [showDeployModal, setShowDeployModal] = useState(false);
   const [selectedApp, setSelectedApp] = useState<Application | null>(null);
@@ -141,6 +159,7 @@ export default function CanvasPage() {
         apps={apps}
         onViewJob={setSelectedJobId}
         onSelectApp={setSelectedApp}
+        isModalOpen={showDeployModal || !!selectedApp || confirmConfig.isOpen || !!selectedJobId}
       />
 
       <main className="pt-32 pb-20 px-8">
@@ -256,7 +275,7 @@ export default function CanvasPage() {
                   <div 
                     key={app.id} 
                     onClick={() => setSelectedApp(app)}
-                    className="group relative pt-6"
+                    className="group relative pt-6 z-10 hover:z-20 transition-[z-index] duration-0"
                   >
                     {/* Smart Progress Tab (Slides out from top) */}
                     <div className={`absolute top-0 left-0 right-0 h-20 bg-accent rounded-t-[28px] flex items-start pt-4 px-8 transition-all duration-500 ease-out z-0 ${isRunning ? '-translate-y-8 opacity-100' : 'translate-y-0 opacity-0 pointer-events-none'}`}>

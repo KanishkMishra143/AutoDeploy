@@ -53,6 +53,8 @@ export default function SettingsPage() {
         jobs={jobs}
         apps={apps}
         onViewJob={onViewJob}
+        onSelectApp={(app) => router.push(`/?appId=${app.id}`)}
+        isModalOpen={isPurgeModalOpen}
       />
 
       <main className="pt-32 pb-20 px-8">

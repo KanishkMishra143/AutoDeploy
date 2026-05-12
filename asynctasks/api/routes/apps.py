@@ -93,6 +93,19 @@ def deploy_app(app_id: UUID, db: Session = Depends(get_db)):
     process_job.delay(str(new_job.id))
     return new_job
 
+@router.delete("/purge")
+def purge_apps(db: Session = Depends(get_db)):
+    """Deletes ALL applications and their containers. Destructive operation."""
+    apps = db.query(Application).all()
+    
+    for app in apps:
+        container_name = f"autodeploy_{app.name.lower().replace(' ', '')}"
+        subprocess.run(["docker", "rm", "-f", container_name], capture_output=True)
+        db.delete(app)
+    
+    db.commit()
+    return {"message": f"Successfully purged {len(apps)} applications and cleaned up containers."}
+
 @router.delete("/{app_id}")
 def delete_app(app_id: UUID, db: Session = Depends(get_db)):
     """Deletes an application and all its history, including the Docker container."""
@@ -107,19 +120,6 @@ def delete_app(app_id: UUID, db: Session = Depends(get_db)):
     db.delete(app)
     db.commit()
     return {"message": f"Application '{app.name}' and all associated jobs deleted."}
-
-@router.delete("/purge")
-def purge_apps(db: Session = Depends(get_db)):
-    """Deletes ALL applications and their containers. Destructive operation."""
-    apps = db.query(Application).all()
-    
-    for app in apps:
-        container_name = f"autodeploy_{app.name.lower().replace(' ', '')}"
-        subprocess.run(["docker", "rm", "-f", container_name], capture_output=True)
-        db.delete(app)
-    
-    db.commit()
-    return {"message": f"Successfully purged {len(apps)} applications and cleaned up containers."}
 
 @router.patch("/{app_id}", response_model=AppResponse)
 def update_app(app_id: UUID, payload: dict, db: Session = Depends(get_db)):

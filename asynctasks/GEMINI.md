@@ -68,10 +68,10 @@ asynctasks/
 │   └── tasks.py        # Asynchronous task definitions (Deploy/Scan/Build)
 ├── docker-compose.yml  # Local infrastructure (Postgres, Redis, Proxy)
 ├── pyproject.toml      # Modern dependency management via uv
-└── plan.md             # The 7-Phase Strategic Roadmap
+└── plan.md             # The 13-Phase Strategic Roadmap
 ```
 
-## Strategic Roadmap (9 Phases)
+## Strategic Roadmap (13 Phases)
 
 1.  **Phase 1 (COMPLETED):** AsyncTasks Core & Basic Job Lifecycle.
 2.  **Phase 2 (COMPLETED):** Reliability, Distributed Locking, and Orchestration.
@@ -82,6 +82,10 @@ asynctasks/
 7.  **Phase 7 (COMPLETED):** Production Hardening: Resource Quotas & Rollbacks.
 8.  **Phase 8 (COMPLETED):** Full-Stack Control & Topology Map.
 9.  **Phase 9:** Smart Templates & Custom Plans.
+10. **Phase 10:** Enterprise Identity & Security.
+11. **Phase 11:** The AutoDeploy CLI.
+12. **Phase 12:** Enterprise-Grade Distribution.
+13. **Phase 13:** Scaling & Monetization.
 
 ## Engineering Constraints & Decisions
 

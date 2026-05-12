@@ -22,13 +22,13 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   if (!isOpen) return null;
 
   return (
-    <div 
-      className="fixed inset-0 z-[300] flex items-center justify-center p-4 animate-in fade-in duration-200"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-    >
-      <div className="fixed inset-0 bg-black/60 backdrop-blur-md" />
+    <div className="fixed inset-0 z-[700] flex items-center justify-center p-4 animate-in fade-in duration-200 pointer-events-none">
+      <div 
+        className="fixed inset-0 bg-black/60 backdrop-blur-md pointer-events-auto cursor-pointer" 
+        onClick={onClose}
+      />
       
-      <div className="relative w-full max-w-2xl bg-card border border-card-border rounded-[32px] shadow-2xl overflow-hidden flex flex-col h-[70vh] animate-in zoom-in-95 duration-200">
+      <div className="relative w-full max-w-2xl bg-card border border-card-border rounded-[32px] shadow-2xl overflow-hidden flex flex-col h-[70vh] animate-in zoom-in-95 duration-200 pointer-events-auto">
         {/* Header */}
         <div className="p-6 border-b border-card-border flex justify-between items-center bg-background/50">
           <div className="flex items-center gap-3">

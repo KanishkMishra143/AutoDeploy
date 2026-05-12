@@ -55,13 +55,13 @@ export default function CommandPalette({ isOpen, onClose, apps, onSelectApp }: C
   if (!isOpen) return null;
 
   return (
-    <div 
-      className="fixed inset-0 z-[200] flex items-start justify-center pt-[15vh] px-4 animate-in fade-in duration-200"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-    >
-      <div className="fixed inset-0 bg-black/60 backdrop-blur-md" />
+    <div className="fixed inset-0 z-[200] flex items-start justify-center pt-[15vh] px-4 animate-in fade-in duration-200 pointer-events-none">
+      <div 
+        className="fixed inset-0 bg-black/60 backdrop-blur-md pointer-events-auto cursor-pointer" 
+        onClick={onClose}
+      />
       
-      <div className="relative w-full max-w-2xl bg-card border border-card-border rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
+      <div className="relative w-full max-w-2xl bg-card border border-card-border rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-200 pointer-events-auto">
         <div className="flex items-center px-6 py-4 border-b border-card-border bg-background/50">
           <Search className="w-5 h-5 text-accent mr-4" />
           <input 

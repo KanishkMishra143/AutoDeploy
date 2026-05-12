@@ -25,9 +25,9 @@ export default function PurgeModal({ isOpen, onClose, onConfirm }: PurgeModalPro
 
   const handleFinalConfirm = async () => {
     if (confirmText !== "PURGE") return;
-    setLoading(True);
+    setLoading(true);
     await onConfirm();
-    setLoading(False);
+    setLoading(false);
     onClose();
   };
 

@@ -3,8 +3,11 @@ import { Toaster } from "react-hot-toast";
 import "./globals.css";
 
 export const metadata: Metadata = {
-    title: "AutoDeploy | Canvas",
+    title: "AutoDeploy | Orchestrator",
     description: "Modern Async Orchestration",
+    icons: {
+        icon: "/icon.svg",
+    },
 };
 
 export default function RootLayout({

@@ -169,7 +169,7 @@
 
 ---
 
-## 🔐 PHASE 12 — Enterprise Identity & Security
+## 🔐 PHASE 10 — Enterprise Identity & Security
 **Goal:** Transition from a local tool to a multi-tenant platform.
 - [ ] **OAuth & JWT Integration:** Implement Github/Google login for developers.
 - [ ] **Role-Based Access Control (RBAC):** Define Admin vs. Viewer roles for cluster management.
@@ -178,16 +178,7 @@
 
 ---
 
-## 💸 PHASE 13 — Scaling & Monetization (The PaaS Business)
-**Goal:** Infrastructure for team-based scaling and resource management.
-- [ ] **Team Workspaces:** Allow multiple developers to share a project/cluster.
-- [ ] **Resource Quotas:** Limit CPU/RAM usage per team or project.
-- [ ] **Usage-Based Billing:** Implement Stripe integration for "Pay as you go" container hosting.
-- [ ] **Custom Domains & SSL:** Automated Let's Encrypt provisioning for production URLs.
-
----
-
-## 💻 PHASE 14 — The AutoDeploy CLI
+## 💻 PHASE 11 — The AutoDeploy CLI
 **Goal:** Provide professional developers with total terminal control, running parallel to the GUI.
 
 ### 📅 Day-by-Day Progress
@@ -202,7 +193,7 @@
 
 ---
 
-## 📦 PHASE 15 — Enterprise-Grade Distribution
+## 📦 PHASE 12 — Enterprise-Grade Distribution
 **Goal:** Deliver a "Big Tech" installation experience where the GUI, CLI, and Engine are seamlessly deployed as a single, professional product.
 
 ### 📅 Day-by-Day Progress
@@ -222,3 +213,12 @@
     - **Task:** Finalize custom app icons, splash screens, and digitally sign the installer.
     - **Sub-task:** Perform "Clean Install" tests on fresh Windows machines to guarantee consistent GUI/CLI results.
     - *Deliverable: A high-fidelity, production-ready release package.*
+
+---
+
+## 💸 PHASE 13 — Scaling & Monetization (The PaaS Business)
+**Goal:** Infrastructure for team-based scaling and resource management.
+- [ ] **Team Workspaces:** Allow multiple developers to share a project/cluster.
+- [ ] **Resource Quotas:** Limit CPU/RAM usage per team or project.
+- [ ] **Usage-Based Billing:** Implement Stripe integration for "Pay as you go" container hosting.
+- [ ] **Custom Domains & SSL:** Automated Let's Encrypt provisioning for production URLs.
