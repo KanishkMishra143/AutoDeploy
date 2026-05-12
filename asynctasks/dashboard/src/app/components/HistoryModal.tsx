@@ -1,8 +1,10 @@
 "use client";
 import { useState, useEffect } from "react";
-import { X, Clock, RotateCcw, AlertCircle, Box, ExternalLink, Globe, Activity, History as HistoryIcon, Layers, Terminal, Trash2 } from "lucide-react";
+import { X, Clock, RotateCcw, AlertCircle, Box, ExternalLink, Globe, Activity, History as HistoryIcon, Layers, Terminal, Trash2, Settings, Plus, Save } from "lucide-react";
+import toast from "react-hot-toast";
 import { Job, Application } from "../useJobs";
 import TopologyMap from "./TopologyMap";
+import ConfirmationModal from "./ConfirmationModal";
 
 interface AppDetailModalProps {
   app: Application;
@@ -15,8 +17,29 @@ interface AppDetailModalProps {
 export default function AppDetailModal({ app, onClose, onViewLogs, allJobs, allApps }: AppDetailModalProps) {
   const [historyJobs, setHistoryJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"topology" | "history">("topology");
+  const [activeTab, setActiveTab] = useState<"topology" | "history" | "settings">("topology");
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  
+  // Local Env Vars for editing
+  const [localEnv, setLocalEnv] = useState<{key: string, value: string}[]>([]);
+
+  // Confirmation Modal State
+  const [confirmConfig, setConfirmConfig] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmLabel: string;
+    confirmVariant: "danger" | "accent";
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: "",
+    message: "",
+    confirmLabel: "",
+    confirmVariant: "accent",
+    onConfirm: () => {}
+  });
 
   const fetchHistory = async () => {
     try {
@@ -32,23 +55,102 @@ export default function AppDetailModal({ app, onClose, onViewLogs, allJobs, allA
     }
   };
 
-  const handleDeleteApp = async () => {
-    if (!confirm(`Are you sure you want to delete "${app.name}"? This will permanently remove all deployment history and stop the running container.`)) return;
-    
-    setIsDeleting(true);
+  useEffect(() => {
+    // Initialize env vars from app data
+    if (app.env_vars) {
+      const vars = Object.entries(app.env_vars).map(([key, value]) => ({ 
+        key, 
+        value: String(value) 
+      }));
+      setLocalEnv(vars.length > 0 ? vars : [{key: "", value: ""}]);
+    } else {
+      setLocalEnv([{key: "", value: ""}]);
+    }
+  }, [app]);
+
+  const handleDeleteApp = () => {
+    setConfirmConfig({
+      isOpen: true,
+      title: "Delete Application",
+      message: `Are you sure you want to delete "${app.name}"? This will permanently remove all deployment history and stop the running container. This action cannot be undone.`,
+      confirmLabel: "Delete permanently",
+      confirmVariant: "danger",
+      onConfirm: async () => {
+        setIsDeleting(true);
+        const tId = toast.loading(`Deleting ${app.name}...`);
+        try {
+          const res = await fetch(`http://localhost:8000/apps/${app.id}`, { method: "DELETE" });
+          if (res.ok) {
+            toast.success("Application successfully purged", { id: tId });
+            onClose();
+          } else {
+            toast.error("Deletion failed", { id: tId });
+          }
+        } catch (err) {
+          console.error(err);
+          toast.error("Network error during deletion", { id: tId });
+        } finally {
+          setIsDeleting(false);
+          setConfirmConfig(prev => ({ ...prev, isOpen: false }));
+        }
+      }
+    });
+  };
+
+  const handleSaveSettings = async () => {
+    setIsSaving(true);
+    const tId = toast.loading("Saving configuration...");
+    const envObj = localEnv.reduce((acc, curr) => {
+      if (curr.key) acc[curr.key] = curr.value;
+      return acc;
+    }, {} as Record<string, string>);
+
     try {
-      const res = await fetch(`http://localhost:8000/apps/${app.id}`, { method: "DELETE" });
+      const res = await fetch(`http://localhost:8000/apps/${app.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ env_vars: envObj })
+      });
       if (res.ok) {
-        onClose();
+         toast.success("Settings saved. Redeploy to apply changes.", { id: tId });
       } else {
-        alert("Failed to delete application");
+         toast.error("Failed to save settings", { id: tId });
       }
     } catch (err) {
       console.error(err);
-      alert("Error deleting application");
+      toast.error("Connection error", { id: tId });
     } finally {
-      setIsDeleting(false);
+      setIsSaving(false);
     }
+  };
+
+  const handleRollback = (jobId: string) => {
+    setConfirmConfig({
+      isOpen: true,
+      title: "Confirm Rollback",
+      message: "Are you sure you want to rollback to this version? This will trigger a new deployment using the image from this job.",
+      confirmLabel: "Rollback Now",
+      confirmVariant: "accent",
+      onConfirm: async () => {
+        const tId = toast.loading("Initiating rollback...");
+        try {
+          const res = await fetch(`http://localhost:8000/jobs/${jobId}/rerun`, { method: "POST" });
+          if (res.ok) {
+            const data = await res.json();
+            toast.success("Rollback in progress", { id: tId });
+            onViewLogs(data.id);
+            onClose();
+          } else {
+            toast.error("Rollback failed", { id: tId });
+          }
+        } catch (err) {
+          console.error(err);
+          toast.error("Network error during rollback", { id: tId });
+        } finally {
+          setConfirmConfig(prev => ({ ...prev, isOpen: false }));
+        }
+      }
+    });
   };
 
   useEffect(() => {
@@ -59,35 +161,34 @@ export default function AppDetailModal({ app, onClose, onViewLogs, allJobs, allA
 
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", handleEsc);
-    return () => window.removeEventListener("keydown", handleEsc);
-  }, [onClose]);
-
-  const handleRollback = async (jobId: string) => {
-    if (!confirm("Are you sure you want to rollback to this version?")) return;
-    try {
-      const res = await fetch(`http://localhost:8000/jobs/${jobId}/rerun`, { method: "POST" });
-      if (res.ok) {
-        const data = await res.json();
-        onViewLogs(data.id);
+      if (e.key === "Escape") {
+        e.stopImmediatePropagation();
         onClose();
       }
-    } catch (err) {
-      console.error(err);
-    }
-  };
+    };
+    window.addEventListener("keydown", handleEsc, true);
+    return () => window.removeEventListener("keydown", handleEsc, true);
+  }, [onClose]);
 
   const latestJob = historyJobs[0];
 
   return (
     <div 
       onClick={(e) => e.target === e.currentTarget && onClose()}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 backdrop-blur-md p-4"
+      className="fixed inset-0 z-[400] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 animate-in fade-in duration-300"
     >
-      <div className="w-full max-w-4xl bg-card border border-card-border rounded-[32px] shadow-2xl overflow-hidden flex flex-col h-[90vh]">
+      <div className="w-full max-w-4xl bg-card border border-card-border rounded-[32px] shadow-2xl overflow-hidden flex flex-col h-[90vh] animate-in zoom-in-95 duration-300">
         
+        <ConfirmationModal 
+          isOpen={confirmConfig.isOpen}
+          title={confirmConfig.title}
+          message={confirmConfig.message}
+          confirmLabel={confirmConfig.confirmLabel}
+          confirmVariant={confirmConfig.confirmVariant}
+          onConfirm={confirmConfig.onConfirm}
+          onCancel={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))}
+        />
+
         {/* Header */}
         <div className="p-8 border-b border-card-border flex justify-between items-center bg-background/50">
           <div className="flex items-center gap-4">
@@ -95,7 +196,7 @@ export default function AppDetailModal({ app, onClose, onViewLogs, allJobs, allA
                 <Box className="w-8 h-8 text-accent" />
              </div>
              <div>
-                <h2 className="text-2xl font-black text-white">{app.name}</h2>
+                <h2 className="text-2xl font-black text-white uppercase tracking-tighter">{app.name}</h2>
                 <div className="flex items-center gap-3">
                     <p className="text-xs text-gray-500 font-mono flex items-center gap-1.5">
                         <Globe className="w-3.5 h-3.5" /> {app.repo_url}
@@ -104,9 +205,9 @@ export default function AppDetailModal({ app, onClose, onViewLogs, allJobs, allA
                         <a 
                             href={latestJob.result.url} 
                             target="_blank" 
-                            className="text-[10px] font-bold text-accent hover:underline flex items-center gap-1"
+                            className="text-[10px] font-black text-accent hover:underline flex items-center gap-1 uppercase tracking-widest"
                         >
-                            LIVE URL <ExternalLink className="w-2.5 h-2.5" />
+                            Live App <ExternalLink className="w-2.5 h-2.5" />
                         </a>
                     )}
                 </div>
@@ -119,7 +220,7 @@ export default function AppDetailModal({ app, onClose, onViewLogs, allJobs, allA
                 className="flex items-center gap-2 px-4 py-2 bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white text-[10px] font-black rounded-xl transition-all uppercase tracking-widest border border-red-500/20 disabled:opacity-50"
             >
                 <Trash2 className="w-3.5 h-3.5" />
-                {isDeleting ? "DELETING..." : "DELETE APP"}
+                {isDeleting ? "Deleting..." : "Delete App"}
             </button>
             <button onClick={onClose} className="p-2 bg-white/5 hover:bg-white/10 rounded-full text-gray-400 hover:text-white transition-all">
                 <X className="w-6 h-6" />
@@ -129,20 +230,20 @@ export default function AppDetailModal({ app, onClose, onViewLogs, allJobs, allA
 
         {/* Tab Navigation */}
         <div className="flex px-8 border-b border-card-border bg-background/30">
-           <button 
-             onClick={() => setActiveTab("topology")}
-             className={`px-6 py-4 text-xs font-black uppercase tracking-widest flex items-center gap-2 border-b-2 transition-all ${activeTab === 'topology' ? 'border-accent text-white' : 'border-transparent text-gray-500 hover:text-gray-300'}`}
-           >
-             <Layers className="w-4 h-4" />
-             Topology
-           </button>
-           <button 
-             onClick={() => setActiveTab("history")}
-             className={`px-6 py-4 text-xs font-black uppercase tracking-widest flex items-center gap-2 border-b-2 transition-all ${activeTab === 'history' ? 'border-accent text-white' : 'border-transparent text-gray-500 hover:text-gray-300'}`}
-           >
-             <HistoryIcon className="w-4 h-4" />
-             Deployment History
-           </button>
+           {[
+             { id: 'topology', label: 'Topology', icon: Layers },
+             { id: 'history', label: 'History', icon: HistoryIcon },
+             { id: 'settings', label: 'Settings', icon: Settings }
+           ].map(tab => (
+             <button 
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as any)}
+                className={`px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-2 border-b-2 transition-all ${activeTab === tab.id ? 'border-accent text-white' : 'border-transparent text-gray-500 hover:text-gray-300'}`}
+             >
+                <tab.icon className="w-4 h-4" />
+                {tab.label}
+             </button>
+           ))}
         </div>
 
         {/* Content Area */}
@@ -183,19 +284,16 @@ export default function AppDetailModal({ app, onClose, onViewLogs, allJobs, allA
                           <div className={`w-3 h-3 rounded-full ${job.status === 'success' ? 'bg-green-500' : job.status === 'running' ? 'bg-blue-500 animate-pulse' : 'bg-red-500'}`} />
                           <div>
                             <div className="flex items-center gap-2">
-                               <span className="text-base font-bold text-white">Version {historyJobs.length - index}</span>
-                               {isLatest && <span className="px-2 py-0.5 bg-accent text-[9px] font-black text-white rounded-lg uppercase tracking-tighter">Current</span>}
-                               <span className="text-[10px] px-2 py-0.5 bg-white/5 rounded text-gray-400 font-bold uppercase tracking-tight flex items-center gap-1.5">
+                               <span className="text-base font-bold text-white uppercase tracking-tight">Build #{historyJobs.length - index}</span>
+                               {isLatest && <span className="px-2 py-0.5 bg-accent text-[9px] font-black text-white rounded-lg uppercase tracking-tighter">Live</span>}
+                               <span className="text-[9px] px-2 py-0.5 bg-white/5 rounded text-gray-500 font-black uppercase tracking-widest flex items-center gap-1.5 border border-white/5">
                                  {triggerIcon} {job.trigger_reason}
                                </span>
                             </div>
                             <div className="flex items-center gap-2 mt-1">
-                                <p className="text-[10px] text-gray-500 font-mono">Job: {job.id.split('-')[0]}</p>
+                                <p className="text-[10px] text-gray-600 font-mono">Job: {job.id.split('-')[0]}</p>
                                 {job.trigger_metadata?.commit_id && (
-                                    <span className="text-[10px] text-accent/70 font-mono font-bold italic">@{job.trigger_metadata.commit_id}</span>
-                                )}
-                                {job.trigger_reason === 'Rollback' && job.trigger_metadata?.from_version && (
-                                    <span className="text-[10px] text-yellow-500/70 font-bold italic">Restored from Version {job.trigger_metadata.from_version}</span>
+                                    <span className="text-[10px] text-accent/50 font-mono font-bold italic">@{job.trigger_metadata.commit_id}</span>
                                 )}
                             </div>
                           </div>
@@ -231,11 +329,76 @@ export default function AppDetailModal({ app, onClose, onViewLogs, allJobs, allA
                 )}
             </div>
           )}
+
+          {activeTab === "settings" && (
+            <div className="flex-1 overflow-y-auto p-8 max-w-2xl mx-auto w-full">
+               <div className="mb-8">
+                  <h3 className="text-lg font-bold text-white mb-2">Environment Variables</h3>
+                  <p className="text-sm text-gray-500">Variables defined here will be injected into your container at runtime. Changes require a new deployment to take effect.</p>
+               </div>
+
+               <div className="space-y-3 mb-8">
+                  {localEnv.map((ev, i) => (
+                    <div key={i} className="flex gap-3 animate-in slide-in-from-left-2" style={{animationDelay: `${i * 50}ms`}}>
+                       <input 
+                         placeholder="VARIABLE_NAME"
+                         className="flex-1 bg-background border border-card-border rounded-xl px-4 py-3 text-xs font-mono outline-none focus:border-accent text-white transition-all uppercase placeholder:text-gray-700"
+                         value={ev.key}
+                         onChange={(e) => {
+                            const updated = [...localEnv];
+                            updated[i].key = e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, '_');
+                            setLocalEnv(updated);
+                         }}
+                       />
+                       <input 
+                         placeholder="Value"
+                         className="flex-1 bg-background border border-card-border rounded-xl px-4 py-3 text-xs font-mono outline-none focus:border-accent text-white transition-all placeholder:text-gray-700"
+                         value={ev.value}
+                         onChange={(e) => {
+                            const updated = [...localEnv];
+                            updated[i].value = e.target.value;
+                            setLocalEnv(updated);
+                         }}
+                       />
+                       <button 
+                         onClick={() => setLocalEnv(localEnv.filter((_, idx) => idx !== i))}
+                         className="p-3 text-gray-600 hover:text-red-500 transition-colors"
+                       >
+                         <Trash2 className="w-4 h-4" />
+                       </button>
+                    </div>
+                  ))}
+                  
+                  <button 
+                    onClick={() => setLocalEnv([...localEnv, {key: "", value: ""}])}
+                    className="w-full py-3 border-2 border-dashed border-card-border rounded-xl text-gray-500 hover:text-accent hover:border-accent/40 text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 group"
+                  >
+                    <Plus className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
+                    Add Variable
+                  </button>
+               </div>
+
+               <div className="pt-8 border-t border-card-border flex justify-end">
+                  <button 
+                    onClick={handleSaveSettings}
+                    disabled={isSaving}
+                    className="px-8 py-3 bg-accent hover:bg-accent/90 text-white text-xs font-black rounded-xl transition-all shadow-lg shadow-accent/20 flex items-center gap-2 uppercase tracking-widest disabled:opacity-50"
+                  >
+                    {isSaving ? (
+                      <RotateCcw className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Save className="w-4 h-4" />
+                    )}
+                    Save Configuration
+                  </button>
+               </div>
+            </div>
+          )}
         </div>
 
         {/* Footer */}
         <div className="p-4 bg-background/50 border-t border-card-border flex justify-center">
-            <p className="text-[10px] text-gray-600 uppercase tracking-widest font-bold">App-Specific Control Plane</p>
+            <p className="text-[10px] text-gray-700 uppercase tracking-[0.3em] font-black">App-Specific Control Plane</p>
         </div>
       </div>
     </div>

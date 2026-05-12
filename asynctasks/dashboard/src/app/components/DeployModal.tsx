@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { X, Plus, Trash2, Rocket, Globe, Tag, GitBranch, Layers } from "lucide-react";
+import toast from "react-hot-toast";
 
 export default function DeployModal({ onClose }: { onClose: (jobId?: string) => void }) {
   const [name, setName] = useState("");
@@ -43,10 +44,13 @@ export default function DeployModal({ onClose }: { onClose: (jobId?: string) => 
   // Handle ESC key to close
   useEffect(() => {
     const handleEsc = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") {
+        event.stopImmediatePropagation();
+        onClose();
+      }
     };
-    window.addEventListener("keydown", handleEsc);
-    return () => window.removeEventListener("keydown", handleEsc);
+    window.addEventListener("keydown", handleEsc, true);
+    return () => window.removeEventListener("keydown", handleEsc, true);
   }, [onClose]);
 
   const addEnvVar = () => setEnvVars([...envVars, { key: "", value: "" }]);
@@ -80,7 +84,7 @@ export default function DeployModal({ onClose }: { onClose: (jobId?: string) => 
 
       if (!appRes.ok) {
         const err = await appRes.json();
-        alert(err.detail || "Failed to create application");
+        toast.error(err.detail || "Failed to create application");
         setLoading(false);
         return;
       }
@@ -98,7 +102,7 @@ export default function DeployModal({ onClose }: { onClose: (jobId?: string) => 
       }
     } catch (err) {
       console.error(err);
-      alert("An unexpected error occurred.");
+      toast.error("An unexpected error occurred.");
     } finally {
       setLoading(false);
     }
@@ -107,7 +111,7 @@ export default function DeployModal({ onClose }: { onClose: (jobId?: string) => 
   return (
     <div 
       onClick={(e) => e.target === e.currentTarget && onClose()}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 cursor-default"
+      className="fixed inset-0 z-[500] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 cursor-default"
     >
       <div className="bg-card border border-card-border w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden cursor-default">
         <div className="p-6 border-b border-card-border flex justify-between items-center">

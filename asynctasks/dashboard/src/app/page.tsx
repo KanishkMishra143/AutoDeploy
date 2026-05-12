@@ -1,230 +1,388 @@
 "use client";
-import { useState } from "react";
-import { Activity, Server, Clock, CheckCircle2, XCircle, Loader2, Plus, StopCircle, RotateCcw, Box, Globe, ChevronRight } from "lucide-react";
+import { useState, useEffect } from "react";
+import { 
+  Activity, Server, Clock, CheckCircle2, XCircle, Loader2, Plus, 
+  StopCircle, RotateCcw, Box, Globe, ChevronRight, User, 
+  Settings as SettingsIcon, LayoutGrid, Rocket, LogOut, Search, Bell, ExternalLink, GitBranch
+} from "lucide-react";
+import toast from "react-hot-toast";
+import { useSearchParams, useRouter } from "next/navigation";
 import { useJobs, Job, Application } from "./useJobs";
 import LogViewer from "./components/LogViewer";
 import DeployModal from "./components/DeployModal";
-import AppDetailModal from "./components/HistoryModal"; // Renamed for clarity
+import AppDetailModal from "./components/HistoryModal"; 
 import TopologyMap from "./components/TopologyMap";
+import ConfirmationModal from "./components/ConfirmationModal";
+import Header from "./components/Header";
 
 export default function CanvasPage() {
   const { jobs, apps, loading, error, workerCount } = useJobs();
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+
+  // Pick up jobId from URL if present
+  useEffect(() => {
+    const jobId = searchParams.get('jobId');
+    if (jobId) {
+      setSelectedJobId(jobId);
+      // Clean up URL
+      router.replace('/');
+    }
+  }, [searchParams, router]);
+
   const [showDeployModal, setShowDeployModal] = useState(false);
   const [selectedApp, setSelectedApp] = useState<Application | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  
+  // Track job statuses to trigger toasts on completion
+  const [prevJobStatuses, setPrevJobStatuses] = useState<Record<string, string>>({});
 
-  const handleStopJob = async (e: React.MouseEvent, jobId: string) => {
+  useEffect(() => {
+    jobs.forEach(job => {
+      const prevStatus = prevJobStatuses[job.id];
+      if (prevStatus && prevStatus === 'running' && job.status !== 'running') {
+        const app = apps.find(a => a.id === job.app_id);
+        const appName = app?.name || "Application";
+        
+        if (job.status === 'success') {
+          toast.success(`${appName} deployed successfully!`, {
+            duration: 5000,
+            icon: '🚀'
+          });
+        } else if (job.status === 'failed') {
+          toast.error(`${appName} deployment failed.`, {
+            duration: 6000
+          });
+        }
+      }
+    });
+
+    // Update statuses for next run
+    const newStatuses: Record<string, string> = {};
+    jobs.forEach(j => { newStatuses[j.id] = j.status; });
+    setPrevJobStatuses(newStatuses);
+  }, [jobs, apps]);
+
+  // Confirmation Modal State
+  const [confirmConfig, setConfirmConfig] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmLabel: string;
+    confirmVariant: "danger" | "accent";
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: "",
+    message: "",
+    confirmLabel: "",
+    confirmVariant: "accent",
+    onConfirm: () => {}
+  });
+
+  const handleStopJob = (e: React.MouseEvent, jobId: string) => {
     e.stopPropagation();
-    if (!confirm("Are you sure you want to stop this service? This will kill the container.")) return;
-
-    try {
-      const res = await fetch(`http://localhost:8000/jobs/${jobId}`, {
-        method: "DELETE",
-      });
-      if (!res.ok) alert("Failed to stop service");
-    } catch (err) {
-      console.error(err);
-    }
+    
+    setConfirmConfig({
+      isOpen: true,
+      title: "Stop Service",
+      message: "Are you sure you want to stop this service? This will kill the container and disconnect the live URL.",
+      confirmLabel: "Stop Container",
+      confirmVariant: "danger",
+      onConfirm: async () => {
+        try {
+          const res = await fetch(`http://localhost:8000/jobs/${jobId}`, {
+            method: "DELETE",
+          });
+          if (res.ok) {
+            toast.success("Service termination signal sent.");
+          } else {
+            toast.error("Failed to stop service");
+          }
+          setConfirmConfig(prev => ({ ...prev, isOpen: false }));
+        } catch (err) {
+          console.error(err);
+          toast.error("Network error while stopping service");
+        }
+      }
+    });
   };
 
   const deployApp = async (appId: string) => {
+    const tId = toast.loading("Triggering deployment...");
     try {
         const res = await fetch(`http://localhost:8000/apps/${appId}/deploy`, { method: "POST" });
         if (res.ok) {
             const data = await res.json();
             setSelectedJobId(data.id);
+            toast.success("Deployment started!", { id: tId });
+        } else {
+            toast.error("Deployment failed to trigger", { id: tId });
         }
     } catch (err) {
         console.error(err);
+        toast.error("Connection error", { id: tId });
     }
   };
 
+  const filteredApps = apps.filter(app => 
+    app.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    app.repo_url.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   return (
-    <div className="p-8">
-      {selectedJobId && (
-        <LogViewer jobId={selectedJobId} onClose={() => setSelectedJobId(null)} />
-      )}
+    <div className="min-h-screen bg-background">
+      <Header 
+        workerCount={workerCount} 
+        apiError={error} 
+        onSearch={setSearchQuery}
+        jobs={jobs}
+        apps={apps}
+        onViewJob={setSelectedJobId}
+        onSelectApp={setSelectedApp}
+      />
 
-      {showDeployModal && (
-        <DeployModal onClose={(jobId) => {
-          setShowDeployModal(false);
-          if (jobId) setSelectedJobId(jobId);
-        }} />
-      )}
+      <main className="pt-32 pb-20 px-8">
+        {selectedJobId && (
+          <LogViewer jobId={selectedJobId} onClose={() => setSelectedJobId(null)} />
+        )}
 
-      {selectedApp && (
-        <AppDetailModal 
-           app={selectedApp} 
-           onClose={() => setSelectedApp(null)} 
-           onViewLogs={(id) => setSelectedJobId(id)}
-           allJobs={jobs}
-           allApps={apps}
+        {showDeployModal && (
+          <DeployModal onClose={(jobId) => {
+            setShowDeployModal(false);
+            if (jobId) {
+              setSelectedJobId(jobId);
+              toast.success("New application registered!");
+            }
+          }} />
+        )}
+
+        {selectedApp && (
+          <AppDetailModal 
+            app={selectedApp} 
+            onClose={() => setSelectedApp(null)} 
+            onViewLogs={(id) => setSelectedJobId(id)}
+            allJobs={jobs}
+            allApps={apps}
+          />
+        )}
+
+        <ConfirmationModal 
+          isOpen={confirmConfig.isOpen}
+          title={confirmConfig.title}
+          message={confirmConfig.message}
+          confirmLabel={confirmConfig.confirmLabel}
+          confirmVariant={confirmConfig.confirmVariant}
+          onConfirm={confirmConfig.onConfirm}
+          onCancel={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))}
         />
-      )}
 
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="flex justify-between items-end mb-12 border-b border-card-border pb-8 text-white">
-          <div>
-            <h2 className="text-3xl font-black tracking-tight mb-2 uppercase">Canvas</h2>
-            <p className="text-gray-400 text-sm">Orchestrate and monitor your distributed applications.</p>
-          </div>
-          <div className="flex gap-4 items-center">
-            <div className="flex gap-2">
-              <div className="bg-card border border-card-border px-4 py-2 rounded-lg flex items-center gap-2">
-                <Activity className={`w-4 h-4 ${error ? "text-red-500" : "text-green-500"}`} />
-                <span className="text-sm font-medium">{error ? "API Offline" : "API Online"}</span>
+        <div className="max-w-7xl mx-auto">
+          {/* Hero Section */}
+          <div className="flex justify-between items-end mb-16">
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="px-2 py-0.5 bg-accent/10 text-accent text-[9px] font-black rounded uppercase tracking-widest border border-accent/20">v1.5 Enterprise</span>
               </div>
-              <div className="bg-card border border-card-border px-4 py-2 rounded-lg flex items-center gap-2">
-                <Server className={`w-4 h-4 ${workerCount > 0 ? "text-green-500" : "text-red-500"}`} />
-                <span className="text-sm font-medium">{workerCount} Workers</span>
-              </div>
+              <h2 className="text-4xl font-black tracking-tighter text-white uppercase mb-2">Workspace</h2>
+              <p className="text-gray-500 text-sm max-w-md font-medium">Manage your distributed application cluster from a single pane of glass.</p>
             </div>
             
             <button 
               onClick={() => setShowDeployModal(true)}
-              className="bg-accent hover:bg-accent/90 text-white px-5 py-2.5 rounded-xl flex items-center gap-2 text-sm font-bold transition-all shadow-lg shadow-accent/20 active:scale-95"
+              className="bg-accent hover:bg-accent/90 text-white px-6 py-3.5 rounded-2xl flex items-center gap-3 text-sm font-black transition-all shadow-xl shadow-accent/20 active:scale-95 uppercase tracking-widest border border-accent/20"
             >
               <Plus className="w-5 h-5" />
-              NEW APPLICATION
+              New Application
             </button>
           </div>
-        </div>
 
-        {/* Global Topology Map Section (Compact) */}
-        <div className="mb-16">
-           <div className="flex items-center gap-2 mb-6">
-              <Activity className="w-5 h-5 text-accent" />
-              <h3 className="text-xl font-bold text-white">Global Infrastructure</h3>
-           </div>
-           <TopologyMap 
-             apps={apps} 
-             jobs={jobs} 
-             compact={true} 
-             onAppClick={(app) => setSelectedApp(app)} 
-           />
-        </div>
-
-        {/* Applications Section */}
-        <div className="mb-16">
-          <div className="flex items-center gap-2 mb-6 text-white">
-             <Box className="w-5 h-5 text-accent" />
-             <h3 className="text-xl font-bold">Managed Applications</h3>
+          {/* Global Topology Map Section (Compact) */}
+          <div className="mb-16">
+             <div className="flex items-center gap-2 mb-6">
+                <Activity className="w-5 h-5 text-accent" />
+                <h3 className="text-xl font-bold text-white uppercase tracking-tight">Global Infrastructure</h3>
+             </div>
+             <TopologyMap 
+               apps={apps} 
+               jobs={jobs} 
+               compact={true} 
+               onAppClick={(app) => setSelectedApp(app)} 
+             />
           </div>
 
-          {loading && apps.length === 0 ? (
-            <div className="h-32 flex items-center justify-center">
-                <Loader2 className="w-8 h-8 animate-spin text-accent/50" />
+          {/* Applications Section */}
+          <div className="mb-24 mt-12">
+            <div className="flex items-center gap-2 mb-10 text-white">
+               <Box className="w-5 h-5 text-accent" />
+               <h3 className="text-xl font-bold uppercase tracking-tight">Managed Applications</h3>
             </div>
-          ) : apps.length === 0 ? (
-             <div className="rounded-2xl border-2 border-dashed border-card-border p-12 flex flex-col items-center justify-center text-gray-500">
-                <Box className="w-12 h-12 mb-4 opacity-10" />
-                <p>No applications registered. Click 'New Application' to start.</p>
-             </div>
-          ) : (
+
+            {loading && apps.length === 0 ? (
+              <div className="h-64 flex items-center justify-center">
+                  <div className="flex flex-col items-center gap-4">
+                    <Loader2 className="w-10 h-10 animate-spin text-accent" />
+                    <p className="text-xs font-bold text-gray-500 uppercase tracking-widest">Waking up cluster...</p>
+                  </div>
+              </div>
+            ) : filteredApps.length === 0 ? (
+               <div className="rounded-[32px] border-2 border-dashed border-card-border p-20 flex flex-col items-center justify-center text-gray-500 bg-card/20 backdrop-blur-sm">
+                  <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mb-6">
+                    <Box className="w-10 h-10 opacity-20" />
+                  </div>
+                  <h4 className="text-white font-bold mb-2">No applications found</h4>
+                  <p className="text-sm mb-8 text-center max-w-xs">
+                    {searchQuery ? `No results matching "${searchQuery}"` : "Get started by creating your first application in this workspace."}
+                  </p>
+                  {!searchQuery && (
+                    <button 
+                      onClick={() => setShowDeployModal(true)}
+                      className="px-6 py-2.5 bg-white/5 hover:bg-white/10 text-white rounded-xl text-xs font-bold transition-all border border-white/5"
+                    >
+                      Initialize App
+                    </button>
+                  )}
+               </div>
+            ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {apps.map(app => {
+              {filteredApps.map(app => {
                 const latestJob = jobs.find(j => j.app_id === app.id);
+                const isRunning = latestJob?.status === 'running';
+                const progressMsg = latestJob?.result?.progress_msg || "Initializing...";
+                const progressPct = latestJob?.result?.progress_pct || 0;
+
                 return (
                   <div 
                     key={app.id} 
                     onClick={() => setSelectedApp(app)}
-                    className="bg-card border border-card-border rounded-2xl overflow-hidden hover:border-accent/40 transition-all group cursor-pointer"
+                    className="group relative pt-6"
                   >
-                    <div className="p-6">
-                      <div className="flex justify-between items-start mb-6">
-                         <div className="p-3 bg-accent/5 rounded-xl border border-accent/10 group-hover:bg-accent/10 transition-colors text-accent">
-                            <Box className="w-6 h-6" />
-                         </div>
-                         {latestJob ? <StatusBadge status={latestJob.status} /> : <span className="text-[10px] font-bold text-gray-600 uppercase">No Deploys</span>}
-                      </div>
-                      
-                      <h4 className="text-xl font-bold mb-1 text-white">{app.name}</h4>
-                      <p className="text-xs text-gray-500 font-mono flex items-center gap-1.5 mb-6 truncate">
-                        <Globe className="w-3 h-3" /> {app.repo_url}
-                      </p>
+                    {/* Smart Progress Tab (Slides out from top) */}
+                    <div className={`absolute top-0 left-0 right-0 h-20 bg-accent rounded-t-[28px] flex items-start pt-4 px-8 transition-all duration-500 ease-out z-0 ${isRunning ? '-translate-y-8 opacity-100' : 'translate-y-0 opacity-0 pointer-events-none'}`}>
+                        <div className="flex flex-col w-full gap-3">
+                           <div className="flex justify-between items-center">
+                              <span className="text-[11px] font-black text-white uppercase tracking-widest flex items-center gap-2">
+                                 <Loader2 className="w-4 h-4 animate-spin" />
+                                 {progressMsg}
+                              </span>
+                              <span className="text-[11px] font-black text-white/80">{progressPct}%</span>
+                           </div>
+                           <div className="h-2 bg-white/20 rounded-full overflow-hidden border border-white/10 p-0.5">
+                              <div 
+                                className="h-full bg-white rounded-full transition-all duration-1000 ease-in-out shadow-[0_0_12px_rgba(255,255,255,0.6)]" 
+                                style={{ width: `${progressPct}%` }} 
+                              />
+                           </div>
+                        </div>
+                    </div>
 
-                      <div className="flex gap-2 pointer-events-auto" onClick={(e) => e.stopPropagation()}>
-                        <button 
-                          onClick={() => deployApp(app.id)}
-                          className="flex-1 bg-accent/10 hover:bg-accent/20 text-accent py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5"
-                        >
-                          <RotateCcw className="w-3.5 h-3.5" />
-                          DEPLOY
-                        </button>
+                    <div className="bg-card border border-card-border rounded-[28px] overflow-hidden hover:border-accent/40 transition-all cursor-pointer relative z-10 shadow-xl">
+                      <div className="p-8">
+                        <div className="flex justify-between items-start mb-8">
+                           <div className="p-4 bg-accent/5 rounded-2xl border border-accent/10 group-hover:bg-accent/10 transition-colors text-accent group-hover:scale-110 duration-300">
+                              <Box className="w-7 h-7" />
+                           </div>
+                           {latestJob ? <StatusBadge status={latestJob.status} /> : <span className="text-[10px] font-bold text-gray-600 uppercase tracking-widest">Pending</span>}
+                        </div>
                         
-                        {latestJob?.status === "success" && latestJob.result?.url && (
-                           <a 
-                             href={latestJob.result.url} 
-                             target="_blank" 
-                             className="p-2.5 bg-green-500/10 hover:bg-green-500/20 text-green-500 rounded-xl transition-all"
-                             title="View Live"
-                           >
-                             <Globe className="w-5 h-5" />
-                           </a>
-                        )}
+                        <h4 className="text-2xl font-black mb-1 text-white uppercase tracking-tighter">{app.name}</h4>
+                        <div className="space-y-1.5 mb-8">
+                          <p className="text-xs text-gray-500 font-mono flex items-center gap-1.5 truncate opacity-60">
+                            <Globe className="w-3 h-3" /> {app.repo_url}
+                          </p>
+                          <p className="text-[10px] text-accent/70 font-bold flex items-center gap-1.5 uppercase tracking-widest">
+                            <GitBranch className="w-3 h-3" /> {app.branch || 'main'}
+                          </p>
+                        </div>
 
-                        <button 
-                          onClick={(e) => handleStopJob(e, latestJob?.id)}
-                          disabled={!latestJob || latestJob.status !== 'success'}
-                          className="p-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-xl transition-all disabled:opacity-30 disabled:cursor-not-allowed"
-                          title="Stop Service"
-                        >
-                          <StopCircle className="w-5 h-5" />
-                        </button>
+                        <div className="flex gap-2.5 pointer-events-auto" onClick={(e) => e.stopPropagation()}>
+                          <button 
+                            onClick={() => deployApp(app.id)}
+                            className="flex-1 bg-accent/10 hover:bg-accent/20 text-accent py-3 rounded-xl text-[11px] font-black transition-all flex items-center justify-center gap-2 uppercase tracking-widest border border-accent/10"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            Redeploy
+                          </button>
+                          
+                          {latestJob?.status === "success" && latestJob.result?.url && (
+                             <a 
+                               href={latestJob.result.url} 
+                               target="_blank" 
+                               className="p-3 bg-green-500/10 hover:bg-green-500/20 text-green-500 rounded-xl transition-all border border-green-500/10"
+                               title="View Live"
+                             >
+                               <ExternalLink className="w-5 h-5" />
+                             </a>
+                          )}
+
+                          <button 
+                            onClick={(e) => handleStopJob(e, latestJob?.id)}
+                            disabled={!latestJob || latestJob.status !== 'success'}
+                            className="p-3 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-xl transition-all disabled:opacity-20 disabled:cursor-not-allowed border border-red-500/10"
+                            title="Stop Service"
+                          >
+                            <StopCircle className="w-5 h-5" />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
                 )
               })}
             </div>
-          )}
-        </div>
+            )}
+          </div>
 
-        {/* Recent Activity Section */}
-        <div>
-            <div className="flex items-center gap-2 mb-6">
-                <Activity className="w-5 h-5 text-gray-400" />
-                <h3 className="text-xl font-bold text-white">Recent Activity</h3>
-            </div>
-            
-            <div className="space-y-3">
-               {jobs.length === 0 ? (
-                  <p className="text-gray-500 italic text-sm">No recent activity found.</p>
-               ) : (
-                 jobs.map(job => {
-                   const app = apps.find(a => job.app_id === a.id);
-                   return (
-                     <div 
-                        key={job.id} 
-                        onClick={() => setSelectedJobId(job.id)}
-                        className="bg-card/50 border border-card-border p-4 rounded-xl flex items-center justify-between hover:bg-card hover:border-accent/20 transition-all cursor-pointer group"
-                      >
-                        <div className="flex items-center gap-4">
-                           <div className={`w-2 h-2 rounded-full ${job.status === 'success' ? 'bg-green-500' : job.status === 'running' ? 'bg-blue-500 animate-pulse' : job.status === 'stopped' ? 'bg-gray-500' : 'bg-red-500'}`} />
-                           <div>
-                              <p className="text-sm font-bold text-white flex items-center gap-2">
-                                {job.type} Job 
-                                {app && <span className="px-2 py-0.5 bg-accent/10 text-accent text-[10px] rounded uppercase font-black">{app.name}</span>}
-                              </p>
-                              <p className="text-[10px] text-gray-500 font-mono">ID: {job.id.split('-')[0]}</p>
-                           </div>
-                        </div>
-                        
-                        <div className="flex items-center gap-6">
-                           <div className="text-right text-white">
-                              <p className="text-[10px] font-bold text-gray-400 uppercase">{job.status}</p>
-                              <p className="text-[10px] text-gray-500">{new Date(job.updated_at).toLocaleTimeString()}</p>
-                           </div>
-                           <ChevronRight className="w-4 h-4 text-gray-600 group-hover:text-accent transition-colors" />
-                        </div>
-                     </div>
-                   )
-                 })
-               )}
-            </div>
+          {/* Recent Activity Section */}
+          <div className="max-w-4xl">
+              <div className="flex items-center gap-2 mb-6">
+                  <Activity className="w-5 h-5 text-gray-500" />
+                  <h3 className="text-xl font-bold text-white uppercase tracking-tight">Recent Activity</h3>
+              </div>
+              
+              <div className="grid gap-3">
+                 {jobs.length === 0 ? (
+                    <div className="p-8 border border-dashed border-card-border rounded-[24px] text-center">
+                       <p className="text-gray-600 text-xs font-bold uppercase tracking-[0.2em]">No operational logs</p>
+                    </div>
+                 ) : (
+                   jobs.map(job => {
+                     const app = apps.find(a => job.app_id === a.id);
+                     return (
+                       <div 
+                          key={job.id} 
+                          onClick={() => setSelectedJobId(job.id)}
+                          className="bg-card/30 border border-card-border p-5 rounded-2xl flex items-center justify-between hover:bg-card hover:border-accent/20 transition-all cursor-pointer group"
+                        >
+                          <div className="flex items-center gap-5">
+                             <div className={`w-2.5 h-2.5 rounded-full ${job.status === 'success' ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]' : job.status === 'running' ? 'bg-blue-500 animate-pulse' : job.status === 'stopped' ? 'bg-gray-500' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]'}`} />
+                             <div>
+                                <p className="text-sm font-black text-white flex items-center gap-2 uppercase tracking-tight">
+                                  {job.type} Job 
+                                  {app && <span className="px-2 py-0.5 bg-accent text-white text-[9px] rounded font-black uppercase tracking-tighter ml-1">{app.name}</span>}
+                                </p>
+                                <p className="text-[10px] text-gray-500 font-mono mt-0.5">Operation Reference: {job.id.split('-')[0]}</p>
+                             </div>
+                          </div>
+                          
+                          <div className="flex items-center gap-8">
+                             <div className="text-right">
+                                <p className={`text-[10px] font-black uppercase tracking-widest mb-0.5 ${job.status === 'failed' ? 'text-red-500' : 'text-gray-400'}`}>{job.status}</p>
+                                <p className="text-[10px] text-gray-500 font-medium">{new Date(job.updated_at).toLocaleTimeString()}</p>
+                             </div>
+                             <div className="p-2 bg-white/5 rounded-lg group-hover:bg-accent/10 group-hover:text-accent transition-all duration-300">
+                                <ChevronRight className="w-4 h-4" />
+                             </div>
+                          </div>
+                       </div>
+                     )
+                   })
+                 )}
+              </div>
+          </div>
         </div>
-      </div>
+      </main>
     </div>
   );
 }
@@ -242,8 +400,8 @@ function StatusBadge({ status }: { status: string }) {
   const Icon = config.icon;
 
   return (
-    <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full ${config.bg} ${config.color} text-[10px] font-bold uppercase tracking-wider`}>
-      <Icon className={`w-3 h-3 ${config.animate || ""}`} />
+    <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl ${config.bg} ${config.color} text-[10px] font-black uppercase tracking-widest border border-white/5`}>
+      <Icon className={`w-3.5 h-3.5 ${config.animate || ""}`} />
       {status}
     </div>
   );

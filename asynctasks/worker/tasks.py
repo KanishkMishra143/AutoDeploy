@@ -146,6 +146,14 @@ def clone_repository(repo_url: str, dest_dir: str, branch: str = "main") -> None
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Git clone failed: {e.stderr}")
 
+def update_job_progress(db, job_id, message, progress=None):
+    """Updates the job's result field with a progress message and optional percentage."""
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if job:
+        current_result = job.result or {}
+        job.result = {**current_result, "progress_msg": message, "progress_pct": progress}
+        db.commit()
+
 def run_deploy_logic(db, job_id, payload):
     """Contains the specific steps for a DEPLOYMENT job."""
     repo_url = payload.get("repo")
@@ -158,6 +166,7 @@ def run_deploy_logic(db, job_id, payload):
         raise ValueError("Repository URL is missing in the payload.")
         
     save_log(db, job_id, f"Starting deployment process for: {repo_url} (branch: {branch})")
+    update_job_progress(db, job_id, "Preparing Workspace", 10)
     
     # Create an isolated temporary workspace
     workspace_dir = tempfile.mkdtemp(prefix=f"build_{job_id}_")
@@ -165,22 +174,31 @@ def run_deploy_logic(db, job_id, payload):
 
     try:
         # Clone the repository into the workspace
+        update_job_progress(db, job_id, "Cloning Repository", 25)
         save_log(db, job_id, f"Cloning repository branch: {branch}...")
         clone_repository(repo_url, workspace_dir, branch=branch)
         save_log(db, job_id, "Repository successfully cloned.")
 
         dockerfile_path = os.path.join(workspace_dir, "Dockerfile")
 
-        # Determine the internal port based on the stack
-        # Static Nginx uses 80, our Node/Python templates use 8000
-        internal_port = 80 if stack == "static" else 8000
-
         if not os.path.exists(dockerfile_path):
+            update_job_progress(db, job_id, "Detecting Stack", 40)
             if stack == "dockerfile":
-                raise ValueError("No Dockerfile found in repository, and no stack template selected.")
+                save_log(db, job_id, "🔍 No Dockerfile found. Attempting automatic stack detection...")
+                if os.path.exists(os.path.join(workspace_dir, "package.json")):
+                    save_log(db, job_id, "📦 Detected Node.js project (package.json found).")
+                    stack = "nodejs"
+                elif os.path.exists(os.path.join(workspace_dir, "requirements.txt")):
+                    save_log(db, job_id, "🐍 Detected Python project (requirements.txt found).")
+                    stack = "python"
+                elif os.path.exists(os.path.join(workspace_dir, "index.html")):
+                    save_log(db, job_id, "📄 Detected Static website (index.html found).")
+                    stack = "static"
+                else:
+                    raise ValueError("No Dockerfile found, and could not automatically detect project stack (missing package.json, requirements.txt, or index.html).")
 
             if stack in STACK_TEMPLATES:
-                save_log(db, job_id, f"💡 No Dockerfile found. Injecting template for stack: {stack}...")
+                save_log(db, job_id, f"💡 Injecting standard template for stack: {stack}...")
                 with open(dockerfile_path, "w") as f:
                     f.write(STACK_TEMPLATES[stack].strip())
                 save_log(db, job_id, "✅ Template injected successfully.")
@@ -189,7 +207,12 @@ def run_deploy_logic(db, job_id, payload):
         else:
             save_log(db, job_id, "Native Dockerfile detected. Using repository's own build configuration.")
 
+        # Determine the internal port based on the final determined stack
+        # Static Nginx uses 80, our Node/Python templates use 8000
+        internal_port = 80 if stack == "static" else 8000
+
         # Docker Build
+        update_job_progress(db, job_id, "Building Docker Image", 60)
         image_tag = f"autodeploy-app:{str(job_id)[:8]}" 
         save_log(db, job_id, f"📦 Starting Docker build for image: {image_tag}...")
         
@@ -201,6 +224,7 @@ def run_deploy_logic(db, job_id, payload):
             raise
 
         # Docker Run (Passing the app_name for stable naming)
+        update_job_progress(db, job_id, "Deploying Container", 85)
         deploy_info = run_container(db, job_id, image_tag, env_vars=env_vars, app_name=app_name, internal_port=internal_port)
     
         save_log(db, job_id, "Deployment finished successfully!")
@@ -209,13 +233,15 @@ def run_deploy_logic(db, job_id, payload):
             "message": "Deployment successful",
             "image": image_tag,
             "container": deploy_info,
-            "url": deploy_info["url"]
+            "url": deploy_info["url"],
+            "progress_msg": "Deployment Live",
+            "progress_pct": 100
         }
     finally:
         # Mandatory Cleanup
         save_log(db, job_id, "Cleaning up workspace...")
         shutil.rmtree(workspace_dir, ignore_errors=True)
-        save_log(db, job_id, "✅ Deployment process complete. Job finished.")
+        save_log(db, job_id, "System: Deployment task lifecycle finished.")
 
 def run_scan_logic(db, job_id, payload):
     """Contains the specific steps for a SECURITY SCAN job."""
@@ -273,9 +299,13 @@ def process_job(self, job_id: str):
             job.result = result_data
 
     except Exception as exc:
+        with session_scope() as db:
+            save_log(db, job_id, f"❌ Task Error: {str(exc)}")
+            
         if self.request.retries < self.max_retries:
             # Exponential Backoff
             countdown = self.default_retry_delay * (2 ** self.request.retries)
+            save_log(db, job_id, f"🔄 Retrying in {countdown}s (Attempt {self.request.retries + 1}/{self.max_retries})...")
             raise self.retry(exc=exc, countdown=countdown)
         else:
             with session_scope() as error_db:

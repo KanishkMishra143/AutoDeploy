@@ -124,14 +124,14 @@
 
 ### 📅 Day-by-Day Progress
 - [x] **Day 1–2 — GUI Project Creation & Forms:**
-    - **Task:** Build interactive forms for new deployments (Application Name, Git URL, Env Vars).
-    - **Sub-task:** Implemented Application Identity model to provide stable names and permanent URLs.
-    - *Deliverable: Stable Application Identity model in the database.*
+    - [x] Build interactive forms for new deployments (Application Name, Git URL, Env Vars).
+    - [x] Implemented Application Identity model to provide stable names and permanent URLs.
+    - [x] *Deliverable: Stable Application Identity model in the database.*
 - [x] **Day 3–5 — Visual Topology Map:**
-    - **Task:** Upgrade the Service Grid into a node-based network map (using React Flow).
-    - **Sub-task:** Visually draw connections between Applications and the Traefik Gateway with live animations.
-    - **Sub-task:** Built a tabbed Deep-Dive UI to separate map views from history.
-    - *Deliverable: A beautiful, interactive map of your infrastructure with human-readable provenance labels.*
+    - [x] Upgrade the Service Grid into a node-based network map (using React Flow).
+    - [x] Visually draw connections between Applications and the Traefik Gateway with live animations.
+    - [x] Built a tabbed Deep-Dive UI to separate map views from history.
+    - [x] *Deliverable: A beautiful, interactive map of your infrastructure with human-readable provenance labels.*
 
 ---
 
@@ -140,24 +140,54 @@
 
 ### 📅 Day-by-Day Progress
 - [x] **Day 1–2 — Explicit Stacks & Template Injection:**
-    - **Task:** Allow users to choose their tech stack (Python/Node/Static) during creation.
-    - **Sub-task:** Worker injects standard Dockerfiles if native ones are missing.
-    - **Sub-task:** Implemented dynamic branch discovery and targeted branch cloning.
-    - **Sub-task:** Added "Delete Application" GUI feature with full container cleanup.
-    - **Sub-task:** Enhanced History UI with direct "Terminal" log access.
-    - *Deliverable: Frictionless onboarding for standard frameworks with branch support.*
-- [ ] **Day 3–4 — Customizable Deployment DAG (Directed Acyclic Graph):**
+    - [x] Allow users to choose their tech stack (Python/Node/Static) during creation.
+    - [x] Worker injects standard Dockerfiles if native ones are missing.
+    - [x] Implemented dynamic branch discovery and targeted branch cloning.
+    - [x] Added "Delete Application" GUI feature with full container cleanup.
+    - [x] Enhanced History UI with direct "Terminal" log access.
+    - [x] *Deliverable: Frictionless onboarding for standard frameworks with branch support.*
+- [x] **Day 3 — UI/UX Overhaul & Refinement (The "Acrylic" Sweep):**
+    - [x] **Header Transformation:** Implemented a blurred acrylic header with a new branding logo, search bar, and system health monitors (API/Worker status).
+    - [x] **User Identity:** Added user profile controls with a Settings page and logout placeholders.
+    - [x] **Card Intelligence:** Enhanced Application cards with branch indicators and live "Task Progress" popups.
+    - [x] **Notification Engine:** Integrated `react-hot-toast` for operational feedback and built a custom Confirmation Modal system.
+    - [x] **UX Polish:** Fixed "Terminal" button in deployment history and added branch-aware deployment tracking.
+- [x] **Day 4 — Advanced UI Polish & Notification Pane:**
+    - [x] **Header Refinement:** Linked logo to canvas and added ESC key support for all menus.
+    - [x] **Settings Evolution:** Decoupled Danger Zone into a dedicated tab and added placeholders for Security/Billing.
+    - [x] **Task Visibility:** Restyled progress popups for better visual weight and alignment.
+    - [x] **Notification Center:** Built a dedicated activity feed pane to track detailed system events.
+    - [x] **Operational Feedback:** Implemented automated toasts for successful/failed deployment completions.
+- [ ] **Day 5 — Customizable Deployment DAG (Directed Acyclic Graph):**
     - **Task:** Allow users to insert manual steps (e.g., "Run DB Migration") before or after the standard build step.
     - **Sub-task:** Refactor Celery tasks into 'Chains' to execute these custom steps sequentially.
     - *Deliverable: Highly flexible deployment pipelines that adapt to complex user needs.*
-- [ ] **Day 5–6 — Error-Handling Sub-Templates:**
+- [ ] **Day 6 — Error-Handling Sub-Templates:**
     - **Task:** Create specific worker logic triggered by known log errors (e.g., 'Port in use', 'Missing dependency').
     - **Sub-task:** Automatically pause the build, suggest the fix via the UI, or execute an auto-healing script.
     - *Deliverable: A self-diagnosing platform that actively helps developers fix failed builds.*
 
 ---
 
-## 💻 PHASE 10 — The AutoDeploy CLI
+## 🔐 PHASE 12 — Enterprise Identity & Security
+**Goal:** Transition from a local tool to a multi-tenant platform.
+- [ ] **OAuth & JWT Integration:** Implement Github/Google login for developers.
+- [ ] **Role-Based Access Control (RBAC):** Define Admin vs. Viewer roles for cluster management.
+- [ ] **Audit Logging:** Track every user action (who deployed what and when) for enterprise compliance.
+- [ ] **Advanced Secrets:** Integration with HashiCorp Vault or AWS Secrets Manager.
+
+---
+
+## 💸 PHASE 13 — Scaling & Monetization (The PaaS Business)
+**Goal:** Infrastructure for team-based scaling and resource management.
+- [ ] **Team Workspaces:** Allow multiple developers to share a project/cluster.
+- [ ] **Resource Quotas:** Limit CPU/RAM usage per team or project.
+- [ ] **Usage-Based Billing:** Implement Stripe integration for "Pay as you go" container hosting.
+- [ ] **Custom Domains & SSL:** Automated Let's Encrypt provisioning for production URLs.
+
+---
+
+## 💻 PHASE 14 — The AutoDeploy CLI
 **Goal:** Provide professional developers with total terminal control, running parallel to the GUI.
 
 ### 📅 Day-by-Day Progress
@@ -172,7 +202,7 @@
 
 ---
 
-## 📦 PHASE 12 — Enterprise-Grade Distribution
+## 📦 PHASE 15 — Enterprise-Grade Distribution
 **Goal:** Deliver a "Big Tech" installation experience where the GUI, CLI, and Engine are seamlessly deployed as a single, professional product.
 
 ### 📅 Day-by-Day Progress

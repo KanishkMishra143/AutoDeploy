@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
+import { Toaster } from "react-hot-toast";
 import "./globals.css";
 
 export const metadata: Metadata = {
     title: "AutoDeploy | Canvas",
-    description: "Modern Asyn Orchestration",
+    description: "Modern Async Orchestration",
 };
 
 export default function RootLayout({
@@ -13,23 +14,21 @@ export default function RootLayout({
 }>) {
     return (
         <html lang="en">
-        <body className="antialiased overflow-hidden bg-background text-foreground">
-        <main className="h-screen w-screen flex flex-col">
-        {/* Navigation Bar */}
-        <header className="h-14 border-b border-card-border flex items-center px-6 bg-card/50 backdrop-blur-md">
-        <div className="flex items-center gap-2">
-        <div className="w-6 h-6 bg-accent rounded-md flex items-center justify-center">
-        <span className="text-[10px] font-bold text-white">AD</span>
-        </div>
-        <h1 className="font-semibold tracking-tight">AutoDeploy <span className="text-muted-foreground font-normal text-sm ml-2">/ Canvas</span></h1>
-        </div>
-        </header>
-
-        {/* Content Area */}
-        <div className="flex-1 overflow-auto relative">
+        <body className="antialiased bg-background text-foreground overflow-x-hidden">
+            <Toaster 
+                position="bottom-right"
+                toastOptions={{
+                    style: {
+                        background: '#1a1a1a',
+                        color: '#fff',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        borderRadius: '16px',
+                        fontSize: '13px',
+                        fontWeight: '600'
+                    },
+                }}
+            />
             {children}
-        </div>
-        </main>
         </body>
         </html>
     );

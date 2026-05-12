@@ -5,6 +5,7 @@ export interface Application {
     id: string;
     name: string;
     repo_url: string;
+    branch?: string;
     env_vars: Record<string, string>;
     created_at: string;
     updated_at: string;
