@@ -1,6 +1,6 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from api.database import engine, get_db, session_scope
-from api.models import Base, Log
+from api.models import Base, Log, Application, Job, Worker
 from api.routes.jobs import router as jobs_router
 from fastapi.middleware.cors import CORSMiddleware
 import asyncio
@@ -11,7 +11,12 @@ Base.metadata.create_all(bind=engine)
 app = FastAPI(title="AsyncTasks API")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3001",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -21,6 +21,28 @@ export default function PurgeModal({ isOpen, onClose, onConfirm }: PurgeModalPro
     }
   }, [isOpen]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        const allModals = Array.from(document.querySelectorAll('.fixed.inset-0'));
+        const topModal = allModals.reduce((prev, curr) => {
+          const prevZ = parseInt(window.getComputedStyle(prev).zIndex) || 0;
+          const currZ = parseInt(window.getComputedStyle(curr).zIndex) || 0;
+          return currZ > prevZ ? curr : prev;
+        }, allModals[0]);
+
+        const myWrapper = document.getElementById('purge-modal-wrapper');
+        if (topModal === myWrapper) {
+          e.stopImmediatePropagation();
+          onClose();
+        }
+      }
+    };
+    window.addEventListener("keydown", handleEsc, true);
+    return () => window.removeEventListener("keydown", handleEsc, true);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const handleFinalConfirm = async () => {
@@ -32,7 +54,10 @@ export default function PurgeModal({ isOpen, onClose, onConfirm }: PurgeModalPro
   };
 
   return (
-    <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 animate-in fade-in duration-200">
+    <div 
+      id="purge-modal-wrapper"
+      className="fixed inset-0 z-[1000] flex items-center justify-center p-4 animate-in fade-in duration-200"
+    >
       <div className="fixed inset-0 bg-black/80 backdrop-blur-md" onClick={onClose} />
       
       <div className="relative w-full max-w-md bg-card border border-red-500/20 rounded-[32px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">

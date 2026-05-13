@@ -135,7 +135,7 @@
 
 ---
 
-## 🚀 PHASE 9 — Smart Templates & Custom Plans (CURRENT)
+## ✅ PHASE 9 — Smart Templates & Custom Plans (COMPLETED)
 **Goal:** Introduce intelligent project detection, customizable deployment pipelines, and auto-healing.
 
 ### 📅 Day-by-Day Progress
@@ -158,18 +158,20 @@
     - [x] **Task Visibility:** Restyled progress popups for better visual weight and alignment.
     - [x] **Notification Center:** Built a dedicated activity feed pane to track detailed system events.
     - [x] **Operational Feedback:** Implemented automated toasts for successful/failed deployment completions.
-- [ ] **Day 5 — Customizable Deployment DAG (Directed Acyclic Graph):**
-    - **Task:** Allow users to insert manual steps (e.g., "Run DB Migration") before or after the standard build step.
-    - **Sub-task:** Refactor Celery tasks into 'Chains' to execute these custom steps sequentially.
-    - *Deliverable: Highly flexible deployment pipelines that adapt to complex user needs.*
-- [ ] **Day 6 — Error-Handling Sub-Templates:**
-    - **Task:** Create specific worker logic triggered by known log errors (e.g., 'Port in use', 'Missing dependency').
-    - **Sub-task:** Automatically pause the build, suggest the fix via the UI, or execute an auto-healing script.
-    - *Deliverable: A self-diagnosing platform that actively helps developers fix failed builds.*
+- [x] **Day 5 — Customizable Deployment DAG (Directed Acyclic Graph):**
+    - [x] Allow users to insert manual steps (e.g., "Run DB Migration") before or after the standard build step.
+    - [x] Refactor Celery tasks into 'Chains' to execute these custom steps sequentially.
+    - [x] Verified Webhooks and History UI to support custom DAG steps.
+    - [x] Robust container replacement logic to prevent naming conflicts.
+    - [x] *Deliverable: Highly flexible deployment pipelines that adapt to complex user needs.*
+- [x] **Day 6 — Error-Handling Sub-Templates:**
+    - [x] **Task:** Create specific worker logic triggered by known log errors (e.g., 'Port in use', 'Missing dependency').
+    - [x] **Sub-task:** Automatically scan logs for error patterns and provide actionable suggestions in the UI.
+    - [x] *Deliverable: A self-diagnosing platform that actively helps developers fix failed builds.*
 
 ---
 
-## 🔐 PHASE 10 — Enterprise Identity & Security
+## 🔐 PHASE 10 — Enterprise Identity & Security (CURRENT)
 **Goal:** Transition from a local tool to a multi-tenant platform.
 - [ ] **OAuth & JWT Integration:** Implement Github/Google login for developers.
 - [ ] **Role-Based Access Control (RBAC):** Define Admin vs. Viewer roles for cluster management.

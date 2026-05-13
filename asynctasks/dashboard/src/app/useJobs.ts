@@ -6,6 +6,9 @@ export interface Application {
     name: string;
     repo_url: string;
     branch?: string;
+    stack: string;
+    pre_build_steps: string[];
+    post_build_steps: string[];
     env_vars: Record<string, string>;
     created_at: string;
     updated_at: string;
@@ -16,9 +19,13 @@ export interface Job {
     app_id?: string;
     type: string;
     status: string;
+    trigger_reason?: string;
+    trigger_metadata?: any;
     result?: {
         url?: string;
         message?: string;
+        progress_msg?: string;
+        progress_pct?: number;
     };
     created_at: string;
     updated_at: string;

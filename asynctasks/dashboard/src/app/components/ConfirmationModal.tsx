@@ -25,8 +25,18 @@ export default function ConfirmationModal({
     if (!isOpen) return;
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        e.stopImmediatePropagation();
-        onCancel();
+        const allModals = Array.from(document.querySelectorAll('.fixed.inset-0'));
+        const topModal = allModals.reduce((prev, curr) => {
+          const prevZ = parseInt(window.getComputedStyle(prev).zIndex) || 0;
+          const currZ = parseInt(window.getComputedStyle(curr).zIndex) || 0;
+          return currZ > prevZ ? curr : prev;
+        }, allModals[0]);
+
+        const myWrapper = document.getElementById('confirmation-modal-wrapper');
+        if (topModal === myWrapper) {
+          e.stopImmediatePropagation();
+          onCancel();
+        }
       }
     };
     window.addEventListener("keydown", handleEsc, true);
@@ -37,6 +47,7 @@ export default function ConfirmationModal({
 
   return (
     <div 
+      id="confirmation-modal-wrapper"
       onClick={(e) => e.target === e.currentTarget && onCancel()}
       className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 animate-in fade-in duration-200"
     >

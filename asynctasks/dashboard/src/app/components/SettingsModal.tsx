@@ -13,16 +13,32 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        const allModals = Array.from(document.querySelectorAll('.fixed.inset-0'));
+        const topModal = allModals.reduce((prev, curr) => {
+          const prevZ = parseInt(window.getComputedStyle(prev).zIndex) || 0;
+          const currZ = parseInt(window.getComputedStyle(curr).zIndex) || 0;
+          return currZ > prevZ ? curr : prev;
+        }, allModals[0]);
+
+        const myWrapper = document.getElementById('settings-modal-wrapper');
+        if (topModal === myWrapper) {
+          e.stopImmediatePropagation();
+          onClose();
+        }
+      }
     };
-    window.addEventListener("keydown", handleEsc);
-    return () => window.removeEventListener("keydown", handleEsc);
+    window.addEventListener("keydown", handleEsc, true);
+    return () => window.removeEventListener("keydown", handleEsc, true);
   }, [onClose]);
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[700] flex items-center justify-center p-4 animate-in fade-in duration-200 pointer-events-none">
+    <div 
+      id="settings-modal-wrapper"
+      className="fixed inset-0 z-[700] flex items-center justify-center p-4 animate-in fade-in duration-200 pointer-events-none"
+    >
       <div 
         className="fixed inset-0 bg-black/60 backdrop-blur-md pointer-events-auto cursor-pointer" 
         onClick={onClose}

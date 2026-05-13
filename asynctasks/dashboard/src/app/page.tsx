@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { 
   Activity, Server, Clock, CheckCircle2, XCircle, Loader2, Plus, 
   StopCircle, RotateCcw, Box, Globe, ChevronRight, User, 
-  Settings as SettingsIcon, LayoutGrid, Rocket, LogOut, Search, Bell, ExternalLink, GitBranch
+  Settings as SettingsIcon, LayoutGrid, Rocket, LogOut, Search, Bell, ExternalLink, GitBranch, Terminal
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { useSearchParams, useRouter } from "next/navigation";
@@ -278,14 +278,25 @@ export default function CanvasPage() {
                     className="group relative pt-6 z-10 hover:z-20 transition-[z-index] duration-0"
                   >
                     {/* Smart Progress Tab (Slides out from top) */}
-                    <div className={`absolute top-0 left-0 right-0 h-20 bg-accent rounded-t-[28px] flex items-start pt-4 px-8 transition-all duration-500 ease-out z-0 ${isRunning ? '-translate-y-8 opacity-100' : 'translate-y-0 opacity-0 pointer-events-none'}`}>
+                    <div 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (latestJob) setSelectedJobId(latestJob.id);
+                      }}
+                      className={`absolute top-0 left-0 right-0 h-20 bg-accent rounded-t-[28px] flex items-start pt-4 px-8 transition-all duration-500 ease-out z-0 cursor-pointer hover:bg-accent/90 active:scale-[0.98] ${isRunning ? '-translate-y-8 opacity-100' : 'translate-y-0 opacity-0 pointer-events-none'}`}
+                    >
                         <div className="flex flex-col w-full gap-3">
                            <div className="flex justify-between items-center">
                               <span className="text-[11px] font-black text-white uppercase tracking-widest flex items-center gap-2">
                                  <Loader2 className="w-4 h-4 animate-spin" />
                                  {progressMsg}
                               </span>
-                              <span className="text-[11px] font-black text-white/80">{progressPct}%</span>
+                              <div className="flex items-center gap-2">
+                                 <span className="px-2 py-0.5 bg-white/20 rounded text-[9px] font-black text-white uppercase tracking-tighter flex items-center gap-1">
+                                    <Terminal className="w-2.5 h-2.5" /> View Logs
+                                 </span>
+                                 <span className="text-[11px] font-black text-white/80">{progressPct}%</span>
+                              </div>
                            </div>
                            <div className="h-2 bg-white/20 rounded-full overflow-hidden border border-white/10 p-0.5">
                               <div 
@@ -302,20 +313,40 @@ export default function CanvasPage() {
                            <div className="p-4 bg-accent/5 rounded-2xl border border-accent/10 group-hover:bg-accent/10 transition-colors text-accent group-hover:scale-110 duration-300">
                               <Box className="w-7 h-7" />
                            </div>
-                           {latestJob ? <StatusBadge status={latestJob.status} /> : <span className="text-[10px] font-bold text-gray-600 uppercase tracking-widest">Pending</span>}
+                           {latestJob ? (
+                             <StatusBadge 
+                               status={latestJob.status} 
+                               onClick={(e) => {
+                                 e.stopPropagation();
+                                 setSelectedJobId(latestJob.id);
+                               }}
+                             />
+                           ) : (
+                             <span className="text-[10px] font-bold text-gray-600 uppercase tracking-widest">Pending</span>
+                           )}
                         </div>
                         
                         <h4 className="text-2xl font-black mb-1 text-white uppercase tracking-tighter">{app.name}</h4>
                         <div className="space-y-1.5 mb-8">
                           <p className="text-xs text-gray-500 font-mono flex items-center gap-1.5 truncate opacity-60">
-                            <Globe className="w-3 h-3" /> {app.repo_url}
+                            <Globe className="w-3.5 h-3.5" /> {app.repo_url}
                           </p>
                           <p className="text-[10px] text-accent/70 font-bold flex items-center gap-1.5 uppercase tracking-widest">
-                            <GitBranch className="w-3 h-3" /> {app.branch || 'main'}
+                            <GitBranch className="w-3.5 h-3.5" /> {app.branch || 'main'}
                           </p>
                         </div>
 
+                        {latestJob?.status === 'failed' && latestJob.result?.diagnosis && (
+                          <div className="mb-6 p-3 bg-red-500/5 border border-red-500/10 rounded-xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-2">
+                             <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
+                             <p className="text-[10px] font-bold text-red-500/80 uppercase tracking-tight truncate">
+                                {latestJob.result.diagnosis.title} Detected
+                             </p>
+                          </div>
+                        )}
+
                         <div className="flex gap-2.5 pointer-events-auto" onClick={(e) => e.stopPropagation()}>
+
                           <button 
                             onClick={() => deployApp(app.id)}
                             className="flex-1 bg-accent/10 hover:bg-accent/20 text-accent py-3 rounded-xl text-[11px] font-black transition-all flex items-center justify-center gap-2 uppercase tracking-widest border border-accent/10"
@@ -387,7 +418,12 @@ export default function CanvasPage() {
                           
                           <div className="flex items-center gap-8">
                              <div className="text-right">
-                                <p className={`text-[10px] font-black uppercase tracking-widest mb-0.5 ${job.status === 'failed' ? 'text-red-500' : 'text-gray-400'}`}>{job.status}</p>
+                                <div className="flex items-center gap-2 justify-end">
+                                   <span className="opacity-0 group-hover:opacity-100 transition-opacity text-[9px] font-black text-accent flex items-center gap-1">
+                                      <Terminal className="w-3 h-3" /> LOGS
+                                   </span>
+                                   <p className={`text-[10px] font-black uppercase tracking-widest ${job.status === 'failed' ? 'text-red-500' : job.status === 'running' ? 'text-blue-500' : job.status === 'success' ? 'text-green-500' : 'text-gray-400'}`}>{job.status}</p>
+                                </div>
                                 <p className="text-[10px] text-gray-500 font-medium">{new Date(job.updated_at).toLocaleTimeString()}</p>
                              </div>
                              <div className="p-2 bg-white/5 rounded-lg group-hover:bg-accent/10 group-hover:text-accent transition-all duration-300">
@@ -406,7 +442,7 @@ export default function CanvasPage() {
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({ status, onClick }: { status: string, onClick?: (e: React.MouseEvent) => void }) {
   const styles: Record<string, any> = {
     queued: { icon: Clock, color: "text-yellow-500", bg: "bg-yellow-500/10" },
     running: { icon: Loader2, color: "text-blue-500", bg: "bg-blue-500/10", animate: "animate-spin" },
@@ -419,9 +455,18 @@ function StatusBadge({ status }: { status: string }) {
   const Icon = config.icon;
 
   return (
-    <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl ${config.bg} ${config.color} text-[10px] font-black uppercase tracking-widest border border-white/5`}>
+    <div 
+      onClick={onClick}
+      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl ${config.bg} ${config.color} text-[10px] font-black uppercase tracking-widest border border-white/5 ${onClick ? 'cursor-pointer hover:brightness-125 transition-all active:scale-95 group/status' : ''}`}
+    >
       <Icon className={`w-3.5 h-3.5 ${config.animate || ""}`} />
       {status}
+      {onClick && (
+        <span className="ml-1 opacity-50 group-hover/status:opacity-100 flex items-center gap-1 border-l border-current pl-1.5 transition-opacity">
+           <Terminal className="w-3 h-3" />
+           {status === 'running' ? 'LOGS' : 'VIEW'}
+        </span>
+      )}
     </div>
   );
 }

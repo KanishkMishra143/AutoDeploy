@@ -44,18 +44,32 @@ export default function CommandPalette({ isOpen, onClose, apps, onSelectApp }: C
           onClose();
         }
       } else if (e.key === "Escape") {
-        onClose();
+        const allModals = Array.from(document.querySelectorAll('.fixed.inset-0'));
+        const topModal = allModals.reduce((prev, curr) => {
+          const prevZ = parseInt(window.getComputedStyle(prev).zIndex) || 0;
+          const currZ = parseInt(window.getComputedStyle(curr).zIndex) || 0;
+          return currZ > prevZ ? curr : prev;
+        }, allModals[0]);
+
+        const myWrapper = document.getElementById('command-palette-wrapper');
+        if (topModal === myWrapper) {
+          e.stopImmediatePropagation();
+          onClose();
+        }
       }
     };
 
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
   }, [isOpen, filteredApps, selectedIndex, onClose, onSelectApp]);
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-start justify-center pt-[15vh] px-4 animate-in fade-in duration-200 pointer-events-none">
+    <div 
+      id="command-palette-wrapper"
+      className="fixed inset-0 z-[200] flex items-start justify-center pt-[15vh] px-4 animate-in fade-in duration-200 pointer-events-none"
+    >
       <div 
         className="fixed inset-0 bg-black/60 backdrop-blur-md pointer-events-auto cursor-pointer" 
         onClick={onClose}

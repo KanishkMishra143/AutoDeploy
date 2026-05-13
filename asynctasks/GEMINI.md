@@ -6,26 +6,37 @@
 
 ## Persistent Progress Log
 
-### 📅 Tuesday, May 12, 2026
-- **Status:** Phase 9 UI/UX Polish.
+### 📅 Wednesday, May 13, 2026
+- **Status:** Phase 9 COMPLETE. Moving to Phase 10 Enterprise Identity.
 - **Milestones:**
-    - **Acrylic Header:** Implemented a professional, blurred background header with branding, search, and health metrics.
-    - **Branding:** Created a new logo and visual identity for the "Orchestrator" dashboard.
-    - **Identity & Settings:** Built a functional Settings page with user profile management and application-wide controls.
-    - **Card Enrichment:** Applications now show branch names and real-time task progress tabs.
-    - **Operational Feedback:** Transitioned to custom Confirmation Modals and `react-hot-toast` notifications.
+    - **Deployment DAG:** Successfully refactored the deployment pipeline into atomic Celery Chains (DAGs), allowing pre/post build custom steps.
+    - **Smart Webhooks:** Refactored webhook matching logic to normalize URLs and target specific branches.
+    - **UI/UX Polish:** Standardized modal dismissal (Top-Most Rule), interactive status badges, and improved log access.
+    - **Auto-Diagnosis:** Implemented a real-time log scanning engine that detects known errors (e.g., missing dependencies, port conflicts) and provides actionable fix suggestions in the UI.
 - **Next Task:** 
-    1. **UI Polish:** Fix "Task Popup" styling on app cards and move "Danger Zone" to a dedicated settings tab.
-    2. **UX Logic:** Link logo to homepage, implement ESC key dismissal for modals, and add a notification pane.
-    3. **Phase 9 Day 4-5:** Customizable Deployment DAG (Celery Chains).
+    1. **Phase 10 Day 1:** OAuth & JWT Integration (GitHub Login).
+    2. **Security:** Implement RBAC for Admin/Viewer roles.
+    3. **Audit Trails:** Backend engine for tracking user actions.
 
 ## Mentor Memory (Architectural Notes)
+- **Database Locality:** A local PostgreSQL 18 instance is running on the host machine at `localhost:5432`. The API and Worker (running on the host) connect to this instance rather than the one in Docker. When updating models, manual `ALTER TABLE` commands on the host DB are required as `create_all()` won't add columns to existing tables.
 - **Timezone Sync:** Always use `datetime.utcnow()` for heartbeats to ensure the API, Worker, and DB are synchronized regardless of local machine settings.
 - **Vertical vs. Horizontal Scaling:** A single Celery worker node can handle multiple tasks (Vertical/Concurrency) via prefork processes, while multiple nodes (Horizontal) provide redundancy and cross-machine scale.
 - **WSL Interop:** When working in WSL, ensure the Linux toolchain (node/npm) is used to avoid path and permission collisions with Windows binaries.
 - **Traefik v2.11:** Use v2.11 for better WSL compatibility. Ensure labels use backticks (`` ` ``) for Host rules and the container is on the `autodeploy-net` network.
 - **App Identity**: Containers are now named `autodeploy_{app_name}`, ensuring that new deployments replace old ones automatically while maintaining stable URLs.
 - **Job Provenance**: Track the `trigger_reason` and `trigger_metadata` for every job to provide a clear audit trail for the developer.
+- **UI/UX Laws (The AutoDeploy Standard):**
+    - **Modal Dismissal (The Top-Most Rule):** Every modal must handle the `Escape` key and "Click outside to close" (void clicking). The dismissal logic MUST be smart: only the top-most modal (highest z-index) should be dismissed by a single ESC press. Use the `z-index` check logic to verify if the current modal is the top one before closing.
+    - **Interactive Feedback:** Actions that take time (deploys, saves) must show immediate visual feedback via `react-hot-toast` and loading states (e.g., `Loader2` spin).
+    - **Status Color Palette:** Consistency in status representation is mandatory:
+        - `Success`: Green (`bg-green-500`, `text-green-500`)
+        - `Running`: Blue (`bg-blue-500`, `text-blue-500`) with pulse/spin animation.
+        - `Failed`: Red (`bg-red-500`, `text-red-500`)
+        - `Pending/Queued`: Yellow (`bg-yellow-500`, `text-yellow-500`)
+        - `Stopped/Neutral`: Gray (`bg-gray-500`, `text-gray-500`)
+    - **Interactive Badges:** Status indicators on the main dashboard should be "Smart Badges"—clickable shortcuts to logs or relevant details, highlighted by a terminal icon on hover.
+    - **Typography & Motion:** Use high-contrast, uppercase tracking for labels and headers (`tracking-widest`, `font-black`). Modals must use `animate-in fade-in zoom-in-95` for entrance animations.
 
 ---
 
@@ -81,8 +92,8 @@ asynctasks/
 6.  **Phase 6 (COMPLETED):** Dev Experience: Webhooks (Deploy on Push) & Secrets.
 7.  **Phase 7 (COMPLETED):** Production Hardening: Resource Quotas & Rollbacks.
 8.  **Phase 8 (COMPLETED):** Full-Stack Control & Topology Map.
-9.  **Phase 9:** Smart Templates & Custom Plans.
-10. **Phase 10:** Enterprise Identity & Security.
+9.  **Phase 9 (COMPLETED):** Smart Templates & Custom Plans.
+10. **Phase 10 (CURRENT):** Enterprise Identity & Security.
 11. **Phase 11:** The AutoDeploy CLI.
 12. **Phase 12:** Enterprise-Grade Distribution.
 13. **Phase 13:** Scaling & Monetization.

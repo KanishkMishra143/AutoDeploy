@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
-import { X, ExternalLink, Globe } from "lucide-react";
+import { X, ExternalLink, Globe, AlertCircle } from "lucide-react";
 import { Job } from "../useJobs";
 
 export default function LogViewer({ jobId, onClose }: { jobId: string; onClose: () => void }) {
@@ -55,8 +55,18 @@ export default function LogViewer({ jobId, onClose }: { jobId: string; onClose: 
   useEffect(() => {
     const handleEsc = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        event.stopImmediatePropagation();
-        onClose();
+        const allModals = Array.from(document.querySelectorAll('.fixed.inset-0'));
+        const topModal = allModals.reduce((prev, curr) => {
+          const prevZ = parseInt(window.getComputedStyle(prev).zIndex) || 0;
+          const currZ = parseInt(window.getComputedStyle(curr).zIndex) || 0;
+          return currZ > prevZ ? curr : prev;
+        }, allModals[0]);
+
+        const myWrapper = document.getElementById('log-viewer-wrapper');
+        if (topModal === myWrapper) {
+          event.stopImmediatePropagation();
+          onClose();
+        }
       }
     };
     window.addEventListener("keydown", handleEsc, true);
@@ -88,8 +98,9 @@ export default function LogViewer({ jobId, onClose }: { jobId: string; onClose: 
 
   return (
     <div 
+      id="log-viewer-wrapper"
       onClick={(e) => e.target === e.currentTarget && onClose()}
-      className="fixed inset-0 z-[600] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 cursor-default"
+      className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 cursor-default"
     >
       <div className="w-full max-w-4xl bg-card border border-card-border rounded-xl shadow-2xl overflow-hidden flex flex-col h-[80vh] cursor-default">
         
@@ -108,6 +119,19 @@ export default function LogViewer({ jobId, onClose }: { jobId: string; onClose: 
         </div>
 
         <div className="relative flex-1 overflow-hidden flex flex-col">
+          {job?.result?.diagnosis && (
+            <div className="bg-accent/10 border-b border-accent/20 p-4 shrink-0 flex items-start gap-3 animate-in slide-in-from-top-2">
+              <div className="bg-accent/20 p-2 rounded-lg">
+                <AlertCircle className="w-5 h-5 text-accent" />
+              </div>
+              <div>
+                <h4 className="text-accent font-black text-xs tracking-widest uppercase mb-1">
+                  Auto-Diagnosis: {job.result.diagnosis.title}
+                </h4>
+                <p className="text-gray-300 text-sm font-medium">{job.result.diagnosis.suggestion}</p>
+              </div>
+            </div>
+          )}
           <div 
             className="flex-1 bg-[#0a0a0a] p-4 font-mono text-sm overflow-y-auto cursor-text" 
             ref={scrollRef}

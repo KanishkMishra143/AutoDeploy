@@ -17,12 +17,14 @@ interface AppDetailModalProps {
 export default function AppDetailModal({ app, onClose, onViewLogs, allJobs, allApps }: AppDetailModalProps) {
   const [historyJobs, setHistoryJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"topology" | "history" | "settings">("topology");
+  const [activeTab, setActiveTab] = useState<"topology" | "history" | "settings" | "pipeline">("topology");
   const [isDeleting, setIsDeleting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   
-  // Local Env Vars for editing
+  // Local Settings for editing
   const [localEnv, setLocalEnv] = useState<{key: string, value: string}[]>([]);
+  const [localPreSteps, setLocalPreSteps] = useState<string[]>([]);
+  const [localPostSteps, setLocalPostSteps] = useState<string[]>([]);
 
   // Confirmation Modal State
   const [confirmConfig, setConfirmConfig] = useState<{
@@ -56,7 +58,7 @@ export default function AppDetailModal({ app, onClose, onViewLogs, allJobs, allA
   };
 
   useEffect(() => {
-    // Initialize env vars from app data
+    // Initialize settings from app data
     if (app.env_vars) {
       const vars = Object.entries(app.env_vars).map(([key, value]) => ({ 
         key, 
@@ -66,6 +68,9 @@ export default function AppDetailModal({ app, onClose, onViewLogs, allJobs, allA
     } else {
       setLocalEnv([{key: "", value: ""}]);
     }
+
+    setLocalPreSteps(app.pre_build_steps || []);
+    setLocalPostSteps(app.post_build_steps || []);
   }, [app]);
 
   const handleDeleteApp = () => {
@@ -109,7 +114,11 @@ export default function AppDetailModal({ app, onClose, onViewLogs, allJobs, allA
       const res = await fetch(`http://localhost:8000/apps/${app.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ env_vars: envObj })
+        body: JSON.stringify({ 
+          env_vars: envObj,
+          pre_build_steps: localPreSteps.filter(s => s.trim()),
+          post_build_steps: localPostSteps.filter(s => s.trim())
+        })
       });
       if (res.ok) {
          toast.success("Settings saved. Redeploy to apply changes.", { id: tId });
@@ -162,8 +171,20 @@ export default function AppDetailModal({ app, onClose, onViewLogs, allJobs, allA
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        e.stopImmediatePropagation();
-        onClose();
+        // Find the top-most element with a high z-index
+        const allModals = Array.from(document.querySelectorAll('.fixed.inset-0'));
+        const topModal = allModals.reduce((prev, curr) => {
+          const prevZ = parseInt(window.getComputedStyle(prev).zIndex) || 0;
+          const currZ = parseInt(window.getComputedStyle(curr).zIndex) || 0;
+          return currZ > prevZ ? curr : prev;
+        }, allModals[0]);
+
+        // Only close if THIS modal is the top one
+        const myWrapper = document.getElementById('history-modal-wrapper');
+        if (topModal === myWrapper) {
+          e.stopImmediatePropagation();
+          onClose();
+        }
       }
     };
     window.addEventListener("keydown", handleEsc, true);
@@ -174,6 +195,7 @@ export default function AppDetailModal({ app, onClose, onViewLogs, allJobs, allA
 
   return (
     <div 
+      id="history-modal-wrapper"
       onClick={(e) => e.target === e.currentTarget && onClose()}
       className="fixed inset-0 z-[500] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 animate-in fade-in duration-300"
     >
@@ -233,6 +255,7 @@ export default function AppDetailModal({ app, onClose, onViewLogs, allJobs, allA
            {[
              { id: 'topology', label: 'Topology', icon: Layers },
              { id: 'history', label: 'History', icon: HistoryIcon },
+             { id: 'pipeline', label: 'Pipeline DAG', icon: Terminal },
              { id: 'settings', label: 'Settings', icon: Settings }
            ].map(tab => (
              <button 
@@ -278,55 +301,162 @@ export default function AppDetailModal({ app, onClose, onViewLogs, allJobs, allA
                     return (
                       <div 
                         key={job.id}
-                        className={`group border rounded-2xl p-5 transition-all flex items-center justify-between ${isLatest ? 'bg-accent/5 border-accent/30 shadow-lg shadow-accent/5' : 'bg-background/30 border-card-border hover:border-accent/20'}`}
+                        className={`group border rounded-2xl p-5 transition-all flex flex-col gap-4 ${isLatest ? 'bg-accent/5 border-accent/30 shadow-lg shadow-accent/5' : 'bg-background/30 border-card-border hover:border-accent/20'}`}
                       >
-                        <div className="flex items-center gap-5">
-                          <div className={`w-3 h-3 rounded-full ${job.status === 'success' ? 'bg-green-500' : job.status === 'running' ? 'bg-blue-500 animate-pulse' : 'bg-red-500'}`} />
-                          <div>
-                            <div className="flex items-center gap-2">
-                               <span className="text-base font-bold text-white uppercase tracking-tight">Build #{historyJobs.length - index}</span>
-                               {isLatest && <span className="px-2 py-0.5 bg-accent text-[9px] font-black text-white rounded-lg uppercase tracking-tighter">Live</span>}
-                               <span className="text-[9px] px-2 py-0.5 bg-white/5 rounded text-gray-500 font-black uppercase tracking-widest flex items-center gap-1.5 border border-white/5">
-                                 {triggerIcon} {job.trigger_reason}
-                               </span>
+                        <div className="flex items-center justify-between w-full">
+                          <div className="flex items-center gap-5">
+                            <div className={`w-3 h-3 rounded-full ${job.status === 'success' ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]' : job.status === 'running' ? 'bg-blue-500 animate-pulse' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]'}`} />
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-base font-bold text-white uppercase tracking-tight">Build #{historyJobs.length - index}</span>
+                                {isLatest && <span className="px-2 py-0.5 bg-accent text-[9px] font-black text-white rounded-lg uppercase tracking-tighter">Live</span>}
+                                <span className="text-[9px] px-2 py-0.5 bg-white/5 rounded text-gray-500 font-black uppercase tracking-widest flex items-center gap-1.5 border border-white/5">
+                                  {triggerIcon} {job.trigger_reason}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2 mt-1">
+                                  <p className="text-[10px] text-gray-600 font-mono">Job: {job.id.split('-')[0]}</p>
+                                  {job.trigger_metadata?.commit_id && (
+                                      <span className="text-[10px] text-accent/50 font-mono font-bold italic">@{job.trigger_metadata.commit_id}</span>
+                                  )}
+                              </div>
                             </div>
-                            <div className="flex items-center gap-2 mt-1">
-                                <p className="text-[10px] text-gray-600 font-mono">Job: {job.id.split('-')[0]}</p>
-                                {job.trigger_metadata?.commit_id && (
-                                    <span className="text-[10px] text-accent/50 font-mono font-bold italic">@{job.trigger_metadata.commit_id}</span>
-                                )}
+                          </div>
+
+                          <div className="flex items-center gap-6">
+                            <div className="text-right">
+                              <p className="text-[11px] text-white font-medium">{new Date(job.created_at).toLocaleDateString()}</p>
+                              <p className="text-[10px] text-gray-500">{new Date(job.created_at).toLocaleTimeString()}</p>
+                            </div>
+                            
+                            <div className="flex gap-2">
+                              <button 
+                                onClick={() => onViewLogs(job.id)}
+                                className="p-2.5 bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white rounded-xl transition-all"
+                                title="Terminal Logs"
+                              >
+                                <Terminal className="w-4 h-4" />
+                              </button>
+                              {job.status === 'success' && !isLatest && (
+                                <button 
+                                  onClick={() => handleRollback(job.id)}
+                                  className="px-4 py-2 bg-accent/10 hover:bg-accent text-accent hover:text-white text-[10px] font-black rounded-xl transition-all uppercase tracking-widest border border-accent/20"
+                                >
+                                  Restore
+                                </button>
+                              )}
                             </div>
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-6">
-                          <div className="text-right">
-                            <p className="text-[11px] text-white font-medium">{new Date(job.created_at).toLocaleDateString()}</p>
-                            <p className="text-[10px] text-gray-500">{new Date(job.created_at).toLocaleTimeString()}</p>
+                        {/* Smart Diagnosis Section */}
+                        {job.result?.diagnosis && (
+                          <div className="p-4 bg-accent/5 border border-accent/10 rounded-xl animate-in fade-in slide-in-from-top-2 duration-300">
+                             <div className="flex items-center gap-2 mb-2">
+                                <AlertCircle className="w-4 h-4 text-accent" />
+                                <span className="text-[10px] font-black text-accent uppercase tracking-widest">Auto-Diagnosis: {job.result.diagnosis.title}</span>
+                             </div>
+                             <p className="text-xs text-gray-400 leading-relaxed font-medium">
+                                {job.result.diagnosis.suggestion}
+                             </p>
                           </div>
-                          
-                          <div className="flex gap-2">
-                            <button 
-                              onClick={() => onViewLogs(job.id)}
-                              className="p-2.5 bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white rounded-xl transition-all"
-                              title="Terminal Logs"
-                            >
-                              <Terminal className="w-4 h-4" />
-                            </button>
-                            {job.status === 'success' && !isLatest && (
-                               <button 
-                                 onClick={() => handleRollback(job.id)}
-                                 className="px-4 py-2 bg-accent/10 hover:bg-accent text-accent hover:text-white text-[10px] font-black rounded-xl transition-all uppercase tracking-widest border border-accent/20"
-                               >
-                                 Restore
-                               </button>
-                            )}
-                          </div>
-                        </div>
+                        )}
                       </div>
                     )
                   })
                 )}
+            </div>
+          )}
+
+          {activeTab === "pipeline" && (
+            <div className="flex-1 overflow-y-auto p-8 max-w-2xl mx-auto w-full space-y-8 custom-scrollbar">
+                <div className="mb-4">
+                  <h3 className="text-lg font-bold text-white mb-2 uppercase tracking-tight">Deployment DAG Configuration</h3>
+                  <p className="text-sm text-gray-500">Define manual steps to execute during the deployment lifecycle.</p>
+                </div>
+
+                {/* Pre-Build Section */}
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <div>
+                       <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest">Pre-Build Steps</h4>
+                       <p className="text-[10px] text-gray-600 font-bold uppercase tracking-widest">Before Docker build</p>
+                    </div>
+                    <button onClick={() => setLocalPreSteps([...localPreSteps, ""])} className="p-2 bg-accent/10 hover:bg-accent text-accent hover:text-white rounded-xl transition-all">
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="space-y-2">
+                    {localPreSteps.map((step, i) => (
+                      <div key={i} className="flex gap-2">
+                        <div className="flex-1 bg-background/50 border border-card-border rounded-xl px-4 py-3 flex items-center group focus-within:border-accent transition-all">
+                           <Terminal className="w-3.5 h-3.5 text-gray-600 mr-3" />
+                           <input 
+                             placeholder="e.g. npm install"
+                             className="w-full bg-transparent text-xs font-mono outline-none text-white placeholder:text-gray-800"
+                             value={step}
+                             onChange={(e) => {
+                               const updated = [...localPreSteps];
+                               updated[i] = e.target.value;
+                               setLocalPreSteps(updated);
+                             }}
+                           />
+                        </div>
+                        <button onClick={() => setLocalPreSteps(localPreSteps.filter((_, idx) => idx !== i))} className="p-3 text-gray-600 hover:text-red-500 transition-all">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="h-px bg-card-border" />
+
+                {/* Post-Build Section */}
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <div>
+                       <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest">Post-Build Steps</h4>
+                       <p className="text-[10px] text-gray-600 font-bold uppercase tracking-widest">After image build, before deploy</p>
+                    </div>
+                    <button onClick={() => setLocalPostSteps([...localPostSteps, ""])} className="p-2 bg-accent/10 hover:bg-accent text-accent hover:text-white rounded-xl transition-all">
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="space-y-2">
+                    {localPostSteps.map((step, i) => (
+                      <div key={i} className="flex gap-2">
+                        <div className="flex-1 bg-background/50 border border-card-border rounded-xl px-4 py-3 flex items-center group focus-within:border-accent transition-all">
+                           <Terminal className="w-3.5 h-3.5 text-gray-600 mr-3" />
+                           <input 
+                             placeholder="e.g. python migrate.py"
+                             className="w-full bg-transparent text-xs font-mono outline-none text-white placeholder:text-gray-800"
+                             value={step}
+                             onChange={(e) => {
+                               const updated = [...localPostSteps];
+                               updated[i] = e.target.value;
+                               setLocalPostSteps(updated);
+                             }}
+                           />
+                        </div>
+                        <button onClick={() => setLocalPostSteps(localPostSteps.filter((_, idx) => idx !== i))} className="p-3 text-gray-600 hover:text-red-500 transition-all">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="pt-4 flex justify-end">
+                   <button 
+                     onClick={handleSaveSettings}
+                     disabled={isSaving}
+                     className="px-8 py-3 bg-accent hover:bg-accent/90 text-white text-xs font-black rounded-xl transition-all shadow-lg shadow-accent/20 flex items-center gap-2 uppercase tracking-widest"
+                   >
+                     {isSaving ? <RotateCcw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                     Save DAG Configuration
+                   </button>
+                </div>
             </div>
           )}
 

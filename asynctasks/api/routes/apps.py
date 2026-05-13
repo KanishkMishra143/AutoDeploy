@@ -45,6 +45,8 @@ def create_app(app: AppCreate, db: Session = Depends(get_db)):
         repo_url=app.repo_url,
         branch=app.branch,
         stack=app.stack,
+        pre_build_steps=app.pre_build_steps or [],
+        post_build_steps=app.post_build_steps or [],
         env_vars=app.env_vars
     )
     db.add(new_app)
@@ -83,7 +85,9 @@ def deploy_app(app_id: UUID, db: Session = Depends(get_db)):
             "branch": app.branch,
             "env": app.env_vars,
             "app_name": app.name,
-            "stack": app.stack
+            "stack": app.stack,
+            "pre_build_steps": app.pre_build_steps,
+            "post_build_steps": app.post_build_steps
         }
     )
     db.add(new_job)
@@ -130,6 +134,12 @@ def update_app(app_id: UUID, payload: dict, db: Session = Depends(get_db)):
     
     if "env_vars" in payload:
         app.env_vars = payload["env_vars"]
+    if "pre_build_steps" in payload:
+        app.pre_build_steps = payload["pre_build_steps"]
+    if "post_build_steps" in payload:
+        app.post_build_steps = payload["post_build_steps"]
+    if "branch" in payload:
+        app.branch = payload["branch"]
     
     db.commit()
     db.refresh(app)

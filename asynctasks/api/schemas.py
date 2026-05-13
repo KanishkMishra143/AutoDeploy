@@ -9,6 +9,8 @@ class AppCreate(BaseModel):
     repo_url: str
     branch: str = "main"
     stack: str = "dockerfile"
+    pre_build_steps: Optional[List[str]] = []
+    post_build_steps: Optional[List[str]] = []
     env_vars: Optional[Dict[str, str]] = {}
 
 
@@ -16,6 +18,8 @@ class AppUpdate(BaseModel):
     name: Optional[str] = None
     repo_url: Optional[str] = None
     branch: Optional[str] = None
+    pre_build_steps: Optional[List[str]] = None
+    post_build_steps: Optional[List[str]] = None
     env_vars: Optional[Dict[str, str]] = None
 
 
@@ -25,6 +29,8 @@ class AppResponse(BaseModel):
     repo_url: str
     branch: str
     stack: str
+    pre_build_steps: List[str]
+    post_build_steps: List[str]
     env_vars: Dict[str, str]
     created_at: datetime
     updated_at: datetime
