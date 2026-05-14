@@ -7,8 +7,9 @@ from api.schemas import JobCreate, JobResponse, JobListResponse, JobLogsResponse
 from worker.tasks import process_job, stop_job
 from uuid import UUID
 from datetime import datetime, timedelta
+from api.auth import get_current_user
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 @router.post("/jobs/{job_id}/rerun", response_model=JobResponse)
 def rerun_job(job_id: UUID, db: Session = Depends(get_db)):

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Toaster } from "react-hot-toast";
 import "./globals.css";
+import AuthGuard from "./components/AuthGuard";
 
 export const metadata: Metadata = {
     title: "AutoDeploy | Orchestrator",
@@ -31,7 +32,9 @@ export default function RootLayout({
                     },
                 }}
             />
-            {children}
+            <AuthGuard>
+                {children}
+            </AuthGuard>
         </body>
         </html>
     );

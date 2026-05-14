@@ -14,6 +14,7 @@ import AppDetailModal from "./components/HistoryModal";
 import TopologyMap from "./components/TopologyMap";
 import ConfirmationModal from "./components/ConfirmationModal";
 import Header from "./components/Header";
+import { supabase } from "../lib/supabase";
 
 export default function CanvasPage() {
   const { jobs, apps, loading, error, workerCount } = useJobs();
@@ -110,8 +111,12 @@ export default function CanvasPage() {
       confirmVariant: "danger",
       onConfirm: async () => {
         try {
+          const { data: { session } } = await supabase.auth.getSession();
           const res = await fetch(`http://localhost:8000/jobs/${jobId}`, {
             method: "DELETE",
+            headers: {
+              "Authorization": `Bearer ${session?.access_token}`,
+            }
           });
           if (res.ok) {
             toast.success("Service termination signal sent.");
@@ -130,7 +135,13 @@ export default function CanvasPage() {
   const deployApp = async (appId: string) => {
     const tId = toast.loading("Triggering deployment...");
     try {
-        const res = await fetch(`http://localhost:8000/apps/${appId}/deploy`, { method: "POST" });
+        const { data: { session } } = await supabase.auth.getSession();
+        const res = await fetch(`http://localhost:8000/apps/${appId}/deploy`, { 
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${session?.access_token}`,
+          }
+        });
         if (res.ok) {
             const data = await res.json();
             setSelectedJobId(data.id);
@@ -162,7 +173,7 @@ export default function CanvasPage() {
         isModalOpen={showDeployModal || !!selectedApp || confirmConfig.isOpen || !!selectedJobId}
       />
 
-      <main className="pt-32 pb-20 px-8">
+      <main className="pt-48 pb-20 px-8">
         {selectedJobId && (
           <LogViewer jobId={selectedJobId} onClose={() => setSelectedJobId(null)} />
         )}

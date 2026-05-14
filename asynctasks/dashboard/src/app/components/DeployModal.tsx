@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { X, Plus, Trash2, Rocket, Globe, Tag, GitBranch, Layers, Terminal, Settings2 } from "lucide-react";
 import toast from "react-hot-toast";
+import { supabase } from "../../lib/supabase";
 
 type TabType = "general" | "env" | "pipeline";
 
@@ -26,7 +27,12 @@ export default function DeployModal({ onClose }: { onClose: (jobId?: string) => 
       const fetchBranches = async () => {
         setFetchingBranches(true);
         try {
-          const res = await fetch(`http://localhost:8000/apps/branches?repo_url=${repo}`);
+          const { data: { session } } = await supabase.auth.getSession();
+          const res = await fetch(`http://localhost:8000/apps/branches?repo_url=${repo}`, {
+            headers: {
+              "Authorization": `Bearer ${session?.access_token}`,
+            }
+          });
           if (res.ok) {
             const data = await res.json();
             setAvailableBranches(data.branches || []);
@@ -83,9 +89,13 @@ export default function DeployModal({ onClose }: { onClose: (jobId?: string) => 
     }, {} as Record<string, string>);
 
     try {
+      const { data: { session } } = await supabase.auth.getSession();
       const appRes = await fetch("http://localhost:8000/apps", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session?.access_token}`,
+        },
         body: JSON.stringify({
           name: name,
           repo_url: repo,
@@ -106,7 +116,10 @@ export default function DeployModal({ onClose }: { onClose: (jobId?: string) => 
 
       const appData = await appRes.json();
       const deployRes = await fetch(`http://localhost:8000/apps/${appData.id}/deploy`, {
-        method: "POST"
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${session?.access_token}`,
+        }
       });
       
       if (deployRes.ok) {

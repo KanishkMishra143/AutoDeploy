@@ -7,20 +7,27 @@
 ## Persistent Progress Log
 
 ### 📅 Wednesday, May 13, 2026
-- **Status:** Phase 9 COMPLETE. Moving to Phase 10 Enterprise Identity.
+- **Status:** Phase 10 Day 1 & 2 COMPLETE.
 - **Milestones:**
-    - **Deployment DAG:** Successfully refactored the deployment pipeline into atomic Celery Chains (DAGs), allowing pre/post build custom steps.
-    - **Smart Webhooks:** Refactored webhook matching logic to normalize URLs and target specific branches.
-    - **UI/UX Polish:** Standardized modal dismissal (Top-Most Rule), interactive status badges, and improved log access.
-    - **Auto-Diagnosis:** Implemented a real-time log scanning engine that detects known errors (e.g., missing dependencies, port conflicts) and provides actionable fix suggestions in the UI.
+    - **Dynamic Notifications:** Implemented real-time notification dot logic in the header. The dot now only appears when there are unread system events (not in `localStorage`) and updates instantly when items are dismissed.
+    - **UX Shortcut Polish:** Enforced the "No Back-Drop Spawning Rule" for the Command Palette (`Ctrl+K`).
+    - **Shortcut Behavior:** Fixed `Ctrl+K` to always `preventDefault()` browser behavior, even when spawning is blocked by an active modal.
+    - **UI Layout Fixes:** Adjusted the Settings page layout to increase header spacing, ensuring the "Back to Canvas" navigation is fully accessible and clickable.
+    - **Visual Consistency:** Standardized the shortcut hints in the Command Palette to match the Header's badge style.
 - **Next Task:** 
-    1. **Phase 10 Day 1:** OAuth & JWT Integration (GitHub Login).
-    2. **Security:** Implement RBAC for Admin/Viewer roles.
-    3. **Audit Trails:** Backend engine for tracking user actions.
+    1. **Phase 10 Day 3:** Role-Based Access Control (RBAC) - Admin vs. Viewer roles.
+    2. **Ownership Logic:** Ensure users only see and manage their own applications.
 
 ## Mentor Memory (Architectural Notes)
-- **Database Locality:** A local PostgreSQL 18 instance is running on the host machine at `localhost:5432`. The API and Worker (running on the host) connect to this instance rather than the one in Docker. When updating models, manual `ALTER TABLE` commands on the host DB are required as `create_all()` won't add columns to existing tables.
-- **Timezone Sync:** Always use `datetime.utcnow()` for heartbeats to ensure the API, Worker, and DB are synchronized regardless of local machine settings.
+- **Hybrid Architecture (Phase 10+):** The project now uses a Hybrid Cloud model.
+    - **Database & Auth:** Hosted on Supabase (Cloud).
+    - **API & Worker:** Run locally on the host machine/WSL for Docker access.
+- **Manual Schema Migrations:** Because we use Supabase, SQLAlchemy's `create_all()` will NOT add new columns to existing tables. When updating `models.py`:
+    1.  Update the Python model.
+    2.  Go to the Supabase **SQL Editor**.
+    3.  Run an `ALTER TABLE ... ADD COLUMN ...` command to match the new model.
+- **Database Locality (DEPRECATED):** Previously used local Postgres. Now uses `SUPABASE_DB_URL` from `.env`.
+- **Timezone Sync:** Always use `datetime.utcnow()` for heartbeats to ensure the API, Worker, and DB are synchronized.
 - **Vertical vs. Horizontal Scaling:** A single Celery worker node can handle multiple tasks (Vertical/Concurrency) via prefork processes, while multiple nodes (Horizontal) provide redundancy and cross-machine scale.
 - **WSL Interop:** When working in WSL, ensure the Linux toolchain (node/npm) is used to avoid path and permission collisions with Windows binaries.
 - **Traefik v2.11:** Use v2.11 for better WSL compatibility. Ensure labels use backticks (`` ` ``) for Host rules and the container is on the `autodeploy-net` network.
@@ -36,7 +43,9 @@
         - `Pending/Queued`: Yellow (`bg-yellow-500`, `text-yellow-500`)
         - `Stopped/Neutral`: Gray (`bg-gray-500`, `text-gray-500`)
     - **Interactive Badges:** Status indicators on the main dashboard should be "Smart Badges"—clickable shortcuts to logs or relevant details, highlighted by a terminal icon on hover.
-    - **Typography & Motion:** Use high-contrast, uppercase tracking for labels and headers (`tracking-widest`, `font-black`). Modals must use `animate-in fade-in zoom-in-95` for entrance animations.
+    - Typography & Motion: Use high-contrast, uppercase tracking for labels and headers (`tracking-widest`, `font-black`). Modals must use `animate-in fade-in zoom-in-95` for entrance animations.
+    - Modal Exclusivity (The No Back-Drop Spawning Rule): Global shortcuts like `Ctrl+K` (Command Palette) MUST be disabled if any other modal (Deploy, History, Settings, Logs, etc.) is currently open. This prevents UI "stacking" where a new utility spawns behind an active modal, creating a confusing and inaccessible experience.
+
 
 ---
 

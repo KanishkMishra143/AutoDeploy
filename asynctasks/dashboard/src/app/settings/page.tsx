@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import Header from "../components/Header";
 import PurgeModal from "../components/PurgeModal";
 import toast from "react-hot-toast";
+import { supabase } from "../../lib/supabase";
 
 type TabType = 'General' | 'Security' | 'Notifications' | 'Billing' | 'Danger';
 
@@ -23,7 +24,13 @@ export default function SettingsPage() {
 
   const handlePurgeCluster = async () => {
     try {
-      const res = await fetch("http://localhost:8000/apps/purge", { method: "DELETE" });
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch("http://localhost:8000/apps/purge", { 
+        method: "DELETE",
+        headers: {
+          "Authorization": `Bearer ${session?.access_token}`,
+        }
+      });
       if (res.ok) {
         toast.success("Cluster purged successfully.");
         router.push("/");
@@ -57,7 +64,7 @@ export default function SettingsPage() {
         isModalOpen={isPurgeModalOpen}
       />
 
-      <main className="pt-32 pb-20 px-8">
+      <main className="pt-52 pb-20 px-8">
         <div className="max-w-4xl mx-auto">
           <Link 
             href="/"

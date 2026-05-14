@@ -5,6 +5,7 @@ import toast from "react-hot-toast";
 import { Job, Application } from "../useJobs";
 import TopologyMap from "./TopologyMap";
 import ConfirmationModal from "./ConfirmationModal";
+import { supabase } from "../../lib/supabase";
 
 interface AppDetailModalProps {
   app: Application;
@@ -45,7 +46,12 @@ export default function AppDetailModal({ app, onClose, onViewLogs, allJobs, allA
 
   const fetchHistory = async () => {
     try {
-      const res = await fetch(`http://localhost:8000/jobs?app_id=${app.id}&limit=20`);
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`http://localhost:8000/jobs?app_id=${app.id}&limit=20`, {
+        headers: {
+          "Authorization": `Bearer ${session?.access_token}`,
+        }
+      });
       if (res.ok) {
         const data = await res.json();
         setHistoryJobs(data.jobs || []);
@@ -84,7 +90,13 @@ export default function AppDetailModal({ app, onClose, onViewLogs, allJobs, allA
         setIsDeleting(true);
         const tId = toast.loading(`Deleting ${app.name}...`);
         try {
-          const res = await fetch(`http://localhost:8000/apps/${app.id}`, { method: "DELETE" });
+          const { data: { session } } = await supabase.auth.getSession();
+          const res = await fetch(`http://localhost:8000/apps/${app.id}`, { 
+            method: "DELETE",
+            headers: {
+              "Authorization": `Bearer ${session?.access_token}`,
+            }
+          });
           if (res.ok) {
             toast.success("Application successfully purged", { id: tId });
             onClose();
@@ -111,9 +123,13 @@ export default function AppDetailModal({ app, onClose, onViewLogs, allJobs, allA
     }, {} as Record<string, string>);
 
     try {
+      const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch(`http://localhost:8000/apps/${app.id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session?.access_token}`,
+        },
         body: JSON.stringify({ 
           env_vars: envObj,
           pre_build_steps: localPreSteps.filter(s => s.trim()),
@@ -143,7 +159,13 @@ export default function AppDetailModal({ app, onClose, onViewLogs, allJobs, allA
       onConfirm: async () => {
         const tId = toast.loading("Initiating rollback...");
         try {
-          const res = await fetch(`http://localhost:8000/jobs/${jobId}/rerun`, { method: "POST" });
+          const { data: { session } } = await supabase.auth.getSession();
+          const res = await fetch(`http://localhost:8000/jobs/${jobId}/rerun`, { 
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${session?.access_token}`,
+            }
+          });
           if (res.ok) {
             const data = await res.json();
             toast.success("Rollback in progress", { id: tId });

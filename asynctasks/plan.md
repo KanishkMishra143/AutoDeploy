@@ -172,10 +172,20 @@
 ---
 
 ## 🔐 PHASE 10 — Enterprise Identity & Security (CURRENT)
-**Goal:** Transition from a local tool to a multi-tenant platform.
-- [ ] **OAuth & JWT Integration:** Implement Github/Google login for developers.
-- [ ] **Role-Based Access Control (RBAC):** Define Admin vs. Viewer roles for cluster management.
-- [ ] **Audit Logging:** Track every user action (who deployed what and when) for enterprise compliance.
+**Goal:** Transition from a local tool to a multi-tenant platform using Supabase for DB & Auth.
+
+### 📅 Day-by-Day Progress
+- [x] **Day 1 — The Hybrid Migration (Supabase DB):**
+    - **Task:** Migrate the local PostgreSQL schema to Supabase.
+    - **Sub-task:** Update API and Worker to connect via the Supabase Connection String.
+    - *Deliverable: A "Cloud Brain" that connects local workers to remote state.*
+- [x] **Day 2 — OAuth & JWT Integration:**
+    - **Task:** Implement GitHub Login using Supabase Auth.
+    - **Sub-task:** Secure FastAPI endpoints using JWT verification from Supabase.
+- [ ] **Day 3 — Role-Based Access Control (RBAC):**
+    - **Task:** Define Admin vs. Viewer roles and implement Ownership logic (Users only see their own apps).
+- [ ] **Day 4 — Audit Logging:**
+    - **Task:** Track every user action (who deployed what and when) for enterprise compliance.
 - [ ] **Advanced Secrets:** Integration with HashiCorp Vault or AWS Secrets Manager.
 
 ---
@@ -215,12 +225,13 @@
     - **Task:** Finalize custom app icons, splash screens, and digitally sign the installer.
     - **Sub-task:** Perform "Clean Install" tests on fresh Windows machines to guarantee consistent GUI/CLI results.
     - *Deliverable: A high-fidelity, production-ready release package.*
-
 ---
 
 ## 💸 PHASE 13 — Scaling & Monetization (The PaaS Business)
 **Goal:** Infrastructure for team-based scaling and resource management.
+- [ ] **Log Batching & Performance:** Implement log buffering in the worker to reduce cloud DB write latency.
 - [ ] **Team Workspaces:** Allow multiple developers to share a project/cluster.
+...
 - [ ] **Resource Quotas:** Limit CPU/RAM usage per team or project.
 - [ ] **Usage-Based Billing:** Implement Stripe integration for "Pay as you go" container hosting.
 - [ ] **Custom Domains & SSL:** Automated Let's Encrypt provisioning for production URLs.

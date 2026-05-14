@@ -2,6 +2,7 @@
 import { useEffect, useState, useRef } from "react";
 import { X, ExternalLink, Globe, AlertCircle } from "lucide-react";
 import { Job } from "../useJobs";
+import { supabase } from "../../lib/supabase";
 
 export default function LogViewer({ jobId, onClose }: { jobId: string; onClose: () => void }) {
   const [logs, setLogs] = useState<any[]>([]);
@@ -13,7 +14,12 @@ export default function LogViewer({ jobId, onClose }: { jobId: string; onClose: 
   useEffect(() => {
     const fetchJob = async () => {
       try {
-        const res = await fetch(`http://localhost:8000/jobs/${jobId}`);
+        const { data: { session } } = await supabase.auth.getSession();
+        const res = await fetch(`http://localhost:8000/jobs/${jobId}`, {
+          headers: {
+            "Authorization": `Bearer ${session?.access_token}`,
+          }
+        });
         if (res.ok) {
           const data = await res.json();
           setJob(data);

@@ -1,9 +1,15 @@
+import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 from contextlib import contextmanager
+from dotenv import load_dotenv
 
+# Load environment variables from .env file
+load_dotenv()
 
-DATABASE_URL = "postgresql://kanishk:kanishk@localhost:5432/asynctasks"
+# We prefer Supabase for Phase 10 hybrid architecture
+DATABASE_URL = os.getenv("SUPABASE_DB_URL", "postgresql://kanishk:kanishk@localhost:5432/asynctasks")
+
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(
     autocommit=False,

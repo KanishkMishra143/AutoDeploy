@@ -89,9 +89,9 @@ export default function CommandPalette({ isOpen, onClose, apps, onSelectApp }: C
               setSelectedIndex(0);
             }}
           />
-          <div className="flex items-center gap-1.5 px-2 py-1 bg-white/5 rounded-lg border border-card-border ml-4">
-             <Command className="w-3 h-3 text-gray-500" />
-             <span className="text-[10px] font-black text-gray-500 uppercase">K</span>
+          <div className="ml-auto hidden md:flex items-center gap-1.5">
+             <span className="px-1.5 py-0.5 bg-white/5 rounded text-[10px] font-black text-gray-600 border border-white/5 uppercase tracking-tighter">Ctrl</span>
+             <span className="px-1.5 py-0.5 bg-white/5 rounded text-[10px] font-black text-gray-600 border border-white/5 uppercase tracking-tighter">K</span>
           </div>
         </div>
 

@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
+import { supabase } from "../lib/supabase";
 
 export interface Application {
     id: string;
@@ -38,9 +39,18 @@ export function useJobs() {
     const [error, setError] = useState<string | null>(null);
     const [workerCount, setWorkerCount] = useState(0);
 
+    const getAuthHeaders = async () => {
+        const { data: { session } } = await supabase.auth.getSession();
+        return {
+            "Authorization": `Bearer ${session?.access_token}`,
+            "Content-Type": "application/json"
+        };
+    };
+
     const fetchWorkers = async () => {
         try {
-            const response = await fetch("http://localhost:8000/workers");
+            const headers = await getAuthHeaders();
+            const response = await fetch("http://localhost:8000/workers", { headers });
             if (!response.ok) throw new Error();
             const data = await response.json();
             setWorkerCount(data.count);
@@ -51,7 +61,8 @@ export function useJobs() {
 
     const fetchApps = async () => {
         try {
-            const response = await fetch("http://localhost:8000/apps");
+            const headers = await getAuthHeaders();
+            const response = await fetch("http://localhost:8000/apps", { headers });
             if (response.ok) {
                 const data = await response.json();
                 setApps(data.apps || []);
@@ -63,7 +74,8 @@ export function useJobs() {
 
     const fetchJobs = async () => {
       try {
-        const response = await fetch("http://localhost:8000/jobs?limit=50");
+        const headers = await getAuthHeaders();
+        const response = await fetch("http://localhost:8000/jobs?limit=50", { headers });
         if (!response.ok) throw new Error("API Unreachable");
         const data = await response.json();
         setJobs(data.jobs || []);

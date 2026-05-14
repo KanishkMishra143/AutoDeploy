@@ -10,9 +10,10 @@ interface NotificationPaneProps {
   jobs: Job[];
   apps: Application[];
   onViewJob: (jobId: string) => void;
+  onRefresh?: () => void;
 }
 
-export default function NotificationPane({ isOpen, onClose, jobs, apps, onViewJob }: NotificationPaneProps) {
+export default function NotificationPane({ isOpen, onClose, jobs, apps, onViewJob, onRefresh }: NotificationPaneProps) {
   const [dismissedIds, setDismissedIds] = useState<string[]>([]);
 
   // Load dismissed IDs on mount
@@ -35,6 +36,7 @@ export default function NotificationPane({ isOpen, onClose, jobs, apps, onViewJo
     const newDismissed = [...dismissedIds, id];
     setDismissedIds(newDismissed);
     localStorage.setItem("dismissed_notifications", JSON.stringify(newDismissed));
+    onRefresh?.();
   };
 
   const handleClearHistory = () => {
@@ -42,6 +44,7 @@ export default function NotificationPane({ isOpen, onClose, jobs, apps, onViewJo
     const newDismissed = Array.from(new Set([...dismissedIds, ...allIds]));
     setDismissedIds(newDismissed);
     localStorage.setItem("dismissed_notifications", JSON.stringify(newDismissed));
+    onRefresh?.();
     toast.success("Activity feed cleared.");
   };
 

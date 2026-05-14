@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { X, User, Settings as SettingsIcon, Bell, Shield, CreditCard, Upload, ChevronRight } from "lucide-react";
+import { supabase } from "../../lib/supabase";
 import Link from "next/link";
 
 interface SettingsModalProps {
@@ -10,6 +11,15 @@ interface SettingsModalProps {
 
 export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const [activeTab, setActiveTab] = useState<'profile' | 'notifications' | 'security'>('profile');
+  const [user, setUser] = useState<any>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      supabase.auth.getUser().then(({ data: { user } }) => {
+        setUser(user);
+      });
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
@@ -33,6 +43,10 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   }, [onClose]);
 
   if (!isOpen) return null;
+
+  const userMeta = user?.user_metadata || {};
+  const avatarUrl = userMeta.avatar_url;
+  const fullName = userMeta.full_name || userMeta.name || "Developer";
 
   return (
     <div 
@@ -94,17 +108,21 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-300">
                    <div className="flex items-center gap-6">
                       <div className="relative group">
-                         <div className="w-20 h-20 bg-accent/10 rounded-3xl border-2 border-dashed border-accent/30 flex items-center justify-center group-hover:border-accent transition-all">
-                            <User className="w-8 h-8 text-accent opacity-50" />
-                         </div>
+                         {avatarUrl ? (
+                           <img src={avatarUrl} alt={fullName} className="w-20 h-20 rounded-3xl border-2 border-accent/30 object-cover" />
+                         ) : (
+                           <div className="w-20 h-20 bg-accent/10 rounded-3xl border-2 border-dashed border-accent/30 flex items-center justify-center group-hover:border-accent transition-all">
+                              <User className="w-8 h-8 text-accent opacity-50" />
+                           </div>
+                         )}
                          <div className="absolute inset-0 bg-black/60 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer">
                             <Upload className="w-5 h-5 text-white" />
                          </div>
                       </div>
                       <div>
                          <h4 className="text-sm font-bold text-white mb-1">Developer Identity</h4>
-                         <p className="text-xs text-gray-500">Update your cluster profile and avatar.</p>
-                         <button className="text-[10px] font-black text-accent uppercase tracking-widest mt-2 hover:underline">Change Photo</button>
+                         <p className="text-xs text-gray-500">Your profile data is synced with GitHub.</p>
+                         <button className="text-[10px] font-black text-accent uppercase tracking-widest mt-2 hover:underline">Sync Profile</button>
                       </div>
                    </div>
 
@@ -113,21 +131,21 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                          <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Display Name</label>
                          <input 
                            type="text" 
-                           defaultValue="Senior Developer"
+                           value={fullName}
                            readOnly
-                           className="w-full bg-background/50 border border-card-border rounded-xl px-4 py-3 text-sm text-gray-400 cursor-not-allowed"
+                           className="w-full bg-background/50 border border-card-border rounded-xl px-4 py-3 text-sm text-gray-400 cursor-not-allowed font-mono"
                          />
                       </div>
                       <div>
                          <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Email Address</label>
                          <input 
                            type="email" 
-                           defaultValue="developer@autodeploy.local"
+                           value={user?.email || ""}
                            readOnly
-                           className="w-full bg-background/50 border border-card-border rounded-xl px-4 py-3 text-sm text-gray-400 cursor-not-allowed"
+                           className="w-full bg-background/50 border border-card-border rounded-xl px-4 py-3 text-sm text-gray-400 cursor-not-allowed font-mono"
                          />
                       </div>
-                      <p className="text-[10px] text-gray-600 italic">Account details will be editable in Phase 12 (Auth & Accounts).</p>
+                      <p className="text-[10px] text-gray-600 italic">Account details are managed via GitHub OAuth.</p>
                    </div>
                 </div>
               )}

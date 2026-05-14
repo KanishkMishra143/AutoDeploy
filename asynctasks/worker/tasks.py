@@ -12,6 +12,7 @@ from celery.utils.log import get_task_logger
 import socket
 from datetime import datetime
 from celery import chain, signature
+from api.crypto import decrypt_dict
 
 # --- AUTO-HEALING & ERROR DIAGNOSIS ---
 
@@ -329,21 +330,32 @@ def pipeline_build(prev_result: dict):
 
 @app.task(name="worker.pipeline.deploy")
 def pipeline_deploy(prev_result: dict):
-    """Step: Run the container."""
+    """Step: Run the container with decrypted environment variables."""
     job_id = prev_result["job_id"]
     image_tag = prev_result["image_tag"]
     stack = prev_result["stack"]
     
     with session_scope() as db:
         job = db.query(Job).filter(Job.id == job_id).first()
-        env_vars = job.payload.get("env", {})
+        
+        # 🔓 Decrypt the environment variables right before they go into Docker
+        encrypted_env = job.payload.get("env", {})
+        decrypted_env = decrypt_dict(encrypted_env)
+        
         app_name = job.payload.get("app_name")
         internal_port = 80 if stack == "static" else 8000
         
         update_job_progress(db, job_id, "Deploying", 90)
-        deploy_info = run_container(db, job_id, image_tag, env_vars=env_vars, app_name=app_name, internal_port=internal_port)
         
-        save_log(db, job_id, "✅ Deployment live.")
+        # We pass decrypted_env here!
+        deploy_info = run_container(
+            db, job_id, image_tag, 
+            env_vars=decrypted_env, 
+            app_name=app_name, 
+            internal_port=internal_port
+        )
+        
+        save_log(db, job_id, "✅ Deployment live with secure secrets.")
         return {**prev_result, "deploy_info": deploy_info}
 
 @app.task(name="worker.pipeline.finalize")
