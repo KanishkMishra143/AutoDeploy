@@ -18,6 +18,7 @@ export interface Application {
 export interface Job {
     id: string;
     app_id?: string;
+    build_number?: number;
     type: string;
     status: string;
     trigger_reason?: string;

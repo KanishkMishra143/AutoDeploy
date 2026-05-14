@@ -14,7 +14,10 @@ import {
   useReactFlow
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Box, Globe, Server, Activity, Database } from 'lucide-react';
+import { 
+  Box, Globe, Server, Activity, Database, Zap, Cloud, Cpu, 
+  Flame, CreditCard, MessageSquare, Mail, Brain, Shield, BarChart3
+} from 'lucide-react';
 import { Application, Job } from '../useJobs';
 
 // --- Custom Node Components ---
@@ -58,20 +61,44 @@ const AppNode = ({ data }: NodeProps<{ app: Application; latestJob?: Job }>) => 
   );
 };
 
-const DatabaseNode = ({ data }: NodeProps<{ name: string }>) => (
-    <div className="px-4 py-3 shadow-xl rounded-xl bg-[#1a1a1a] border border-card-border text-gray-300 min-w-[150px]">
-      <Handle type="target" position={Position.Left} className="w-2 h-2 bg-accent border-none" />
-      <div className="flex items-center gap-2">
-        <Database className="w-4 h-4 text-accent/50" />
-        <span className="text-xs font-bold uppercase tracking-wider">{data.name}</span>
-      </div>
-    </div>
-);
+const ServiceNode = ({ data }: NodeProps<{ name: string; type: string }>) => {
+    const icons: Record<string, any> = {
+        postgres: { icon: Database, color: 'text-blue-400' },
+        redis: { icon: Zap, color: 'text-red-400' },
+        mongodb: { icon: Database, color: 'text-green-400' },
+        s3: { icon: Cloud, color: 'text-orange-400' },
+        rabbitmq: { icon: Activity, color: 'text-orange-500' },
+        kafka: { icon: Server, color: 'text-gray-300' },
+        supabase: { icon: Database, color: 'text-emerald-400' },
+        firebase: { icon: Flame, color: 'text-orange-400' },
+        stripe: { icon: CreditCard, color: 'text-indigo-400' },
+        twilio: { icon: MessageSquare, color: 'text-red-500' },
+        sendgrid: { icon: Mail, color: 'text-blue-300' },
+        slack: { icon: MessageSquare, color: 'text-purple-400' },
+        discord: { icon: MessageSquare, color: 'text-indigo-500' },
+        openai: { icon: Brain, color: 'text-green-300' },
+        sentry: { icon: Shield, color: 'text-red-400' },
+        datadog: { icon: BarChart3, color: 'text-purple-500' },
+        generic: { icon: Cpu, color: 'text-gray-400' }
+    };
+    const config = icons[data.type] || icons.generic;
+    const Icon = config.icon;
+
+    return (
+        <div className="px-4 py-3 shadow-xl rounded-xl bg-[#1a1a1a] border border-card-border text-gray-300 min-w-[150px] animate-in fade-in zoom-in duration-500">
+          <Handle type="target" position={Position.Left} className="w-2 h-2 bg-accent border-none" />
+          <div className="flex items-center gap-2">
+            <Icon className={`w-4 h-4 ${config.color}`} />
+            <span className="text-xs font-bold uppercase tracking-wider">{data.name}</span>
+          </div>
+        </div>
+    );
+};
 
 const nodeTypes = {
   gateway: GatewayNode,
   app: AppNode,
-  database: DatabaseNode
+  service: ServiceNode
 };
 
 // --- Internal Map Content (To use useReactFlow) ---
@@ -117,6 +144,84 @@ function TopologyMapContent({ nodes, edges, compact, onAppClick, focusedAppId }:
         </ReactFlow>
     );
 }
+
+// --- Helper to detect dependencies ---
+const detectServices = (env: Record<string, string>) => {
+    const services = [];
+    const keys = Object.keys(env || {}).map(k => k.toUpperCase());
+    
+    // Infrastructure & Databases
+    if (keys.some(k => k.includes('POSTGRES') || k.includes('DATABASE_URL') || k.includes('DB_URL'))) {
+        services.push({ type: 'postgres', name: 'Postgres DB' });
+    }
+    if (keys.some(k => k.includes('REDIS'))) {
+        services.push({ type: 'redis', name: 'Redis Cache' });
+    }
+    if (keys.some(k => k.includes('MONGO'))) {
+        services.push({ type: 'mongodb', name: 'MongoDB' });
+    }
+    if (keys.some(k => k.includes('S3') || k.includes('BUCKET') || k.includes('AWS_ACCESS_KEY'))) {
+        services.push({ type: 's3', name: 'S3 Storage' });
+    }
+    if (keys.some(k => k.includes('RABBITMQ') || k.includes('AMQP') || k.includes('CELERY_BROKER'))) {
+        services.push({ type: 'rabbitmq', name: 'RabbitMQ' });
+    }
+    if (keys.some(k => k.includes('KAFKA'))) {
+        services.push({ type: 'kafka', name: 'Kafka Cluster' });
+    }
+
+    // Auth & Backend as a Service
+    if (keys.some(k => k.includes('SUPABASE'))) {
+        services.push({ type: 'supabase', name: 'Supabase' });
+    }
+    if (keys.some(k => k.includes('FIREBASE'))) {
+        services.push({ type: 'firebase', name: 'Firebase' });
+    }
+    if (keys.some(k => k.includes('AUTH0'))) {
+        services.push({ type: 'auth0', name: 'Auth0' });
+    }
+
+    // Payments & Marketing
+    if (keys.some(k => k.includes('STRIPE'))) {
+        services.push({ type: 'stripe', name: 'Stripe' });
+    }
+    if (keys.some(k => k.includes('PAYPAL'))) {
+        services.push({ type: 'paypal', name: 'PayPal' });
+    }
+    if (keys.some(k => k.includes('MAILCHIMP'))) {
+        services.push({ type: 'mailchimp', name: 'Mailchimp' });
+    }
+    if (keys.some(k => k.includes('SENDGRID'))) {
+        services.push({ type: 'sendgrid', name: 'SendGrid' });
+    }
+
+    // Communication & Notifications
+    if (keys.some(k => k.includes('TWILIO'))) {
+        services.push({ type: 'twilio', name: 'Twilio' });
+    }
+    if (keys.some(k => k.includes('SLACK'))) {
+        services.push({ type: 'slack', name: 'Slack' });
+    }
+    if (keys.some(k => k.includes('DISCORD'))) {
+        services.push({ type: 'discord', name: 'Discord' });
+    }
+    if (keys.some(k => k.includes('PUSHER'))) {
+        services.push({ type: 'pusher', name: 'Pusher' });
+    }
+
+    // Monitoring & AI
+    if (keys.some(k => k.includes('SENTRY'))) {
+        services.push({ type: 'sentry', name: 'Sentry' });
+    }
+    if (keys.some(k => k.includes('DATADOG'))) {
+        services.push({ type: 'datadog', name: 'Datadog' });
+    }
+    if (keys.some(k => k.includes('OPENAI') || k.includes('ANTHROPIC') || k.includes('LLM'))) {
+        services.push({ type: 'openai', name: 'AI Engine' });
+    }
+
+    return services;
+};
 
 // --- Main Map Component ---
 
@@ -169,20 +274,31 @@ export default function TopologyMap({ apps, jobs, compact = false, onAppClick, f
         },
       });
 
-      if (!compact) {
-          const dbNodeId = `db-${app.id}`;
-          nodes.push({
-            id: dbNodeId,
-            type: 'database',
-            position: { x: 750, y: (focusedAppId ? 50 : index * 140) + 15 },
-            data: { name: 'Postgres DB' },
-            draggable: true,
-          });
-          edges.push({
-            id: `edge-db-${app.id}`,
-            source: nodeId,
-            target: dbNodeId,
-            style: { stroke: '#444', strokeDasharray: '5,5' },
+      // 3. Dynamic Service Detection (Deep-dive only)
+      if (!compact && app.env_vars) {
+          const detectedServices = detectServices(app.env_vars);
+          
+          detectedServices.forEach((svc, svcIdx) => {
+              const svcNodeId = `svc-${app.id}-${svc.type}`;
+              // Spread services vertically if multiple
+              const yOffset = (detectedServices.length > 1) 
+                  ? (svcIdx - (detectedServices.length - 1) / 2) * 60 
+                  : 15;
+
+              nodes.push({
+                id: svcNodeId,
+                type: 'service',
+                position: { x: 750, y: (focusedAppId ? 50 : index * 140) + yOffset },
+                data: { name: svc.name, type: svc.type },
+                draggable: true,
+              });
+
+              edges.push({
+                id: `edge-svc-${app.id}-${svc.type}`,
+                source: nodeId,
+                target: svcNodeId,
+                style: { stroke: '#444', strokeDasharray: '5,5' },
+              });
           });
       }
     });

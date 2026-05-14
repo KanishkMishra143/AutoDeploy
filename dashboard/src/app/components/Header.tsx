@@ -62,6 +62,18 @@ export default function Header({
     }
   }, [showNotifications]);
 
+  // Handle clicking outside the profile menu
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Element;
+      if (showProfileMenu && !target.closest('#profile-menu-container')) {
+        setShowProfileMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showProfileMenu]);
+
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 20);
     window.addEventListener("scroll", handleScroll);
@@ -89,6 +101,11 @@ export default function Header({
         if (isAnyOverlayOpen) return;
         
         setShowCommandPalette(true);
+      }
+
+      // Handle ESC to close profile menu
+      if (e.key === "Escape" && showProfileMenu) {
+        setShowProfileMenu(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -139,8 +156,8 @@ export default function Header({
                     <span className="text-[9px] font-black text-gray-500 uppercase tracking-widest">{apiError ? 'Offline' : 'API Operational'}</span>
                  </div>
                  <div className="flex items-center gap-1.5 px-2 py-0.5 bg-white/5 rounded-md border border-white/5">
-                    <Cpu className="w-3 h-3 text-accent" />
-                    <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">{workerCount} Nodes Active</span>
+                    <div className={`w-1.5 h-1.5 rounded-full ${workerCount === 0 ? 'bg-red-500 animate-pulse' : 'bg-accent shadow-[0_0_8px_rgba(59,130,246,0.4)]'}`} />
+                    <span className={`text-[9px] font-black uppercase tracking-widest ${workerCount === 0 ? 'text-red-500' : 'text-gray-400'}`}>{workerCount} Nodes Active</span>
                  </div>
               </div>
             </div>
@@ -177,7 +194,7 @@ export default function Header({
              <div className="h-10 w-px bg-white/5 mx-2 hidden sm:block" />
 
              {/* User Profile Dropdown */}
-             <div className="relative">
+             <div className="relative" id="profile-menu-container">
                 <button 
                   onClick={() => setShowProfileMenu(!showProfileMenu)}
                   className={`flex items-center gap-3 p-1.5 pr-4 rounded-2xl transition-all border group relative z-20 ${showProfileMenu ? 'bg-accent border-accent text-white' : 'bg-white/5 border-white/5 text-gray-400 hover:border-white/10'}`}
@@ -196,9 +213,7 @@ export default function Header({
                 </button>
 
                 {showProfileMenu && (
-                  <>
-                    <div className="fixed inset-0 z-10" onClick={() => setShowProfileMenu(false)} />
-                    <div className="absolute top-full right-0 mt-3 w-64 bg-card border border-card-border rounded-3xl shadow-2xl p-2 animate-in fade-in slide-in-from-top-4 duration-300 z-[110]">
+                  <div className="absolute top-full right-0 mt-3 w-64 bg-card border border-card-border rounded-3xl shadow-2xl p-2 animate-in fade-in slide-in-from-top-4 duration-300 z-[110]">
                        <div className="p-4 border-b border-card-border mb-2 flex items-center gap-3">
                           {avatarUrl ? (
                             <img src={avatarUrl} alt={fullName} className="w-10 h-10 rounded-xl" />
@@ -235,7 +250,6 @@ export default function Header({
                           </button>
                        </div>
                     </div>
-                  </>
                 )}
              </div>
           </div>

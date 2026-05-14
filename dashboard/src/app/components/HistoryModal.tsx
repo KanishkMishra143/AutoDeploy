@@ -1,6 +1,6 @@
 "use client";
-import { useState, useEffect } from "react";
-import { X, Clock, RotateCcw, AlertCircle, Box, ExternalLink, Globe, Activity, History as HistoryIcon, Layers, Terminal, Trash2, Settings, Plus, Save } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { X, Clock, RotateCcw, AlertCircle, Box, ExternalLink, Globe, Activity, History as HistoryIcon, Layers, Terminal, Trash2, Settings, Plus, Save, Upload } from "lucide-react";
 import toast from "react-hot-toast";
 import { Job, Application } from "../useJobs";
 import TopologyMap from "./TopologyMap";
@@ -17,6 +17,7 @@ interface AppDetailModalProps {
 
 export default function AppDetailModal({ app, onClose, onViewLogs, allJobs, allApps }: AppDetailModalProps) {
   const [historyJobs, setHistoryJobs] = useState<Job[]>([]);
+  const [totalJobs, setTotalJobs] = useState(0);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"topology" | "history" | "settings" | "pipeline">("topology");
   const [isDeleting, setIsDeleting] = useState(false);
@@ -26,6 +27,7 @@ export default function AppDetailModal({ app, onClose, onViewLogs, allJobs, allA
   const [localEnv, setLocalEnv] = useState<{key: string, value: string}[]>([]);
   const [localPreSteps, setLocalPreSteps] = useState<string[]>([]);
   const [localPostSteps, setLocalPostSteps] = useState<string[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Confirmation Modal State
   const [confirmConfig, setConfirmConfig] = useState<{
@@ -55,12 +57,50 @@ export default function AppDetailModal({ app, onClose, onViewLogs, allJobs, allA
       if (res.ok) {
         const data = await res.json();
         setHistoryJobs(data.jobs || []);
+        setTotalJobs(data.total || 0);
       }
     } catch (err) {
       console.error("Failed to fetch history:", err);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleEnvFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result as string;
+      const lines = content.split('\n');
+      const newVars: { key: string; value: string }[] = [];
+
+      lines.forEach(line => {
+        const trimmedLine = line.trim();
+        if (trimmedLine && !trimmedLine.startsWith('#')) {
+          const firstEqual = trimmedLine.indexOf('=');
+          if (firstEqual !== -1) {
+            const key = trimmedLine.substring(0, firstEqual).trim();
+            let value = trimmedLine.substring(firstEqual + 1).trim();
+            if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+                value = value.substring(1, value.length - 1);
+            }
+            if (key) newVars.push({ key, value });
+          }
+        }
+      });
+
+      if (newVars.length > 0) {
+        const filteredExisting = localEnv.filter(v => v.key || v.value);
+        setLocalEnv([...filteredExisting, ...newVars]);
+        toast.success(`Detected ${newVars.length} environment variables!`, { icon: '📄' });
+      } else {
+        toast.error("No valid environment variables found in file.");
+      }
+    };
+    reader.readAsText(file);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   useEffect(() => {
@@ -185,10 +225,21 @@ export default function AppDetailModal({ app, onClose, onViewLogs, allJobs, allA
   };
 
   useEffect(() => {
-    fetchHistory();
-    const interval = setInterval(fetchHistory, 5000);
-    return () => clearInterval(interval);
-  }, [app.id]);
+    // Initial sync from global jobs state to avoid "empty" state while fetching
+    const filtered = allJobs.filter(j => j.app_id === app.id);
+    if (filtered.length > 0 && historyJobs.length === 0) {
+      setHistoryJobs(filtered.slice(0, 20));
+      setTotalJobs(filtered.length); // Rough estimate until API returns real total
+    }
+  }, [allJobs, app.id]);
+
+  useEffect(() => {
+    if (activeTab === "history") {
+      fetchHistory();
+      const interval = setInterval(fetchHistory, 5000);
+      return () => clearInterval(interval);
+    }
+  }, [app.id, activeTab]);
 
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
@@ -330,11 +381,16 @@ export default function AppDetailModal({ app, onClose, onViewLogs, allJobs, allA
                             <div className={`w-3 h-3 rounded-full ${job.status === 'success' ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]' : job.status === 'running' ? 'bg-blue-500 animate-pulse' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]'}`} />
                             <div>
                               <div className="flex items-center gap-2">
-                                <span className="text-base font-bold text-white uppercase tracking-tight">Build #{historyJobs.length - index}</span>
+                                <span className="text-base font-bold text-white uppercase tracking-tight">Build #{job.build_number || (totalJobs - index)}</span>
                                 {isLatest && <span className="px-2 py-0.5 bg-accent text-[9px] font-black text-white rounded-lg uppercase tracking-tighter">Live</span>}
                                 <span className="text-[9px] px-2 py-0.5 bg-white/5 rounded text-gray-500 font-black uppercase tracking-widest flex items-center gap-1.5 border border-white/5">
                                   {triggerIcon} {job.trigger_reason}
                                 </span>
+                                {job.trigger_reason === 'Rollback' && job.trigger_metadata?.from_version && (
+                                    <span className="text-[9px] px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded font-black uppercase tracking-widest border border-blue-500/20 animate-pulse">
+                                        From Build #{job.trigger_metadata.from_version}
+                                    </span>
+                                )}
                               </div>
                               <div className="flex items-center gap-2 mt-1">
                                   <p className="text-[10px] text-gray-600 font-mono">Job: {job.id.split('-')[0]}</p>
@@ -484,9 +540,48 @@ export default function AppDetailModal({ app, onClose, onViewLogs, allJobs, allA
 
           {activeTab === "settings" && (
             <div className="flex-1 overflow-y-auto p-8 max-w-2xl mx-auto w-full">
-               <div className="mb-8">
-                  <h3 className="text-lg font-bold text-white mb-2">Environment Variables</h3>
-                  <p className="text-sm text-gray-500">Variables defined here will be injected into your container at runtime. Changes require a new deployment to take effect.</p>
+               <div className="mb-8 flex justify-between items-end">
+                  <div>
+                    <h3 className="text-lg font-bold text-white mb-2">Environment Variables</h3>
+                    <p className="text-sm text-gray-500">Variables defined here will be injected into your container at runtime. Changes require a new deployment to take effect.</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <input 
+                        type="file" 
+                        ref={fileInputRef} 
+                        onChange={handleEnvFileUpload} 
+                        className="hidden" 
+                        accept=".env"
+                    />
+                    <button 
+                        onClick={() => fileInputRef.current?.click()}
+                        className="px-4 py-2 bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 border border-white/10"
+                    >
+                        <Upload className="w-3.5 h-3.5" /> Import .env
+                    </button>
+                  </div>
+               </div>
+
+               {/* Drag and Drop Zone */}
+               <div 
+                 onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                 onDrop={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const file = e.dataTransfer.files?.[0];
+                    if (file) {
+                        const inputE = { target: { files: [file] } } as any;
+                        handleEnvFileUpload(inputE);
+                    }
+                 }}
+                 className="group/drop border-2 border-dashed border-card-border rounded-2xl p-8 flex flex-col items-center justify-center bg-white/5 hover:bg-accent/5 hover:border-accent/40 transition-all cursor-pointer mb-8"
+                 onClick={() => fileInputRef.current?.click()}
+               >
+                  <div className="p-3 bg-white/5 rounded-2xl mb-3 group-hover/drop:scale-110 transition-transform duration-300">
+                    <Upload className="w-6 h-6 text-gray-600 group-hover/drop:text-accent" />
+                  </div>
+                  <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest group-hover/drop:text-accent transition-colors">Drag & Drop .env file here</p>
+                  <p className="text-[9px] text-gray-600 font-bold uppercase tracking-widest mt-1">or click to browse local files</p>
                </div>
 
                <div className="space-y-3 mb-8">

@@ -1,13 +1,13 @@
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 from typing import List
-from api.database import get_db
-from api.models import Application, Job
-from api.schemas import AppCreate, AppResponse, AppListResponse, JobResponse
-from worker.tasks import process_job
+from core.database import get_db
+from core.models import Application, Job, Log
+from core.schemas import AppCreate, AppResponse, AppListResponse, JobResponse
+from worker.tasks import process_job, cleanup_app
 from uuid import UUID
-from api.auth import get_current_user
-from api.crypto import encrypt_dict, decrypt_dict
+from core.auth import get_current_user
+from core.crypto import encrypt_dict, decrypt_dict
 
 import subprocess
 
@@ -40,7 +40,7 @@ def get_repo_branches(repo_url: str):
         raise HTTPException(status_code=400, detail=f"Failed to fetch branches: {str(e)}")
 
 @router.post("", response_model=AppResponse)
-def create_app(app: AppCreate, db: Session = Depends(get_db)):
+def create_app(app: AppCreate, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     """Creates a new application identity with encrypted secrets."""
     existing = db.query(Application).filter(Application.name == app.name).first()
     if existing:
@@ -50,6 +50,7 @@ def create_app(app: AppCreate, db: Session = Depends(get_db)):
     encrypted_env = encrypt_dict(app.env_vars) if app.env_vars else {}
 
     new_app = Application(
+        owner_id=current_user["sub"],
         name=app.name,
         repo_url=app.repo_url,
         branch=app.branch,
@@ -67,29 +68,35 @@ def create_app(app: AppCreate, db: Session = Depends(get_db)):
     return new_app
 
 @router.get("", response_model=AppListResponse)
-def list_apps(db: Session = Depends(get_db)):
-    """Lists all managed applications (decrypted for Dashboard)."""
-    apps = db.query(Application).all()
+def list_apps(db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    """Lists all managed applications for the current user."""
+    apps = db.query(Application).filter(Application.owner_id == current_user["sub"]).all()
     for app in apps:
         app.env_vars = decrypt_dict(app.env_vars)
     return {"total": len(apps), "apps": apps}
 
 @router.get("/{app_id}", response_model=AppResponse)
-def get_app(app_id: UUID, db: Session = Depends(get_db)):
+def get_app(app_id: UUID, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     """Gets details of a specific application."""
-    app = db.query(Application).filter(Application.id == app_id).first()
+    app = db.query(Application).filter(
+        Application.id == app_id, 
+        Application.owner_id == current_user["sub"]
+    ).first()
     if not app:
-        raise HTTPException(status_code=404, detail="Application not found")
+        raise HTTPException(status_code=404, detail="Application not found or access denied")
     
     app.env_vars = decrypt_dict(app.env_vars)
     return app
 
 @router.post("/{app_id}/deploy", response_model=JobResponse)
-def deploy_app(app_id: UUID, db: Session = Depends(get_db)):
+def deploy_app(app_id: UUID, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     """Triggers a manual deployment for an application."""
-    app = db.query(Application).filter(Application.id == app_id).first()
+    app = db.query(Application).filter(
+        Application.id == app_id,
+        Application.owner_id == current_user["sub"]
+    ).first()
     if not app:
-        raise HTTPException(status_code=404, detail="Application not found")
+        raise HTTPException(status_code=404, detail="Application not found or access denied")
     
     # Decrypt env vars for the job payload so worker doesn't need to know how to decrypt 
     # (Optional: Worker can also decrypt, but for now we decrypt here for the task payload)
@@ -98,6 +105,7 @@ def deploy_app(app_id: UUID, db: Session = Depends(get_db)):
     
     new_job = Job(
         app_id=app.id,
+        owner_id=current_user["sub"],
         type="DEPLOY",
         status="queued",
         trigger_reason="Manual",
@@ -119,39 +127,63 @@ def deploy_app(app_id: UUID, db: Session = Depends(get_db)):
     return new_job
 
 @router.delete("/purge")
-def purge_apps(db: Session = Depends(get_db)):
-    """Deletes ALL applications and their containers. Destructive operation."""
-    apps = db.query(Application).all()
+def purge_apps(db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    """Deletes all applications owned by the current user and their containers."""
+    apps = db.query(Application).filter(Application.owner_id == current_user["sub"]).all()
     
     for app in apps:
-        container_name = f"autodeploy_{app.name.lower().replace(' ', '')}"
-        subprocess.run(["docker", "rm", "-f", container_name], capture_output=True)
+        job_ids = [str(job.id) for job in app.jobs]
+        image_tags = [f"autodeploy-app:{jid[:8]}" for jid in job_ids]
+        cleanup_app.delay(app.name, image_tags)
+
+        job_uuid_list = [job.id for job in app.jobs]
+        if job_uuid_list:
+            db.query(Log).filter(Log.job_id.in_(job_uuid_list)).delete(synchronize_session=False)
+            db.query(Job).filter(Job.app_id == app.id).delete(synchronize_session=False)
         db.delete(app)
     
     db.commit()
-    return {"message": f"Successfully purged {len(apps)} applications and cleaned up containers."}
+    return {"message": f"Successfully purged {len(apps)} of your applications."}
 
 @router.delete("/{app_id}")
-def delete_app(app_id: UUID, db: Session = Depends(get_db)):
-    """Deletes an application and all its history, including the Docker container."""
-    app = db.query(Application).filter(Application.id == app_id).first()
+def delete_app(app_id: UUID, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    """Deletes an application and all its history with high-performance cleanup."""
+    app = db.query(Application).filter(
+        Application.id == app_id,
+        Application.owner_id == current_user["sub"]
+    ).first()
+    
     if not app:
-        raise HTTPException(status_code=404, detail="Application not found")
+        raise HTTPException(status_code=404, detail="Application not found or access denied")
     
-    container_name = f"autodeploy_{app.name.lower().replace(' ', '')}"
-    subprocess.run(["docker", "rm", "-f", container_name], capture_output=True)
+    # 1. Gather all job IDs for this app to clean up Docker images
+    job_ids = [str(job.id) for job in app.jobs]
+    image_tags = [f"autodeploy-app:{jid[:8]}" for jid in job_ids]
     
+    # 2. Trigger background Docker cleanup (Container + Images)
+    cleanup_app.delay(app.name, image_tags)
+    
+    # 3. HIGH-PERFORMANCE DB DELETE
+    job_uuid_list = [job.id for job in app.jobs]
+    if job_uuid_list:
+        db.query(Log).filter(Log.job_id.in_(job_uuid_list)).delete(synchronize_session=False)
+        db.query(Job).filter(Job.app_id == app_id).delete(synchronize_session=False)
+    
+    # 4. Final App deletion
     db.delete(app)
     db.commit()
-    return {"message": f"Application '{app.name}' and all associated jobs deleted."}
-
-@router.patch("/{app_id}", response_model=AppResponse)
-def update_app(app_id: UUID, payload: dict, db: Session = Depends(get_db)):
-    """Updates application settings with encryption for env vars."""
-    app = db.query(Application).filter(Application.id == app_id).first()
-    if not app:
-        raise HTTPException(status_code=404, detail="Application not found")
     
+    return {"message": f"Application '{app.name}' and all associated history scheduled for deletion."}
+@router.patch("/{app_id}", response_model=AppResponse)
+def update_app(app_id: UUID, payload: dict, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    """Updates application settings with encryption for env vars."""
+    app = db.query(Application).filter(
+        Application.id == app_id,
+        Application.owner_id == current_user["sub"]
+    ).first()
+    if not app:
+        raise HTTPException(status_code=404, detail="Application not found or access denied")
+
     if "env_vars" in payload:
         app.env_vars = encrypt_dict(payload["env_vars"])
     if "pre_build_steps" in payload:

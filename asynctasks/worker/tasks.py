@@ -3,16 +3,19 @@ import os
 import shutil
 import tempfile
 import subprocess
-from worker.celery_app import app, redis_client
+import json
+import shlex
+from worker.celery_app import app
+from core.redis import redis_client
 import traceback
 import time
-from api.database import session_scope
-from api.models import Job, Log, Worker
+from core.database import session_scope
+from core.models import Job, Log, Worker
 from celery.utils.log import get_task_logger
 import socket
 from datetime import datetime
 from celery import chain, signature
-from api.crypto import decrypt_dict
+from core.crypto import decrypt_dict
 
 # --- AUTO-HEALING & ERROR DIAGNOSIS ---
 
@@ -112,14 +115,40 @@ EXPOSE 80
 
 logger = get_task_logger(__name__)
 
-def save_log(db, job_id, message):
-    """Helper to save a log message to the database instantly"""
-    new_log = Log(job_id=job_id, message=message)
-    db.add(new_log)
-    db.commit()
-    print(f"DEBUG LOG: {message}")
+def save_log(db, job_id, message, owner_id=None, buffer=None):
+    """Helper to publish log to Redis (Real-time) and buffer for DB (Persistence)"""
+    timestamp = datetime.utcnow().isoformat()
+    log_entry = {
+        "message": message,
+        "created_at": timestamp,
+        "job_id": job_id,
+        "owner_id": str(owner_id) if owner_id else None
+    }
+    
+    # 1. REAL-TIME: Publish to Redis Channel immediately
+    redis_client.publish(f"logs:{job_id}", json.dumps(log_entry))
+    
+    # 2. PERSISTENCE: If buffer provided, add to it. Otherwise, save immediately.
+    if buffer is not None:
+        buffer.append(Log(
+            job_id=job_id, 
+            message=message, 
+            owner_id=owner_id,
+            created_at=datetime.utcnow()
+        ))
+        # Optional: Auto-flush if buffer gets too big
+        if len(buffer) >= 50:
+            db.bulk_save_objects(buffer)
+            db.commit()
+            buffer.clear()
+    else:
+        new_log = Log(job_id=job_id, message=message, owner_id=owner_id)
+        db.add(new_log)
+        db.commit()
+    
+    print(f"DEBUG LOG [{job_id[:8]}]: {message}")
 
-def run_command(db, job_id, command, cwd=None):
+def run_command(db, job_id, command, cwd=None, owner_id=None):
     """Executes a shell command and streams its output line-by-line to our Log Engine."""
     process = subprocess.Popen(
         command,
@@ -130,10 +159,23 @@ def run_command(db, job_id, command, cwd=None):
         bufsize=1
     )
 
+    log_buffer = []
     diagnosis = None
+    last_flush = time.time()
+
     for line in iter(process.stdout.readline, ""):
         if line:
-            save_log(db, job_id, line.strip())
+            save_log(db, job_id, line.strip(), owner_id=owner_id, buffer=log_buffer)
+            
+            # 🕒 Periodical Flush (Every 5 seconds) to reduce DB latency
+            if time.time() - last_flush > 5:
+                if log_buffer:
+                    db.bulk_save_objects(log_buffer)
+                    db.commit()
+                    print(f"DEBUG: Periodic flush of {len(log_buffer)} logs for job {job_id[:8]}")
+                    log_buffer.clear()
+                last_flush = time.time()
+
             # Smart Diagnosis - capture but don't log yet
             if not diagnosis:
                 diagnosis = diagnose_log(line)
@@ -147,17 +189,23 @@ def run_command(db, job_id, command, cwd=None):
     process.stdout.close()
     return_code = process.wait()
 
+    # Final Flush of the buffer
+    if log_buffer:
+        db.bulk_save_objects(log_buffer)
+        db.commit()
+        log_buffer.clear()
+
     # Emit the diagnosis at the very end for maximum visibility
     if diagnosis:
-        save_log(db, job_id, " ")
-        save_log(db, job_id, f"💡 AUTO-DIAGNOSIS: {diagnosis['title']} detected!")
-        save_log(db, job_id, f"👉 Suggestion: {diagnosis['suggestion']}")
-        save_log(db, job_id, " ")
+        save_log(db, job_id, " ", owner_id=owner_id)
+        save_log(db, job_id, f"💡 AUTO-DIAGNOSIS: {diagnosis['title']} detected!", owner_id=owner_id)
+        save_log(db, job_id, f"👉 Suggestion: {diagnosis['suggestion']}", owner_id=owner_id)
+        save_log(db, job_id, " ", owner_id=owner_id)
     
     if return_code != 0:
         raise subprocess.CalledProcessError(return_code, command)
 
-def run_container(db, job_id, image_tag, env_vars=None, app_name=None, internal_port=8000):
+def run_container(db, job_id, image_tag, env_vars=None, app_name=None, internal_port=8000, owner_id=None):
     """Starts a Docker container with Hardened Resource Quotas and Traefik labels."""
     if app_name:
         clean_name = "".join(e for e in app_name.lower() if e.isalnum() or e == "-")
@@ -180,10 +228,10 @@ def run_container(db, job_id, image_tag, env_vars=None, app_name=None, internal_
     if env_vars:
         for key, value in env_vars.items():
             env_flags.extend(["-e", f"{key}={value}"])
-        save_log(db, job_id, f"🔑 Injected {len(env_vars)} environment variables.")
+        save_log(db, job_id, f"🔑 Injected {len(env_vars)} environment variables.", owner_id=owner_id)
 
     # Pre-emptive cleanup of existing container with the same name
-    save_log(db, job_id, f"🧹 Cleaning up any existing container named {container_name}...")
+    save_log(db, job_id, f"🧹 Cleaning up any existing container named {container_name}...", owner_id=owner_id)
     subprocess.run(["docker", "rm", "-f", container_name], capture_output=True)
 
     command = [
@@ -197,7 +245,7 @@ def run_container(db, job_id, image_tag, env_vars=None, app_name=None, internal_
         result = subprocess.run(command, capture_output=True, text=True, check=True)
         container_id = result.stdout.strip()
     except subprocess.CalledProcessError as e:
-        save_log(db, job_id, f"❌ Docker run failed: {e.stderr}")
+        save_log(db, job_id, f"❌ Docker run failed: {e.stderr}", owner_id=owner_id)
         raise
 
     inspect_result = subprocess.run(
@@ -206,8 +254,8 @@ def run_container(db, job_id, image_tag, env_vars=None, app_name=None, internal_
     )
     assigned_port = inspect_result.stdout.strip()
 
-    save_log(db, job_id, f"✅ Container hardened and started! ID: {container_id[:12]}")
-    save_log(db, job_id, f"🌐 Dynamic URL: http://{hostname}")
+    save_log(db, job_id, f"✅ Container hardened and started! ID: {container_id[:12]}", owner_id=owner_id)
+    save_log(db, job_id, f"🌐 Dynamic URL: http://{hostname}", owner_id=owner_id)
 
     return {
         "container_id": container_id,
@@ -247,7 +295,7 @@ def pipeline_initialize(job_id: str):
         job.status = "running"
         job.result = {"status": "initializing", "started_at": datetime.utcnow().isoformat()}
         db.commit()
-        save_log(db, job_id, "🎬 Pipeline initialized. Starting sequence...")
+        save_log(db, job_id, "🎬 Pipeline initialized. Starting sequence...", owner_id=job.owner_id)
     return job_id
 
 @app.task(name="worker.pipeline.clone")
@@ -257,17 +305,18 @@ def pipeline_clone(job_id: str):
         job = db.query(Job).filter(Job.id == job_id).first()
         repo_url = job.payload.get("repo")
         branch = job.payload.get("branch", "main")
+        owner_id = job.owner_id
         
         workspace_dir = tempfile.mkdtemp(prefix=f"build_{job_id}_")
-        save_log(db, job_id, f"📂 Workspace created: {workspace_dir}")
+        save_log(db, job_id, f"📂 Workspace created: {workspace_dir}", owner_id=owner_id)
         
         try:
             update_job_progress(db, job_id, "Cloning Repository", 20)
             clone_repository(repo_url, workspace_dir, branch=branch)
-            save_log(db, job_id, "✅ Repository cloned successfully.")
-            return {"job_id": job_id, "workspace_dir": workspace_dir}
+            save_log(db, job_id, "✅ Repository cloned successfully.", owner_id=owner_id)
+            return {"job_id": job_id, "workspace_dir": workspace_dir, "owner_id": str(owner_id) if owner_id else None}
         except Exception as e:
-            save_log(db, job_id, f"❌ Clone failed: {str(e)}")
+            save_log(db, job_id, f"❌ Clone failed: {str(e)}", owner_id=owner_id)
             shutil.rmtree(workspace_dir, ignore_errors=True)
             raise
 
@@ -276,21 +325,23 @@ def pipeline_custom_step(prev_result: dict, step_name: str, command: str):
     """Step: Execute a custom shell command in the workspace."""
     job_id = prev_result["job_id"]
     workspace_dir = prev_result["workspace_dir"]
+    owner_id = prev_result.get("owner_id")
     
     with session_scope() as db:
-        save_log(db, job_id, f"🛠️ Starting custom step: {step_name}...")
-        save_log(db, job_id, f"💻 Command: {command}")
+        save_log(db, job_id, f"🛠️ Starting custom step: {step_name}...", owner_id=owner_id)
+        save_log(db, job_id, f"💻 Command: {command}", owner_id=owner_id)
         
         # Report progress for custom step
         update_job_progress(db, job_id, f"Running: {step_name}", 40) # Approximate progress
         
         try:
-            # We use our existing run_command wrapper to stream logs
-            run_command(db, job_id, command.split(), cwd=workspace_dir)
-            save_log(db, job_id, f"✅ Custom step '{step_name}' finished successfully.")
+            # shlex.split correctly handles quoted strings in commands
+            cmd_args = shlex.split(command)
+            run_command(db, job_id, cmd_args, cwd=workspace_dir, owner_id=owner_id)
+            save_log(db, job_id, f"✅ Custom step '{step_name}' finished successfully.", owner_id=owner_id)
             return prev_result
         except Exception as e:
-            save_log(db, job_id, f"❌ Custom step '{step_name}' failed: {str(e)}")
+            save_log(db, job_id, f"❌ Custom step '{step_name}' failed: {str(e)}", owner_id=owner_id)
             raise
 
 @app.task(name="worker.pipeline.build")
@@ -298,6 +349,7 @@ def pipeline_build(prev_result: dict):
     """Step: Build the Docker image."""
     job_id = prev_result["job_id"]
     workspace_dir = prev_result["workspace_dir"]
+    owner_id = prev_result.get("owner_id")
     
     with session_scope() as db:
         job = db.query(Job).filter(Job.id == job_id).first()
@@ -313,7 +365,7 @@ def pipeline_build(prev_result: dict):
                 elif os.path.exists(os.path.join(workspace_dir, "index.html")): stack = "static"
             
             if stack in STACK_TEMPLATES:
-                save_log(db, job_id, f"💡 Injecting {stack} template...")
+                save_log(db, job_id, f"💡 Injecting {stack} template...", owner_id=owner_id)
                 with open(dockerfile_path, "w") as f:
                     f.write(STACK_TEMPLATES[stack].strip())
 
@@ -321,11 +373,11 @@ def pipeline_build(prev_result: dict):
         image_tag = f"autodeploy-app:{str(job_id)[:8]}"
         
         try:
-            run_command(db, job_id, ["docker", "build", "-t", image_tag, "."], cwd=workspace_dir)
-            save_log(db, job_id, "✅ Build successful.")
+            run_command(db, job_id, ["docker", "build", "-t", image_tag, "."], cwd=workspace_dir, owner_id=owner_id)
+            save_log(db, job_id, "✅ Build successful.", owner_id=owner_id)
             return {**prev_result, "image_tag": image_tag, "stack": stack}
         except Exception as e:
-            save_log(db, job_id, f"❌ Build failed: {str(e)}")
+            save_log(db, job_id, f"❌ Build failed: {str(e)}", owner_id=owner_id)
             raise
 
 @app.task(name="worker.pipeline.deploy")
@@ -334,6 +386,7 @@ def pipeline_deploy(prev_result: dict):
     job_id = prev_result["job_id"]
     image_tag = prev_result["image_tag"]
     stack = prev_result["stack"]
+    owner_id = prev_result.get("owner_id")
     
     with session_scope() as db:
         job = db.query(Job).filter(Job.id == job_id).first()
@@ -352,10 +405,11 @@ def pipeline_deploy(prev_result: dict):
             db, job_id, image_tag, 
             env_vars=decrypted_env, 
             app_name=app_name, 
-            internal_port=internal_port
+            internal_port=internal_port,
+            owner_id=owner_id
         )
         
-        save_log(db, job_id, "✅ Deployment live with secure secrets.")
+        save_log(db, job_id, "✅ Deployment live with secure secrets.", owner_id=owner_id)
         return {**prev_result, "deploy_info": deploy_info}
 
 @app.task(name="worker.pipeline.finalize")
@@ -364,6 +418,7 @@ def pipeline_finalize(prev_result: dict):
     job_id = prev_result["job_id"]
     workspace_dir = prev_result["workspace_dir"]
     deploy_info = prev_result["deploy_info"]
+    owner_id = prev_result.get("owner_id")
     
     with session_scope() as db:
         job = db.query(Job).filter(Job.id == job_id).first()
@@ -377,9 +432,9 @@ def pipeline_finalize(prev_result: dict):
         }
         db.commit()
         
-        save_log(db, job_id, "🧹 Cleaning up workspace...")
+        save_log(db, job_id, "🧹 Cleaning up workspace...", owner_id=owner_id)
         shutil.rmtree(workspace_dir, ignore_errors=True)
-        save_log(db, job_id, "🏁 Pipeline sequence finished successfully.")
+        save_log(db, job_id, "🏁 Pipeline sequence finished successfully.", owner_id=owner_id)
     return "Success"
 
 @app.task(name="worker.pipeline.error_handler")
@@ -505,3 +560,18 @@ def stop_job(job_id: str):
         job.status = "stopped"
         db.commit()
         return "Stopped"
+
+@app.task(name="worker.tasks.cleanup_app")
+def cleanup_app(app_name: str, image_tags: list):
+    """Background task to remove all Docker resources for an application."""
+    clean_name = "".join(e for e in app_name.lower() if e.isalnum() or e == "-")
+    container_name = f"autodeploy_{clean_name}"
+    
+    # 1. Stop and remove the container
+    subprocess.run(["docker", "rm", "-f", container_name], capture_output=True)
+    
+    # 2. Prune images associated with this app (optional but good for space)
+    for tag in image_tags:
+        subprocess.run(["docker", "rmi", tag], capture_output=True)
+    
+    return f"Cleaned up {app_name}"

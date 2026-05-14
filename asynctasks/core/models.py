@@ -3,12 +3,13 @@ from sqlalchemy import Column, String, JSON, DateTime, ForeignKey, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
-from api.database import Base
+from core.database import Base
 
 
 class Application(Base):
     __tablename__ = "applications"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    owner_id = Column(UUID(as_uuid=True), nullable=True) # ID from Supabase Auth
     name = Column(String, nullable=False, unique=True)
     repo_url = Column(String, nullable=False)
     branch = Column(String, nullable=False, default="main")
@@ -25,14 +26,15 @@ class Application(Base):
 class Job(Base):
     __tablename__ = "jobs"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    app_id = Column(UUID(as_uuid=True), ForeignKey("applications.id"), nullable=True)
+    owner_id = Column(UUID(as_uuid=True), nullable=True, index=True) # ID from Supabase Auth
+    app_id = Column(UUID(as_uuid=True), ForeignKey("applications.id"), nullable=True, index=True)
     type = Column(String, nullable=False, default="DEPLOY")
     status = Column(String, nullable=False, default="queued")
     trigger_reason = Column(String, nullable=True) # e.g. "Manual", "Webhook", "Rollback"
     trigger_metadata = Column(JSON, nullable=True) # e.g. {"commit_id": "...", "from_version": 4}
     payload = Column(JSON, nullable=False)
     result = Column(JSON, nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     application = relationship("Application", back_populates="jobs")
@@ -42,9 +44,10 @@ class Job(Base):
 class Log(Base):
     __tablename__ = "logs"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    job_id = Column(UUID(as_uuid=True), ForeignKey("jobs.id"), nullable=False)
+    owner_id = Column(UUID(as_uuid=True), nullable=True, index=True) # ID from Supabase Auth
+    job_id = Column(UUID(as_uuid=True), ForeignKey("jobs.id"), nullable=False, index=True)
     message = Column(Text, nullable=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
 
     job = relationship("Job", back_populates="logs")
 

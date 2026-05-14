@@ -420,10 +420,10 @@ export default function CanvasPage() {
                              <div className={`w-2.5 h-2.5 rounded-full ${job.status === 'success' ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]' : job.status === 'running' ? 'bg-blue-500 animate-pulse' : job.status === 'stopped' ? 'bg-gray-500' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]'}`} />
                              <div>
                                 <p className="text-sm font-black text-white flex items-center gap-2 uppercase tracking-tight">
-                                  {job.type} Job 
+                                  {job.type} {job.build_number ? `Build #${job.build_number}` : 'Job'} 
                                   {app && <span className="px-2 py-0.5 bg-accent text-white text-[9px] rounded font-black uppercase tracking-tighter ml-1">{app.name}</span>}
                                 </p>
-                                <p className="text-[10px] text-gray-500 font-mono mt-0.5">Operation Reference: {job.id.split('-')[0]}</p>
+                                <p className="text-[10px] text-gray-500 font-mono mt-0.5">Operation Ref: {job.id.split('-')[0]}</p>
                              </div>
                           </div>
                           

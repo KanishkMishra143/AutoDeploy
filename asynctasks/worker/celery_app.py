@@ -1,5 +1,5 @@
 from celery import Celery
-import redis
+from core.redis import redis_client
 
 app = Celery(
     "worker",
@@ -7,9 +7,6 @@ app = Celery(
     backend="redis://localhost:6379/1",
     include=["worker.tasks"]
 )
-
-# We use DB 2 to separate locks from Celery's broker (DB 0) and backend (DB 1)
-redis_client = redis.from_url("redis://localhost:6379/2", decode_responses=True)
 
 app.conf.update(
     task_serializer="json",                 

@@ -14,11 +14,40 @@
     - **Shortcut Behavior:** Fixed `Ctrl+K` to always `preventDefault()` browser behavior, even when spawning is blocked by an active modal.
     - **UI Layout Fixes:** Adjusted the Settings page layout to increase header spacing, ensuring the "Back to Canvas" navigation is fully accessible and clickable.
     - **Visual Consistency:** Standardized the shortcut hints in the Command Palette to match the Header's badge style.
-- **Next Task:** 
+### 📅 Thursday, May 14, 2026
+- **Status:** Phase 13 (Log Batching) & Path A (Redis Pub/Sub) IMPLEMENTED.
+- **Milestones:**
+    - **Real-Time Log Architecture (Path A):** Successfully implemented the "Dual-Path" logging engine.
+        - **Live Path:** Worker now broadcasts log lines to Redis Pub/Sub channels (`logs:{job_id}`) for instantaneous dashboard updates.
+        - **Persistence Path:** Implemented a hybrid buffering strategy in the worker. Logs are buffered in memory and persisted to PostgreSQL in bulk every 50 lines OR every 5 seconds (whichever comes first), significantly reducing database write latency.
+    - **WebSocket Integration:** Refined the FastAPI WebSocket endpoint to bridge Redis Pub/Sub messages directly to the React `LogViewer` component.
+    - **Performance Optimization:** Reduced database IOPS by moving from "write-per-line" to "batch-insert" while maintaining zero perceived latency for the end user.
+    - **High-Performance Deletion:**
+        - Refactored application deletion to use direct SQL batch deletes, bypassing SQLAlchemy's slow cascade mechanism.
+        - Moved Docker container and image cleanup to a background Celery task, reducing API response time from ~60s to <1s.
+    - **Log Engine Robustness:**
+        - Added database indexes to `Log.job_id` and `Job.app_id` to accelerate history retrieval and cleanup.
+        - Enhanced `LogViewer` UX to distinguish between "Connecting..." and "No logs found" based on job status.
+- **Next Task:**
     1. **Phase 10 Day 3:** Role-Based Access Control (RBAC) - Admin vs. Viewer roles.
     2. **Ownership Logic:** Ensure users only see and manage their own applications.
 
+### 📅 Friday, May 15, 2026
+- **Status:** Phase 10 Day 3 & Phase 13 Log Optimizations COMPLETE.
+- **Milestones:**
+    - **Multi-Tenant Ownership:** Fully implemented the account system. Every `Application`, `Job`, and `Log` is now tied to a Supabase `owner_id`. API routes enforce strict filtering to ensure users only see and manage their own resources.
+    - **Terminal Performance Fixes:** 
+        - Optimized `LogViewer` deduplication logic from $O(N^2)$ to $O(1)$ using a `Set`, preventing UI freezes during high-volume log streams (e.g., rollbacks).
+        - Added historical log backfilling in `LogViewer` to ensure past operational history is visible even when WebSocket streaming is inactive.
+        - Fixed auto-scroll "stickiness" by increasing tolerance and switching to direct `scrollTop` manipulation.
+    - **UX Robustness:** Standardized modal dismissal for the User Profile menu, adding `Escape` key support and improving void clicking reliability.
+    - **Backend Integrity:** Fixed critical NameErrors in the app deletion routes (`Log` and `cleanup_app` imports), enabling stable multi-tenant cleanup.
+
 ## Mentor Memory (Architectural Notes)
+- **Data Ownership Architecture:** Ownership is enforced at the **API Layer**. Every protected route uses the `get_current_user` dependency, which extracts the Supabase `sub` (user UUID). All SQLAlchemy queries MUST include `.filter(Model.owner_id == current_user["sub"])` to prevent cross-tenant data leaks.
+- **Log Engine Dual-Pathing:**
+    - **Live Stream:** Redis Pub/Sub (`logs:{job_id}`) handles sub-millisecond delivery to the UI.
+    - **Historical Persistence:** Logs are batched in the worker and stored in the `logs` table. The UI now performs an initial fetch from this table before subscribing to the live stream.
 - **Hybrid Architecture (Phase 10+):** The project now uses a Hybrid Cloud model.
     - **Database & Auth:** Hosted on Supabase (Cloud).
     - **API & Worker:** Run locally on the host machine/WSL for Docker access.
@@ -26,11 +55,8 @@
     1.  Update the Python model.
     2.  Go to the Supabase **SQL Editor**.
     3.  Run an `ALTER TABLE ... ADD COLUMN ...` command to match the new model.
-- **Database Locality (DEPRECATED):** Previously used local Postgres. Now uses `SUPABASE_DB_URL` from `.env`.
 - **Timezone Sync:** Always use `datetime.utcnow()` for heartbeats to ensure the API, Worker, and DB are synchronized.
-- **Vertical vs. Horizontal Scaling:** A single Celery worker node can handle multiple tasks (Vertical/Concurrency) via prefork processes, while multiple nodes (Horizontal) provide redundancy and cross-machine scale.
 - **WSL Interop:** When working in WSL, ensure the Linux toolchain (node/npm) is used to avoid path and permission collisions with Windows binaries.
-- **Traefik v2.11:** Use v2.11 for better WSL compatibility. Ensure labels use backticks (`` ` ``) for Host rules and the container is on the `autodeploy-net` network.
 - **App Identity**: Containers are now named `autodeploy_{app_name}`, ensuring that new deployments replace old ones automatically while maintaining stable URLs.
 - **Job Provenance**: Track the `trigger_reason` and `trigger_metadata` for every job to provide a clear audit trail for the developer.
 - **UI/UX Laws (The AutoDeploy Standard):**
@@ -76,19 +102,19 @@ The system follows a decoupled "Control Plane vs. Data Plane" architecture.
 ## Project Structure
 
 ```text
-asynctasks/
-├── api/                # FastAPI application layer (The Brain)
-│   ├── main.py         # Entry point & App configuration
-│   ├── models.py       # SQLAlchemy ORM models
-│   ├── database.py     # Engine and Session management
-│   ├── schemas.py      # Pydantic validation models
-│   └── routes/         # API endpoint definitions
-├── worker/             # Celery worker layer (The Hands)
-│   ├── celery_app.py   # Celery & Redis configuration
-│   └── tasks.py        # Asynchronous task definitions (Deploy/Scan/Build)
-├── docker-compose.yml  # Local infrastructure (Postgres, Redis, Proxy)
-├── pyproject.toml      # Modern dependency management via uv
-└── plan.md             # The 13-Phase Strategic Roadmap
+autodeploy/
+├── asynctasks/          # The Orchestration Engine
+│   ├── api/             # FastAPI routing layer
+│   │   ├── main.py      # Entry point
+│   │   └── routes/      # Endpoints
+│   ├── core/            # Shared Logic (Models, DB, Crypto, Auth)
+│   ├── worker/          # Celery worker layer
+│   └── pyproject.toml   # Dependencies
+├── dashboard/           # The "Canvas" (Next.js)
+├── cli/                 # Future CLI
+├── docker-compose.yml   # Root Orchestration
+├── plan.md              # Roadmap
+└── GEMINI.md            # Source of Truth
 ```
 
 ## Strategic Roadmap (13 Phases)

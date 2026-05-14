@@ -24,22 +24,19 @@ if SUPABASE_URL:
     except Exception as e:
         print(f"DEBUG: Failed to initialize JWKS client: {e}")
 
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    token = credentials.credentials
-    
+def verify_token(token: str):
+    """Verifies a JWT token and returns the payload. Supports ES256, RS256, and HS256."""
     # 🔍 Identify what algorithm we are dealing with
     try:
         header = jwt.get_unverified_header(token)
         alg = header.get("alg", "HS256")
     except Exception as e:
         print(f"DEBUG: Could not read token header: {e}")
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token format")
+        return None
 
     # --- CASE 1: Asymmetric (ES256, RS256) ---
     if alg.startswith("ES") or alg.startswith("RS"):
-        if not jwks_client:
-            print("DEBUG: Token is asymmetric but JWKS client not initialized (check SUPABASE_URL)")
-        else:
+        if jwks_client:
             try:
                 signing_key = jwks_client.get_signing_key_from_jwt(token)
                 payload = jwt.decode(
@@ -51,14 +48,10 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
                 return payload
             except Exception as e:
                 print(f"DEBUG: Asymmetric verification failed: {e}")
-                # Fall through to try symmetric just in case it's a weird mismatch
 
     # --- CASE 2: Symmetric (HS256) ---
     if not SUPABASE_JWT_SECRET:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="SUPABASE_JWT_SECRET is not configured."
-        )
+        return None
 
     # Try both raw and base64-decoded secret
     secrets_to_try = [SUPABASE_JWT_SECRET]
@@ -68,7 +61,6 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
     except Exception:
         pass
 
-    last_error = None
     for secret in secrets_to_try:
         try:
             payload = jwt.decode(
@@ -78,13 +70,18 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
                 options={"verify_aud": False}
             )
             return payload
-        except jwt.InvalidTokenError as e:
-            last_error = e
-            continue
-        except Exception as e:
-            last_error = e
+        except Exception:
             continue
 
-    # If we are here, all attempts failed
-    print(f"DEBUG: Auth failed for alg {alg}. Last error: {str(last_error)}")
-    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"Invalid token: {str(last_error)}")
+    return None
+
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    token = credentials.credentials
+    payload = verify_token(token)
+    
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, 
+            detail="Invalid or expired token"
+        )
+    return payload

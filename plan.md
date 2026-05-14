@@ -182,8 +182,9 @@
 - [x] **Day 2 — OAuth & JWT Integration:**
     - **Task:** Implement GitHub Login using Supabase Auth.
     - **Sub-task:** Secure FastAPI endpoints using JWT verification from Supabase.
-- [ ] **Day 3 — Role-Based Access Control (RBAC):**
+- [x] **Day 3 — Role-Based Access Control (RBAC):**
     - **Task:** Define Admin vs. Viewer roles and implement Ownership logic (Users only see their own apps).
+    - **Implementation:** Added `owner_id` to Application, Job, and Log models with strict filtering in API routes.
 - [ ] **Day 4 — Audit Logging:**
     - **Task:** Track every user action (who deployed what and when) for enterprise compliance.
 - [ ] **Advanced Secrets:** Integration with HashiCorp Vault or AWS Secrets Manager.
@@ -219,7 +220,7 @@
     - *Deliverable: Users can open any terminal and type `deploy` immediately after installation.*
 - [ ] **Day 5–6 — The Universal Installer:**
     - **Task:** Create a professional `.msi` or `.exe` installer (using tools like WiX or NSIS).
-    - **Sub-task:** Implement a "One-Click Setup" that handles all prerequisites (including Docker Desktop detection).
+    - **Sub-task:** Handle all prerequisites (including Docker Desktop detection).
     - *Deliverable: A premium installation wizard that feels like a finished, multi-billion dollar product.*
 - [ ] **Day 7 — Branding & Quality Assurance:**
     - **Task:** Finalize custom app icons, splash screens, and digitally sign the installer.
@@ -229,9 +230,10 @@
 
 ## 💸 PHASE 13 — Scaling & Monetization (The PaaS Business)
 **Goal:** Infrastructure for team-based scaling and resource management.
-- [ ] **Log Batching & Performance:** Implement log buffering in the worker to reduce cloud DB write latency.
+- [x] **Log Batching & Performance:**
+    - **Implementation:** Implemented Redis Pub/Sub for real-time streaming and hybrid DB batching (50 lines/5s) in the worker.
+    - **Frontend:** Optimized LogViewer with $O(1)$ deduplication and historical log backfilling.
 - [ ] **Team Workspaces:** Allow multiple developers to share a project/cluster.
-...
 - [ ] **Resource Quotas:** Limit CPU/RAM usage per team or project.
 - [ ] **Usage-Based Billing:** Implement Stripe integration for "Pay as you go" container hosting.
 - [ ] **Custom Domains & SSL:** Automated Let's Encrypt provisioning for production URLs.

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Request, Header, HTTPException, Depends
 from sqlalchemy.orm import Session
-from api.database import get_db
-from api.models import Job, Application
+from core.database import get_db
+from core.models import Job, Application
 from worker.tasks import process_job
 import logging
 
@@ -67,6 +67,7 @@ async def github_webhook(
 
         new_job = Job(
             app_id=app.id,
+            owner_id=app.owner_id, # Inherit from the application
             type="DEPLOY",
             status="queued",
             trigger_reason="Webhook",

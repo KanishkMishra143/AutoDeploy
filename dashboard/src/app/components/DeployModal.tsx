@@ -1,6 +1,6 @@
 "use client";
-import { useState, useEffect } from "react";
-import { X, Plus, Trash2, Rocket, Globe, Tag, GitBranch, Layers, Terminal, Settings2 } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { X, Plus, Trash2, Rocket, Globe, Tag, GitBranch, Layers, Terminal, Settings2, Upload } from "lucide-react";
 import toast from "react-hot-toast";
 import { supabase } from "../../lib/supabase";
 
@@ -20,6 +20,7 @@ export default function DeployModal({ onClose }: { onClose: (jobId?: string) => 
   const [preBuildSteps, setPreBuildSteps] = useState<string[]>([]);
   const [postBuildSteps, setPostBuildSteps] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch branches when repo URL changes
   useEffect(() => {
@@ -57,6 +58,46 @@ export default function DeployModal({ onClose }: { onClose: (jobId?: string) => 
     const updated = [...envVars];
     updated[index][field] = val;
     setEnvVars(updated);
+  };
+
+  const handleEnvFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result as string;
+      const lines = content.split('\n');
+      const newVars: { key: string; value: string }[] = [];
+
+      lines.forEach(line => {
+        const trimmedLine = line.trim();
+        if (trimmedLine && !trimmedLine.startsWith('#')) {
+          const firstEqual = trimmedLine.indexOf('=');
+          if (firstEqual !== -1) {
+            const key = trimmedLine.substring(0, firstEqual).trim();
+            let value = trimmedLine.substring(firstEqual + 1).trim();
+            // Remove quotes if present
+            if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+                value = value.substring(1, value.length - 1);
+            }
+            if (key) newVars.push({ key, value });
+          }
+        }
+      });
+
+      if (newVars.length > 0) {
+        // Filter out empty existing vars and merge
+        const filteredExisting = envVars.filter(v => v.key || v.value);
+        setEnvVars([...filteredExisting, ...newVars]);
+        toast.success(`Detected ${newVars.length} environment variables!`, { icon: '📄' });
+      } else {
+        toast.error("No valid environment variables found in file.");
+      }
+    };
+    reader.readAsText(file);
+    // Reset input
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const addStep = (type: "pre" | "post") => {
@@ -275,11 +316,48 @@ export default function DeployModal({ onClose }: { onClose: (jobId?: string) => 
                     <h4 className="text-sm font-bold text-white uppercase tracking-tight">Secrets & Config</h4>
                     <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Injected into container at runtime</p>
                  </div>
-                 <button onClick={addEnvVar} className="px-4 py-2 bg-accent/10 hover:bg-accent text-accent hover:text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 border border-accent/20">
-                   <Plus className="w-3.5 h-3.5" /> Add Variable
-                 </button>
+                 <div className="flex gap-2">
+                    <input 
+                        type="file" 
+                        ref={fileInputRef} 
+                        onChange={handleEnvFileUpload} 
+                        className="hidden" 
+                        accept=".env"
+                    />
+                    <button 
+                        onClick={() => fileInputRef.current?.click()}
+                        className="px-4 py-2 bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 border border-white/10"
+                    >
+                        <Upload className="w-3.5 h-3.5" /> Import .env
+                    </button>
+                    <button onClick={addEnvVar} className="px-4 py-2 bg-accent/10 hover:bg-accent text-accent hover:text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 border border-accent/20">
+                    <Plus className="w-3.5 h-3.5" /> Add Variable
+                    </button>
+                 </div>
                </div>
                
+               {/* Drag and Drop Zone */}
+               <div 
+                 onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                 onDrop={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const file = e.dataTransfer.files?.[0];
+                    if (file) {
+                        const inputE = { target: { files: [file] } } as any;
+                        handleEnvFileUpload(inputE);
+                    }
+                 }}
+                 className="group/drop border-2 border-dashed border-card-border rounded-2xl p-8 flex flex-col items-center justify-center bg-white/5 hover:bg-accent/5 hover:border-accent/40 transition-all cursor-pointer"
+                 onClick={() => fileInputRef.current?.click()}
+               >
+                  <div className="p-3 bg-white/5 rounded-2xl mb-3 group-hover/drop:scale-110 transition-transform duration-300">
+                    <Upload className="w-6 h-6 text-gray-600 group-hover/drop:text-accent" />
+                  </div>
+                  <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest group-hover/drop:text-accent transition-colors">Drag & Drop .env file here</p>
+                  <p className="text-[9px] text-gray-600 font-bold uppercase tracking-widest mt-1">or click to browse local files</p>
+               </div>
+
                <div className="space-y-3">
                  {envVars.map((ev, i) => (
                    <div key={i} className="flex gap-3 animate-in slide-in-from-left-2 duration-200">

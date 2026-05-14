@@ -25,6 +25,7 @@ class AppUpdate(BaseModel):
 
 class AppResponse(BaseModel):
     id: UUID
+    owner_id: Optional[UUID] = None
     name: str
     repo_url: str
     branch: str
@@ -54,7 +55,9 @@ class JobCreate(BaseModel):
 
 class JobResponse(BaseModel):
     id: UUID
+    owner_id: Optional[UUID] = None
     app_id: Optional[UUID] = None
+    build_number: Optional[int] = None
     type: str
     status: str
     trigger_reason: Optional[str] = None
@@ -77,6 +80,7 @@ class JobListResponse(BaseModel):
 
 class LogResponse(BaseModel):
     id: UUID
+    owner_id: Optional[UUID] = None
     message: str
     created_at: datetime
 
