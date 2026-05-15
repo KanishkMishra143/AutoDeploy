@@ -75,8 +75,37 @@ def verify_token(token: str):
 
     return None
 
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+import jwt
+from dotenv import load_dotenv
+import base64
+import hashlib
+from sqlalchemy.orm import Session
+from core.database import get_db
+from core.models import APIKey
+
+load_dotenv()
+...
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security), db: Session = Depends(get_db)):
     token = credentials.credentials
+    
+    # --- Check for API Key (CLI/Automated Access) ---
+    if token.startswith("ad_live_"):
+        key_hash = hashlib.sha256(token.encode()).hexdigest()
+        api_key = db.query(APIKey).filter(APIKey.key_hash == key_hash).first()
+        
+        if api_key:
+            # Mimic the JWT payload for compatibility
+            # REST of the app expects 'sub' to be the user_id (string)
+            return {"sub": str(api_key.user_id), "role": "api_key"}
+        
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, 
+            detail="Invalid API Key"
+        )
+
+    # --- Standard JWT flow (Dashboard Access) ---
     payload = verify_token(token)
     
     if not payload:

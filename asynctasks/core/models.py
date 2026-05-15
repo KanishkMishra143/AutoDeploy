@@ -82,3 +82,33 @@ class Profile(Base):
     avatar_url = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    settings = relationship("UserSettings", back_populates="profile", uselist=False, cascade="all, delete-orphan")
+    api_keys = relationship("APIKey", back_populates="profile", cascade="all, delete-orphan")
+
+
+class UserSettings(Base):
+    __tablename__ = "user_settings"
+    user_id = Column(UUID(as_uuid=True), ForeignKey("profiles.user_id"), primary_key=True)
+    notifications_enabled = Column(JSON, nullable=False, default={
+        "deploy_success": True,
+        "deploy_failure": True,
+        "system_health": False,
+        "weekly_report": False
+    })
+    appearance_mode = Column(String, default="acrylic") # acrylic, minimal, high_contrast
+    
+    profile = relationship("Profile", back_populates="settings")
+
+
+class APIKey(Base):
+    __tablename__ = "api_keys"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("profiles.user_id"), nullable=False, index=True)
+    name = Column(String, nullable=False)
+    key_prefix = Column(String(12), nullable=False) # First 12 chars for display: "ad_live_xxxx"
+    key_hash = Column(String, nullable=False, unique=True) # Hashed secret
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+
+    profile = relationship("Profile", back_populates="api_keys")

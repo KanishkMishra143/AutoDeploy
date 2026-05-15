@@ -108,7 +108,7 @@ def list_apps(db: Session = Depends(get_db), current_user: dict = Depends(get_cu
     owned_apps = db.query(Application).options(
         joinedload(Application.owner_profile),
         joinedload(Application.access_list).joinedload(AppAccess.profile)
-    ).filter(Application.owner_id == user_uuid).all()
+    ).filter(Application.owner_id == user_uuid).order_by(Application.updated_at.desc()).all()
     
     for app in owned_apps:
         app.role = "OWNER"
@@ -127,6 +127,9 @@ def list_apps(db: Session = Depends(get_db), current_user: dict = Depends(get_cu
             app.role = access.role
             app.env_vars = decrypt_dict(app.env_vars)
             shared_apps.append(app)
+    
+    # Sort shared apps by updated_at DESC (latest first)
+    shared_apps.sort(key=lambda x: x.updated_at, reverse=True)
     
     all_apps = owned_apps + shared_apps
     return {"total": len(all_apps), "apps": all_apps}
@@ -243,7 +246,8 @@ def revoke_access(app_id: UUID, user_id: UUID, db: Session = Depends(get_db), cu
 @router.delete("/purge")
 def purge_apps(db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     """Deletes all applications owned by the current user and their containers."""
-    apps = db.query(Application).filter(Application.owner_id == current_user["sub"]).all()
+    user_uuid = UUID(current_user["sub"])
+    apps = db.query(Application).filter(Application.owner_id == user_uuid).all()
     
     for app in apps:
         job_ids = [str(job.id) for job in app.jobs]
@@ -262,10 +266,11 @@ def purge_apps(db: Session = Depends(get_db), current_user: dict = Depends(get_c
 @router.delete("/{app_id}")
 def delete_app(app_id: UUID, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     """Deletes an application and all its history with high-performance cleanup."""
+    user_uuid = UUID(current_user["sub"])
     # Only owner can delete the whole app
     app = db.query(Application).filter(
         Application.id == app_id,
-        Application.owner_id == current_user["sub"]
+        Application.owner_id == user_uuid
     ).first()
     
     if not app:

@@ -42,6 +42,35 @@ class ProfileResponse(BaseModel):
         from_attributes = True
 
 
+class UserSettingsBase(BaseModel):
+    notifications_enabled: Dict[str, bool]
+    appearance_mode: str
+
+
+class UserSettingsResponse(UserSettingsBase):
+    class Config:
+        from_attributes = True
+
+
+class APIKeyCreate(BaseModel):
+    name: str
+
+
+class APIKeyResponse(BaseModel):
+    id: UUID
+    name: str
+    key_prefix: str
+    created_at: datetime
+    last_used_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class APIKeyFullResponse(APIKeyResponse):
+    secret_key: str # Only returned once upon creation
+
+
 class AppAccessCreate(AppAccessBase):
     pass
 

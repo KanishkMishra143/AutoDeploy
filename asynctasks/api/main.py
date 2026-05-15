@@ -45,12 +45,27 @@ async def websocket_logs(websocket: WebSocket, job_id: str):
         await websocket.close(code=4001)
         return
 
-    payload = verify_token(token)
-    if not payload:
+    user_id = None
+    
+    # 1. Check for API Key (CLI)
+    if token.startswith("ad_live_"):
+        import hashlib
+        from core.models import APIKey
+        key_hash = hashlib.sha256(token.encode()).hexdigest()
+        with session_scope() as db:
+            api_key = db.query(APIKey).filter(APIKey.key_hash == key_hash).first()
+            if api_key:
+                user_id = str(api_key.user_id)
+    
+    # 2. Fallback to JWT (Dashboard)
+    if not user_id:
+        payload = verify_token(token)
+        if payload:
+            user_id = payload["sub"]
+
+    if not user_id:
         await websocket.close(code=4001)
         return
-    
-    user_id = payload["sub"]
 
     await websocket.accept()
     

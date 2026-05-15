@@ -61,32 +61,44 @@ AutoDeploy follows a decoupled **Control Plane vs. Data Plane** architecture, al
 - A **Supabase** project for Auth and Database.
 
 ### 2. Infrastructure Setup
-Spin up the message broker and edge proxy:
+Spin up the core infrastructure (Redis, PostgreSQL, Traefik, and HashiCorp Vault):
 ```bash
-docker compose up -d redis traefik
+docker compose up -d
 ```
 
 ### 3. Backend (AsyncTasks)
-Configure your `.env` in `asynctasks/`:
+Configure your `.env` in `asynctasks/` (refer to `asynctasks/.env.example` if available):
 ```env
 SUPABASE_URL=your_supabase_url
 SUPABASE_KEY=your_supabase_anon_key
 SUPABASE_DB_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT].supabase.co:5432/postgres
 REDIS_URL=redis://localhost:6379/0
 SECRET_KEY=your_encryption_key
+VAULT_ADDR=http://localhost:8200
+VAULT_TOKEN=root
 ```
 
-Install and start:
+Install dependencies and start the services:
 ```bash
 cd asynctasks
 uv sync
-# Terminal 1: API
-uvicorn api.main:app --reload
-# Terminal 2: Worker
+
+# Terminal 1: API Server
+uvicorn api.main:app --reload --port 8000
+
+# Terminal 2: Celery Worker
 celery -A worker.celery_app worker --loglevel=info
 ```
 
-### 4. Frontend (Dashboard)
+### 4. Webhook Connectivity (Optional - for Git triggers)
+To receive webhooks from GitHub/GitLab on your local machine, use **ngrok** to expose the API:
+```bash
+# Terminal 3: ngrok Tunnel
+ngrok http 8000
+```
+*Note: Update your Repository Webhook URL to the ngrok address (e.g., `https://xyz.ngrok-free.app/webhooks/github`).*
+
+### 5. Frontend (Dashboard)
 Configure your `.env.local` in `dashboard/`:
 ```env
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
@@ -95,6 +107,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 
 Install and start:
 ```bash
+# Terminal 4: Frontend
 cd dashboard
 npm install
 npm run dev

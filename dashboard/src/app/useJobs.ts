@@ -51,10 +51,26 @@ export interface Profile {
     avatar_url?: string;
 }
 
+export interface UserSettings {
+    notifications_enabled: Record<string, boolean>;
+    appearance_mode: string;
+}
+
+export interface APIKey {
+    id: string;
+    name: string;
+    key_prefix: string;
+    created_at: string;
+    last_used_at?: string;
+    secret_key?: string;
+}
+
 export function useJobs() {
     const [jobs, setJobs] = useState<Job[]>([]);
     const [apps, setApps] = useState<Application[]>([]);
     const [profile, setProfile] = useState<Profile | null>(null);
+    const [settings, setSettings] = useState<UserSettings | null>(null);
+    const [apiKeys, setApiKeys] = useState<APIKey[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [workerCount, setWorkerCount] = useState(0);
@@ -70,7 +86,7 @@ export function useJobs() {
     const fetchProfile = async () => {
         try {
             const headers = await getAuthHeaders();
-            const response = await fetch("http://localhost:8000/auth/profile", { headers });
+            const response = await fetch("http://127.0.0.1:8000/auth/profile", { headers });
             if (response.ok) {
                 const data = await response.json();
                 setProfile(data);
@@ -80,10 +96,89 @@ export function useJobs() {
         }
     };
 
+    const fetchSettings = async () => {
+        try {
+            const headers = await getAuthHeaders();
+            const response = await fetch("http://127.0.0.1:8000/auth/settings", { headers });
+            if (response.ok) {
+                const data = await response.json();
+                setSettings(data);
+            }
+        } catch (err) {
+            console.error("Failed to fetch settings:", err);
+        }
+    };
+
+    const updateSettings = async (newSettings: UserSettings) => {
+        try {
+            const headers = await getAuthHeaders();
+            const response = await fetch("http://127.0.0.1:8000/auth/settings", {
+                method: "PATCH",
+                headers,
+                body: JSON.stringify(newSettings)
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setSettings(data);
+                return data;
+            }
+        } catch (err) {
+            console.error("Failed to update settings:", err);
+            throw err;
+        }
+    };
+
+    const fetchApiKeys = async () => {
+        try {
+            const headers = await getAuthHeaders();
+            const response = await fetch("http://127.0.0.1:8000/auth/keys", { headers });
+            if (response.ok) {
+                const data = await response.json();
+                setApiKeys(data);
+            }
+        } catch (err) {
+            console.error("Failed to fetch API keys:", err);
+        }
+    };
+
+    const createApiKey = async (name: string) => {
+        try {
+            const headers = await getAuthHeaders();
+            const response = await fetch("http://127.0.0.1:8000/auth/keys", {
+                method: "POST",
+                headers,
+                body: JSON.stringify({ name })
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setApiKeys(prev => [...prev, data]);
+                return data;
+            }
+        } catch (err) {
+            console.error("Failed to create API key:", err);
+            throw err;
+        }
+    };
+
+    const revokeApiKey = async (id: string) => {
+        try {
+            const headers = await getAuthHeaders();
+            const response = await fetch(`http://127.0.0.1:8000/auth/keys/${id}`, {
+                method: "DELETE",
+                headers
+            });
+            if (response.ok) {
+                setApiKeys(prev => prev.filter(k => k.id !== id));
+            }
+        } catch (err) {
+            console.error("Failed to revoke API key:", err);
+        }
+    };
+
     const fetchWorkers = async () => {
         try {
             const headers = await getAuthHeaders();
-            const response = await fetch("http://localhost:8000/workers", { headers });
+            const response = await fetch("http://127.0.0.1:8000/workers", { headers });
             if (!response.ok) throw new Error();
             const data = await response.json();
             setWorkerCount(data.count);
@@ -95,7 +190,7 @@ export function useJobs() {
     const fetchApps = async () => {
         try {
             const headers = await getAuthHeaders();
-            const response = await fetch("http://localhost:8000/apps", { headers });
+            const response = await fetch("http://127.0.0.1:8000/apps", { headers });
             if (response.ok) {
                 const data = await response.json();
                 setApps(data.apps || []);
@@ -108,7 +203,7 @@ export function useJobs() {
     const fetchJobs = async () => {
       try {
         const headers = await getAuthHeaders();
-        const response = await fetch("http://localhost:8000/jobs?limit=50", { headers });
+        const response = await fetch("http://127.0.0.1:8000/jobs?limit=50", { headers });
         if (!response.ok) throw new Error("API Unreachable");
         const data = await response.json();
         setJobs(data.jobs || []);
@@ -126,6 +221,8 @@ export function useJobs() {
         fetchApps();
         fetchWorkers();
         fetchProfile();
+        fetchSettings();
+        fetchApiKeys();
     };
 
     useEffect(() => {
@@ -134,5 +231,8 @@ export function useJobs() {
         return () => clearInterval(interval);
     }, []);
 
-    return { jobs, apps, profile, loading, error, workerCount };
+    return { 
+        jobs, apps, profile, settings, apiKeys, loading, error, workerCount,
+        updateSettings, createApiKey, revokeApiKey
+    };
 }

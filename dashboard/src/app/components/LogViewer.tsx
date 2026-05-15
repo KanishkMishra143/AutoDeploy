@@ -23,7 +23,7 @@ export default function LogViewer({ jobId, onClose }: { jobId: string; onClose: 
     const fetchJob = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        const res = await fetch(`http://localhost:8000/jobs/${jobId}`, {
+        const res = await fetch(`http://127.0.0.1:8000/jobs/${jobId}`, {
           headers: {
             "Authorization": `Bearer ${session?.access_token}`,
           }
@@ -40,7 +40,7 @@ export default function LogViewer({ jobId, onClose }: { jobId: string; onClose: 
     const fetchLogs = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        const res = await fetch(`http://localhost:8000/jobs/${jobId}/logs`, {
+        const res = await fetch(`http://127.0.0.1:8000/jobs/${jobId}/logs`, {
           headers: {
             "Authorization": `Bearer ${session?.access_token}`,
           }
@@ -77,7 +77,7 @@ export default function LogViewer({ jobId, onClose }: { jobId: string; onClose: 
 
       if (!isMounted) return;
 
-      ws = new WebSocket(`ws://localhost:8000/ws/logs/${jobId}?token=${token}`);
+      ws = new WebSocket(`ws://127.0.0.1:8000/ws/logs/${jobId}?token=${token}`);
 
       ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
@@ -183,14 +183,8 @@ export default function LogViewer({ jobId, onClose }: { jobId: string; onClose: 
         {/* Terminal Title Bar */}
         <div className="bg-[#111] px-6 py-4 border-b border-card-border flex justify-between items-center select-none">
           <div className="flex items-center gap-4">
-            <div className="flex gap-2">
-              <div className="w-3 h-3 rounded-full bg-[#ff5f56] shadow-[0_0_8px_rgba(255,95,86,0.3)]"></div>
-              <div className="w-3 h-3 rounded-full bg-[#ffbd2e] shadow-[0_0_8px_rgba(255,189,46,0.3)]"></div>
-              <div className="w-3 h-3 rounded-full bg-[#27c93f] shadow-[0_0_8px_rgba(39,201,63,0.3)]"></div>
-            </div>
-            <div className="h-4 w-px bg-white/10 mx-2" />
             <div className="flex items-center gap-3">
-                <Terminal className="w-4 h-4 text-gray-500" />
+                <Terminal className="w-4 h-4 text-accent" />
                 <span className="text-[10px] font-black font-mono text-gray-400 uppercase tracking-widest">
                   Live Stream ~ {job?.build_number ? `BUILD #${job.build_number}` : jobId.split('-')[0]}
                 </span>
@@ -306,8 +300,19 @@ export default function LogViewer({ jobId, onClose }: { jobId: string; onClose: 
 
         {/* Footer info */}
         <div className="bg-[#080808] px-6 py-2 border-t border-card-border flex justify-between items-center text-[9px] font-bold text-gray-700 uppercase tracking-[0.3em]">
-            <span>Channel: LOGS_PUB_SUB_V2</span>
-            <span>Cluster: LOCAL_HOST_WSL</span>
+            <div className="flex items-center gap-6">
+                <div className="flex items-center gap-2">
+                    <div className={`w-1.5 h-1.5 rounded-full ${logs.length > 0 ? 'bg-green-500 animate-pulse' : 'bg-yellow-500'}`} />
+                    <span>SYSTEM HEALTH: NOMINAL</span>
+                </div>
+                <div className="flex items-center gap-2 border-l border-white/5 pl-6">
+                    <Activity className="w-3 h-3 text-accent" />
+                    <span>PUB/SUB ENGINE: ACTIVE</span>
+                </div>
+            </div>
+            <div className="flex items-center gap-2">
+                <span>ORCHESTRATOR: v1.5.2</span>
+            </div>
         </div>
       </div>
     </div>

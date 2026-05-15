@@ -3,7 +3,8 @@ import { useState, useEffect } from "react";
 import { 
   Activity, Server, Clock, CheckCircle2, XCircle, Loader2, Plus, 
   StopCircle, RotateCcw, Box, Globe, ChevronRight, User, 
-  Settings as SettingsIcon, LayoutGrid, Rocket, LogOut, Search, Bell, ExternalLink, GitBranch, Terminal, AlertCircle
+  Settings as SettingsIcon, LayoutGrid, Rocket, LogOut, Search, Bell, ExternalLink, GitBranch, Terminal, AlertCircle,
+  ArrowUpDown
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { useSearchParams, useRouter } from "next/navigation";
@@ -53,6 +54,9 @@ export default function CanvasPage() {
   const [showDeployModal, setShowDeployModal] = useState(false);
   const [selectedApp, setSelectedApp] = useState<Application | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [ownedSortOrder, setOwnedSortOrder] = useState<"desc" | "asc">("desc");
+  const [sharedSortOrder, setSharedSortOrder] = useState<"desc" | "asc">("desc");
+  const [isHeaderOverlayOpen, setIsHeaderOverlayOpen] = useState(false);
   
   // Track job statuses to trigger toasts on completion
   const [prevJobStatuses, setPrevJobStatuses] = useState<Record<string, string>>({});
@@ -107,6 +111,19 @@ export default function CanvasPage() {
     onConfirm: () => {}
   });
 
+  // Prevent background scroll when any modal is open
+  useEffect(() => {
+    const isModalOpen = showDeployModal || !!selectedApp || confirmConfig.isOpen || !!selectedJobId || isHeaderOverlayOpen;
+    if (isModalOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "unset";
+    }
+    return () => {
+      document.body.style.overflow = "unset";
+    };
+  }, [showDeployModal, selectedApp, confirmConfig.isOpen, selectedJobId, isHeaderOverlayOpen]);
+
   const handleStopJob = (e: React.MouseEvent, jobId: string) => {
     e.stopPropagation();
     
@@ -119,7 +136,7 @@ export default function CanvasPage() {
       onConfirm: async () => {
         try {
           const { data: { session } } = await supabase.auth.getSession();
-          const res = await fetch(`http://localhost:8000/jobs/${jobId}`, {
+          const res = await fetch(`http://127.0.0.1:8000/jobs/${jobId}`, {
             method: "DELETE",
             headers: {
               "Authorization": `Bearer ${session?.access_token}`,
@@ -143,7 +160,7 @@ export default function CanvasPage() {
     const tId = toast.loading("Triggering deployment...");
     try {
         const { data: { session } } = await supabase.auth.getSession();
-        const res = await fetch(`http://localhost:8000/apps/${appId}/deploy`, { 
+        const res = await fetch(`http://127.0.0.1:8000/apps/${appId}/deploy`, { 
           method: "POST",
           headers: {
             "Authorization": `Bearer ${session?.access_token}`,
@@ -167,8 +184,21 @@ export default function CanvasPage() {
     app.repo_url.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const ownedApps = filteredApps.filter(app => app.role === 'OWNER');
-  const sharedApps = filteredApps.filter(app => app.role !== 'OWNER');
+  const ownedApps = filteredApps
+    .filter(app => app.role === 'OWNER')
+    .sort((a, b) => {
+      const dateA = new Date(a.updated_at).getTime();
+      const dateB = new Date(b.updated_at).getTime();
+      return ownedSortOrder === "desc" ? dateB - dateA : dateA - dateB;
+    });
+
+  const sharedApps = filteredApps
+    .filter(app => app.role !== 'OWNER')
+    .sort((a, b) => {
+      const dateA = new Date(a.updated_at).getTime();
+      const dateB = new Date(b.updated_at).getTime();
+      return sharedSortOrder === "desc" ? dateB - dateA : dateA - dateB;
+    });
 
   const renderAppCard = (app: Application) => {
     const latestJob = jobs.find(j => j.app_id === app.id);
@@ -306,7 +336,8 @@ export default function CanvasPage() {
         profile={profile}
         onViewJob={setSelectedJobId}
         onSelectApp={setSelectedApp}
-        isModalOpen={showDeployModal || !!selectedApp || confirmConfig.isOpen || !!selectedJobId}
+        isModalOpen={showDeployModal || !!selectedApp || confirmConfig.isOpen || !!selectedJobId || isHeaderOverlayOpen}
+        onOverlayToggle={setIsHeaderOverlayOpen}
       />
       <main className="pt-48 pb-20 px-8">
         {selectedJobId && (
@@ -409,10 +440,19 @@ export default function CanvasPage() {
                 {/* Your Applications Section */}
                 {ownedApps.length > 0 && (
                   <div>
-                    <div className="flex items-center gap-2 mb-10 text-white">
-                      <Box className="w-5 h-5 text-accent" />
-                      <h3 className="text-xl font-bold uppercase tracking-tight">Your Projects</h3>
-                      <span className="ml-3 px-2 py-0.5 bg-accent/10 text-accent text-[10px] font-black rounded border border-accent/20">{ownedApps.length}</span>
+                    <div className="flex items-center justify-between mb-10 text-white">
+                      <div className="flex items-center gap-2">
+                        <Box className="w-5 h-5 text-accent" />
+                        <h3 className="text-xl font-bold uppercase tracking-tight">Your Projects</h3>
+                        <span className="ml-3 px-2 py-0.5 bg-accent/10 text-accent text-[10px] font-black rounded border border-accent/20">{ownedApps.length}</span>
+                      </div>
+                      <button 
+                        onClick={() => setOwnedSortOrder(ownedSortOrder === 'desc' ? 'asc' : 'desc')}
+                        className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl border border-white/5 text-[10px] font-black uppercase tracking-widest transition-all"
+                      >
+                        <ArrowUpDown className="w-3.5 h-3.5 text-accent" />
+                        Last Modified: {ownedSortOrder === 'desc' ? 'Newest' : 'Oldest'}
+                      </button>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                       {ownedApps.map(app => renderAppCard(app))}
@@ -423,10 +463,19 @@ export default function CanvasPage() {
                 {/* Shared Section */}
                 {sharedApps.length > 0 && (
                   <div>
-                    <div className="flex items-center gap-2 mb-10 text-white">
-                      <User className="w-5 h-5 text-blue-500" />
-                      <h3 className="text-xl font-bold uppercase tracking-tight">Shared with You</h3>
-                      <span className="ml-3 px-2 py-0.5 bg-blue-500/10 text-blue-500 text-[10px] font-black rounded border border-blue-500/20">{sharedApps.length}</span>
+                    <div className="flex items-center justify-between mb-10 text-white">
+                      <div className="flex items-center gap-2">
+                        <User className="w-5 h-5 text-blue-500" />
+                        <h3 className="text-xl font-bold uppercase tracking-tight">Shared with You</h3>
+                        <span className="ml-3 px-2 py-0.5 bg-blue-500/10 text-blue-500 text-[10px] font-black rounded border border-blue-500/20">{sharedApps.length}</span>
+                      </div>
+                      <button 
+                        onClick={() => setSharedSortOrder(sharedSortOrder === 'desc' ? 'asc' : 'desc')}
+                        className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl border border-white/5 text-[10px] font-black uppercase tracking-widest transition-all"
+                      >
+                        <ArrowUpDown className="w-3.5 h-3.5 text-blue-500" />
+                        Last Modified: {sharedSortOrder === 'desc' ? 'Newest' : 'Oldest'}
+                      </button>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                       {sharedApps.map(app => renderAppCard(app))}

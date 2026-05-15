@@ -177,31 +177,32 @@
 ### 📅 Day-by-Day Progress
 - [x] **Day 1 — The Hybrid Migration (Supabase DB):**
     - **Task:** Migrate the local PostgreSQL schema to Supabase.
-    - **Sub-task:** Update API and Worker to connect via the Supabase Connection String.
 - [x] **Day 2 — OAuth & JWT Integration:**
-    - **Task:** Implement GitHub Login using Supabase Auth.
-    - **Sub-task:** Secure FastAPI endpoints using JWT verification from Supabase.
-- [x] **Day 3 — Role-Based Access Control (RBAC) & Sharing:**
-    - **Implementation:** Custom Profile system with human-readable User IDs.
-    - **Feature:** Cross-account sharing with Owner, Admin, and Viewer roles.
-    - **UI:** Real-time user search with GitHub avatars and segregated dashboard sections.
+    - **Task:** Implement GitHub Login and Secure FastAPI endpoints using JWT verification.
+- [x] **Day 3 — RBAC & Sharing:**
+    - **Implementation:** Custom Profile system and Cross-account sharing with Owner/Admin/Viewer roles.
 - [x] **Day 4 — Advanced Secrets:** 
     - **Implementation:** Pluggable SecretResolver engine with HashiCorp Vault integration.
-    - **Feature:** Runtime resolution of `vault://` references to prevent secret leaks in the database.
+- [x] **Day 5 — Persistent Preferences & API Keys:**
+    - **Feature:** Real database-backed User Settings for notifications and UI.
+    - **Implementation:** API Key management system with secure hashing and CLI/Automated access support.
 
 ---
 
-## 💻 PHASE 11 — The AutoDeploy CLI (NEXT)
+## 💻 PHASE 11 — The AutoDeploy CLI (IN PROGRESS)
 **Goal:** Provide professional developers with total terminal control, running parallel to the GUI.
 
 ### 📅 Day-by-Day Progress
-- [ ] **Day 1–2 — CLI Foundation:**
-    - **Task:** Build a CLI tool using Python (Click/Typer) or Go.
-    - **Sub-task:** Implement authentication and secure session management.
-    - *Deliverable: A lightweight command-line tool connected to the AutoDeploy API.*
-- [ ] **Day 3–4 — CLI/GUI Parity:**
-    - **Task:** Implement commands like `deploy login`, `deploy init`, `deploy up`, and `deploy logs`.
-    - **Sub-task:** Ensure any action taken in the CLI instantly reflects on the live Canvas GUI.
+- [x] **Day 1 — CLI Foundation & Terminal Auth:**
+    - **Task:** Build a CLI tool (`ad`) using Python and `typer`.
+    - **Feature:** Implement `ad login`, `ad whoami`, and `ad logout` using the new API Key system.
+    - **Security:** Configs stored in `~/.autodeploy` with `600` permissions.
+- [x] **Day 2 — App Management:**
+    - **Task:** Implement `ad apps list` and `ad apps deploy <app_id>`.
+    - *Deliverable: Core terminal control for project listing and deployment triggering.*
+- [ ] **Day 3–4 — CLI/GUI Parity (Next):**
+    - **Task:** Implement `ad logs` for real-time terminal log streaming.
+    - **Sub-task:** Implement environment variable management via CLI.
     - *Deliverable: True parallel workflows—start in the terminal, monitor in the dashboard.*
 
 ---

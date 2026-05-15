@@ -42,7 +42,7 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
   const fetchAppDetails = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`http://localhost:8000/apps/${initialApp.id}`, {
+      const res = await fetch(`http://127.0.0.1:8000/apps/${initialApp.id}`, {
         headers: {
           "Authorization": `Bearer ${session?.access_token}`,
         }
@@ -65,7 +65,7 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
       setIsSearching(true);
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        const res = await fetch(`http://localhost:8000/auth/search?q=${shareUserId}`, {
+        const res = await fetch(`http://127.0.0.1:8000/auth/search?q=${shareUserId}`, {
           headers: { "Authorization": `Bearer ${session?.access_token}` }
         });
         if (res.ok) {
@@ -129,7 +129,7 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
     const tId = toast.loading("Granting access...");
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`http://localhost:8000/apps/${app.id}/share`, {
+      const res = await fetch(`http://127.0.0.1:8000/apps/${app.id}/share`, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${session?.access_token}`,
@@ -165,7 +165,7 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
     const tId = toast.loading("Revoking access...");
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`http://localhost:8000/apps/${app.id}/revoke/${userId}`, {
+      const res = await fetch(`http://127.0.0.1:8000/apps/${app.id}/revoke/${userId}`, {
         method: "DELETE",
         headers: {
           "Authorization": `Bearer ${session?.access_token}`,
@@ -185,7 +185,7 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
   const fetchHistory = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`http://localhost:8000/jobs?app_id=${app.id}&limit=20`, {
+      const res = await fetch(`http://127.0.0.1:8000/jobs?app_id=${app.id}&limit=20`, {
         headers: {
           "Authorization": `Bearer ${session?.access_token}`,
         }
@@ -217,7 +217,7 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
         const tId = toast.loading("Triggering rollback...");
         try {
           const { data: { session } } = await supabase.auth.getSession();
-          const res = await fetch(`http://localhost:8000/jobs/${jobId}/rerun`, { 
+          const res = await fetch(`http://127.0.0.1:8000/jobs/${jobId}/rerun`, { 
             method: "POST",
             headers: {
               "Authorization": `Bearer ${session?.access_token}`,
@@ -238,6 +238,30 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
     });
   };
 
+  const handleDeploy = async () => {
+    const tId = toast.loading("Triggering deployment...");
+    try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const res = await fetch(`http://127.0.0.1:8000/apps/${app.id}/deploy`, { 
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${session?.access_token}`,
+          }
+        });
+        if (res.ok) {
+            const data = await res.json();
+            toast.success("Deployment started!", { id: tId });
+            onViewLogs(data.id);
+            fetchHistory(); // Refresh the list
+        } else {
+            toast.error("Deployment failed to trigger", { id: tId });
+        }
+    } catch (err) {
+        console.error(err);
+        toast.error("Connection error", { id: tId });
+    }
+  };
+
   const handleSaveSettings = async () => {
     setIsSaving(true);
     const tId = toast.loading("Saving configuration...");
@@ -250,7 +274,7 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`http://localhost:8000/apps/${app.id}`, {
+      const res = await fetch(`http://127.0.0.1:8000/apps/${app.id}`, {
         method: "PATCH",
         headers: {
           "Authorization": `Bearer ${session?.access_token}`,
@@ -325,7 +349,7 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
         const tId = toast.loading(`Deleting ${app.name}...`);
         try {
           const { data: { session } } = await supabase.auth.getSession();
-          const res = await fetch(`http://localhost:8000/apps/${app.id}`, { 
+          const res = await fetch(`http://127.0.0.1:8000/apps/${app.id}`, { 
             method: "DELETE",
             headers: {
               "Authorization": `Bearer ${session?.access_token}`,
@@ -471,94 +495,108 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
           )}
 
           {activeTab === "history" && (
-            <div className="flex-1 overflow-y-auto p-8 space-y-6 custom-scrollbar">
-                {loading ? (
-                  <div className="h-40 flex items-center justify-center">
-                     <div className="w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin" />
-                  </div>
-                ) : historyJobs.length === 0 ? (
-                  <div className="h-40 border border-dashed border-card-border rounded-[24px] flex items-center justify-center text-gray-600">
-                    <p className="text-xs font-bold uppercase tracking-widest">No deployment history found</p>
-                  </div>
-                ) : (
-                  historyJobs.map((job, index) => {
-                    const isLatest = index === 0;
-                    const triggerIcon = job.trigger_reason === 'Webhook' ? '🔔' : job.trigger_reason === 'Rollback' ? '🔄' : '👤';
-                    
-                    return (
-                      <div 
-                        key={job.id}
-                        className={`group border rounded-2xl p-5 transition-all flex flex-col gap-4 ${isLatest ? 'bg-accent/5 border-accent/30 shadow-lg shadow-accent/5' : 'bg-background/30 border-card-border hover:border-accent/20'}`}
-                      >
-                        <div className="flex items-center justify-between w-full">
-                          <div className="flex items-center gap-5">
-                            <div className={`w-3 h-3 rounded-full ${job.status === 'success' ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]' : job.status === 'running' ? 'bg-blue-500 animate-pulse' : job.status === 'stopped' ? 'bg-gray-500' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]'}`} />
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <span className="text-base font-bold text-white uppercase tracking-tight">Build #{job.build_number || (totalJobs - index)}</span>
-                                {isLatest && <span className="px-2 py-0.5 bg-accent text-[9px] font-black text-white rounded-lg uppercase tracking-tighter">Live</span>}
-                                <span className="text-[9px] px-2 py-0.5 bg-white/5 rounded text-gray-500 font-black uppercase tracking-widest flex items-center gap-1.5 border border-white/5">
-                                  {triggerIcon} {job.trigger_reason}
-                                </span>
-                                {job.trigger_reason === 'Rollback' && job.trigger_metadata?.from_version && (
-                                    <span className="text-[9px] px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded font-black uppercase tracking-widest border border-blue-500/20 animate-pulse">
-                                        From Build #{job.trigger_metadata.from_version}
-                                    </span>
+            <div className="flex-1 flex flex-col overflow-hidden relative">
+              <div className="flex-1 overflow-y-auto p-8 pb-24 space-y-6 custom-scrollbar">
+                  {loading ? (
+                    <div className="h-40 flex items-center justify-center">
+                       <div className="w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+                    </div>
+                  ) : historyJobs.length === 0 ? (
+                    <div className="h-40 border border-dashed border-card-border rounded-[24px] flex items-center justify-center text-gray-600">
+                      <p className="text-xs font-bold uppercase tracking-widest">No deployment history found</p>
+                    </div>
+                  ) : (
+                    historyJobs.map((job, index) => {
+                      const isLatest = index === 0;
+                      const triggerIcon = job.trigger_reason === 'Webhook' ? '🔔' : job.trigger_reason === 'Rollback' ? '🔄' : '👤';
+                      
+                      return (
+                        <div 
+                          key={job.id}
+                          className={`group border rounded-2xl p-5 transition-all flex flex-col gap-4 ${isLatest ? 'bg-accent/5 border-accent/30 shadow-lg shadow-accent/5' : 'bg-background/30 border-card-border hover:border-accent/20'}`}
+                        >
+                          <div className="flex items-center justify-between w-full">
+                            <div className="flex items-center gap-5">
+                              <div className={`w-3 h-3 rounded-full ${job.status === 'success' ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]' : job.status === 'running' ? 'bg-blue-500 animate-pulse' : job.status === 'stopped' ? 'bg-gray-500' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]'}`} />
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-base font-bold text-white uppercase tracking-tight">Build #{job.build_number || (totalJobs - index)}</span>
+                                  {isLatest && <span className="px-2 py-0.5 bg-accent text-[9px] font-black text-white rounded-lg uppercase tracking-tighter">Live</span>}
+                                  <span className="text-[9px] px-2 py-0.5 bg-white/5 rounded text-gray-500 font-black uppercase tracking-widest flex items-center gap-1.5 border border-white/5">
+                                    {triggerIcon} {job.trigger_reason}
+                                  </span>
+                                  {job.trigger_reason === 'Rollback' && job.trigger_metadata?.from_version && (
+                                      <span className="text-[9px] px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded font-black uppercase tracking-widest border border-blue-500/20 animate-pulse">
+                                          From Build #{job.trigger_metadata.from_version}
+                                      </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 mt-1">
+                                    <p className="text-[10px] text-gray-600 font-mono">Job: {job.id.split('-')[0]}</p>
+                                    {job.trigger_metadata?.commit_id && (
+                                        <span className="text-[10px] text-accent/50 font-mono font-bold italic">@{job.trigger_metadata.commit_id}</span>
+                                    )}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-6">
+                              <div className="text-right">
+                                <p className="text-[11px] text-white font-medium">{new Date(job.created_at).toLocaleDateString()}</p>
+                                <p className="text-[10px] text-gray-500">{new Date(job.created_at).toLocaleTimeString()}</p>
+                              </div>
+                              
+                              <div className="flex gap-2">
+                                <button 
+                                  onClick={() => onViewLogs(job.id)}
+                                  className="p-2.5 bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white rounded-xl transition-all"
+                                  title="Terminal Logs"
+                                >
+                                  <Terminal className="w-4 h-4" />
+                                </button>
+                                {job.status === 'success' && !isLatest && (
+                                  <button 
+                                    onClick={() => handleRollback(job.id)}
+                                    disabled={app.role === 'VIEWER'}
+                                    title={app.role === 'VIEWER' ? "Only owners and admins can rollback" : "Restore this version"}
+                                    className="px-4 py-2 bg-accent/10 hover:bg-accent text-accent hover:text-white text-[10px] font-black rounded-xl transition-all uppercase tracking-widest border border-accent/20 disabled:opacity-20 disabled:cursor-not-allowed"
+                                  >
+                                    Restore
+                                  </button>
                                 )}
                               </div>
-                              <div className="flex items-center gap-2 mt-1">
-                                  <p className="text-[10px] text-gray-600 font-mono">Job: {job.id.split('-')[0]}</p>
-                                  {job.trigger_metadata?.commit_id && (
-                                      <span className="text-[10px] text-accent/50 font-mono font-bold italic">@{job.trigger_metadata.commit_id}</span>
-                                  )}
-                              </div>
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-6">
-                            <div className="text-right">
-                              <p className="text-[11px] text-white font-medium">{new Date(job.created_at).toLocaleDateString()}</p>
-                              <p className="text-[10px] text-gray-500">{new Date(job.created_at).toLocaleTimeString()}</p>
+                          {/* Smart Diagnosis Section */}
+                          {job.result?.diagnosis && (
+                            <div className="p-4 bg-accent/5 border border-accent/10 rounded-xl animate-in fade-in slide-in-from-top-2 duration-300">
+                               <div className="flex items-center gap-2 mb-2">
+                                  <AlertCircle className="w-4 h-4 text-accent" />
+                                  <span className="text-[10px] font-black text-accent uppercase tracking-widest">Auto-Diagnosis: {job.result.diagnosis.title}</span>
+                               </div>
+                               <p className="text-xs text-gray-400 leading-relaxed font-medium">
+                                  {job.result.diagnosis.suggestion}
+                                </p>
                             </div>
-                            
-                            <div className="flex gap-2">
-                              <button 
-                                onClick={() => onViewLogs(job.id)}
-                                className="p-2.5 bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white rounded-xl transition-all"
-                                title="Terminal Logs"
-                              >
-                                <Terminal className="w-4 h-4" />
-                              </button>
-                              {job.status === 'success' && !isLatest && (
-                                <button 
-                                  onClick={() => handleRollback(job.id)}
-                                  disabled={app.role === 'VIEWER'}
-                                  title={app.role === 'VIEWER' ? "Only owners and admins can rollback" : "Restore this version"}
-                                  className="px-4 py-2 bg-accent/10 hover:bg-accent text-accent hover:text-white text-[10px] font-black rounded-xl transition-all uppercase tracking-widest border border-accent/20 disabled:opacity-20 disabled:cursor-not-allowed"
-                                >
-                                  Restore
-                                </button>
-                              )}
-                            </div>
-                          </div>
+                          )}
                         </div>
+                      )
+                    })
+                  )}
+              </div>
 
-                        {/* Smart Diagnosis Section */}
-                        {job.result?.diagnosis && (
-                          <div className="p-4 bg-accent/5 border border-accent/10 rounded-xl animate-in fade-in slide-in-from-top-2 duration-300">
-                             <div className="flex items-center gap-2 mb-2">
-                                <AlertCircle className="w-4 h-4 text-accent" />
-                                <span className="text-[10px] font-black text-accent uppercase tracking-widest">Auto-Diagnosis: {job.result.diagnosis.title}</span>
-                             </div>
-                             <p className="text-xs text-gray-400 leading-relaxed font-medium">
-                                {job.result.diagnosis.suggestion}
-                             </p>
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })
-                )}
+              {/* Redeploy Button (Bottom Right) */}
+              <div className="absolute bottom-8 right-8 animate-in slide-in-from-bottom-4 duration-500">
+                <button 
+                  onClick={handleDeploy}
+                  disabled={app.role === 'VIEWER'}
+                  className="px-8 py-4 bg-accent hover:bg-accent/90 text-white text-xs font-black rounded-2xl transition-all shadow-2xl shadow-accent/40 flex items-center gap-3 uppercase tracking-widest border border-accent/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  Redeploy Application
+                </button>
+              </div>
             </div>
           )}
 
@@ -758,69 +796,63 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
                      <Activity className="w-3 h-3 text-accent" />
                      Active Access
                   </h4>
-                  {app.access_list?.length === 0 ? (
-                     <div className="p-8 border border-dashed border-card-border rounded-2xl flex flex-col items-center justify-center text-gray-600 bg-white/5">
-                        <p className="text-[10px] font-black uppercase tracking-widest">No external collaborators</p>
-                     </div>
-                  ) : (
-                    <div className="grid grid-cols-1 gap-3">
-                      {/* Owner Row (Fixed at top of list) */}
-                      <div className="bg-accent/5 border border-accent/20 rounded-2xl p-4 flex justify-between items-center group transition-all">
-                         <div className="flex items-center gap-4">
-                            {app.owner_profile?.avatar_url ? (
-                              <img src={app.owner_profile.avatar_url} alt={app.owner_profile.username} className="w-10 h-10 rounded-xl border border-accent/20" />
-                            ) : (
-                              <div className="w-10 h-10 bg-accent rounded-xl flex items-center justify-center">
-                                 <Shield className="w-5 h-5 text-white" />
-                              </div>
-                            )}
-                            <div>
-                               <p className="text-xs font-black text-white uppercase tracking-tight">
-                                  {app.owner_profile?.username || "Project Owner"}
-                                  {currentUser?.id === app.owner_id && <span className="ml-2 text-[8px] bg-accent/20 text-accent px-1.5 py-0.5 rounded">YOU</span>}
-                               </p>
-                               <p className="text-[9px] font-black text-accent uppercase tracking-[0.2em] mt-1">Creator</p>
+                  <div className="grid grid-cols-1 gap-3">
+                    {/* Owner Row (ALWAYS Visible) */}
+                    <div className="bg-accent/5 border border-accent/20 rounded-2xl p-4 flex justify-between items-center group transition-all">
+                        <div className="flex items-center gap-4">
+                          {app.owner_profile?.avatar_url ? (
+                            <img src={app.owner_profile.avatar_url} alt={app.owner_profile.username} className="w-10 h-10 rounded-xl border border-accent/20" />
+                          ) : (
+                            <div className="w-10 h-10 bg-accent rounded-xl flex items-center justify-center">
+                                <Shield className="w-5 h-5 text-white" />
                             </div>
-                         </div>
-                      </div>
-
-                      {/* Collaborators */}
-                      {app.access_list?.map((access) => {
-                        const isMe = currentUser?.id === access.user_id;
-                        return (
-                          <div key={access.id} className={`bg-background/50 border border-card-border rounded-2xl p-4 flex justify-between items-center group hover:border-accent/20 transition-all ${isMe ? 'ring-1 ring-accent/20' : ''}`}>
-                             <div className="flex items-center gap-4">
-                                {access.profile?.avatar_url ? (
-                                  <img src={access.profile.avatar_url} alt={access.profile.username} className="w-10 h-10 rounded-xl border border-white/10" />
-                                ) : (
-                                  <div className="w-10 h-10 bg-white/5 rounded-xl flex items-center justify-center">
-                                     <User className="w-5 h-5 text-gray-500" />
-                                  </div>
-                                )}
-                                <div>
-                                   <p className="text-xs font-black text-white uppercase tracking-tight">
-                                      {access.profile?.username || access.user_id.split('-')[0]}
-                                      {isMe && <span className="ml-2 text-[8px] bg-accent/20 text-accent px-1.5 py-0.5 rounded">YOU</span>}
-                                   </p>
-                                   <p className="text-[9px] font-black text-accent uppercase tracking-[0.2em] mt-1">{access.role}</p>
-                                </div>
-                             </div>
-                             
-                             {/* Only show revoke if it's not the current user and current user is Admin/Owner */}
-                             {!isMe && (
-                               <button 
-                                 onClick={() => handleRevoke(access.user_id)}
-                                 className="p-3 text-gray-600 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-all opacity-0 group-hover:opacity-100"
-                                 title="Revoke Access"
-                               >
-                                 <Trash2 className="w-4 h-4" />
-                               </button>
-                             )}
+                          )}
+                          <div>
+                              <p className="text-xs font-black text-white uppercase tracking-tight">
+                                {app.owner_profile?.username || "Project Owner"}
+                                {currentUser?.id === app.owner_id && <span className="ml-2 text-[8px] bg-accent/20 text-accent px-1.5 py-0.5 rounded">YOU</span>}
+                              </p>
+                              <p className="text-[9px] font-black text-accent uppercase tracking-[0.2em] mt-1">Creator / Authority</p>
                           </div>
-                        )
-                      })}
+                        </div>
                     </div>
-                  )}
+
+                    {/* Collaborators */}
+                    {app.access_list?.map((access) => {
+                      const isMe = currentUser?.id === access.user_id;
+                      return (
+                        <div key={access.id} className={`bg-background/50 border border-card-border rounded-2xl p-4 flex justify-between items-center group hover:border-accent/20 transition-all ${isMe ? 'ring-1 ring-accent/20' : ''}`}>
+                            <div className="flex items-center gap-4">
+                              {access.profile?.avatar_url ? (
+                                <img src={access.profile.avatar_url} alt={access.profile.username} className="w-10 h-10 rounded-xl border border-white/10" />
+                              ) : (
+                                <div className="w-10 h-10 bg-white/5 rounded-xl flex items-center justify-center">
+                                    <User className="w-5 h-5 text-gray-500" />
+                                </div>
+                              )}
+                              <div>
+                                  <p className="text-xs font-black text-white uppercase tracking-tight">
+                                    {access.profile?.username || access.user_id.split('-')[0]}
+                                    {isMe && <span className="ml-2 text-[8px] bg-accent/20 text-accent px-1.5 py-0.5 rounded">YOU</span>}
+                                  </p>
+                                  <p className="text-[9px] font-black text-accent uppercase tracking-[0.2em] mt-1">{access.role}</p>
+                              </div>
+                            </div>
+                            
+                            {/* Only show revoke if it's not the current user and current user is Admin/Owner */}
+                            {!isMe && (
+                              <button 
+                                onClick={() => handleRevoke(access.user_id)}
+                                className="p-3 text-gray-600 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-all opacity-0 group-hover:opacity-100"
+                                title="Revoke Access"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                        </div>
+                      )
+                    })}
+                  </div>
                </div>
 
                <div className="h-px bg-card-border opacity-50" />

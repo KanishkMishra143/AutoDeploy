@@ -43,8 +43,25 @@
     - **Advanced Secrets (Vault):** Integrated HashiCorp Vault into the `docker-compose` stack.
         - **Secrets Engine:** Created a `SecretResolver` in the worker that fetches values from Vault at runtime using the `vault://` prefix.
         - **Security:** Secrets are never stored in the application database, only their references.
+    - **UX Sorting:** Implemented a smart sort toggle for application cards. 
+        - **Default:** Apps are now sorted by `updated_at` (Descending) so latest changes appear first.
+        - **Interactive:** Added a toggle button in both "Your Projects" and "Shared" sections to switch between Newest and Oldest modified views.
+    - **Persistent Preferences:** Replaced settings placeholders with a real `UserSettings` engine. Notification toggles and appearance modes are now saved to PostgreSQL and persist across sessions.
+    - **API Key Management:** Built a "Security" dashboard for generating and revoking API keys. Uses SHA-256 hashing for secure storage and one-time-only secret exposure for CLI/Orchestrator access.
+    - **AutoDeploy CLI (Phase 11):** Launched the first version of the `ad` terminal tool.
+        - **Auth:** Implemented `ad login`, `ad whoami`, and `ad logout` using the new API Key system.
+        - **Management:** Added `ad apps list` and `ad apps deploy` to control the cluster from the terminal.
+    - **UI/UX Polishing:**
+        - **Scroll Locking:** Implemented a unified scroll-lock engine that prevents background page scrolling whenever any modal, notification pane, or settings overlay is active.
+        - **Redeploy Logic:** Added a "Redeploy Application" button directly inside the History tab for instant pipeline re-runs.
+        - **Terminal Aesthetics:** Professionalized the Log Viewer by removing macOS dots and adding a "System Health" status bar.
+    - **Critical Bug Fixes:**
+        - **Purge Engine:** Fixed the "Purge All Applications" feature by correcting a UUID type mismatch in the backend filtering logic.
+        - **Data Integrity:** Ensured the project owner is always explicitly visible in the Sharing tab.
 - **Next Task:**
-    1. **Phase 11:** The AutoDeploy CLI - Foundation and `login` command.
+    1. **Phase 11 Continued:** CLI Log Streaming (`ad logs`) via WebSockets.
+    2. **Phase 11:** CLI Environment Variable management (`ad env set/get`).
+    3. **Phase 12:** Self-contained distribution and PATH integration.
 
 ## Mentor Memory (Architectural Notes)
 - **Data Ownership Architecture:** Ownership is enforced at the **API Layer**. Every protected route uses the `get_current_user` dependency. All SQLAlchemy queries MUST include `.filter(Model.owner_id == current_user["sub"])` OR check the `AppAccess` table for shared permissions.

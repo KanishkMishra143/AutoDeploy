@@ -12,7 +12,6 @@ import CommandPalette from "./CommandPalette";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
-
 interface HeaderProps {
   workerCount: number;
   apiError: string | null;
@@ -23,6 +22,7 @@ interface HeaderProps {
   onViewJob: (id: string) => void;
   onSelectApp: (app: Application) => void;
   isModalOpen?: boolean;
+  onOverlayToggle?: (isOpen: boolean) => void;
 }
 
 export default function Header({ 
@@ -34,7 +34,8 @@ export default function Header({
   profile,
   onViewJob, 
   onSelectApp,
-  isModalOpen = false
+  isModalOpen = false,
+  onOverlayToggle
 }: HeaderProps) {
   const [scrolled, setScrolled] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
@@ -42,6 +43,16 @@ export default function Header({
   const [showSettings, setShowSettings] = useState(false);
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [user, setUser] = useState<any>(null);
+
+  // Notify parent when internal overlays are toggled
+  useEffect(() => {
+    const isOverlayOpen = showNotifications || showSettings || showCommandPalette;
+    if (onOverlayToggle) {
+      onOverlayToggle(isOverlayOpen);
+    }
+  }, [showNotifications, showSettings, showCommandPalette, onOverlayToggle]);
+
+  // Handle clicking outside the profile menu
   const [hasUnread, setHasUnread] = useState(false);
   const router = useRouter();
 

@@ -29,7 +29,7 @@ export default function DeployModal({ onClose }: { onClose: (jobId?: string) => 
         setFetchingBranches(true);
         try {
           const { data: { session } } = await supabase.auth.getSession();
-          const res = await fetch(`http://localhost:8000/apps/branches?repo_url=${repo}`, {
+          const res = await fetch(`http://127.0.0.1:8000/apps/branches?repo_url=${repo}`, {
             headers: {
               "Authorization": `Bearer ${session?.access_token}`,
             }
@@ -131,7 +131,7 @@ export default function DeployModal({ onClose }: { onClose: (jobId?: string) => 
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const appRes = await fetch("http://localhost:8000/apps", {
+      const appRes = await fetch("http://127.0.0.1:8000/apps", {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
@@ -156,7 +156,7 @@ export default function DeployModal({ onClose }: { onClose: (jobId?: string) => 
       }
 
       const appData = await appRes.json();
-      const deployRes = await fetch(`http://localhost:8000/apps/${appData.id}/deploy`, {
+      const deployRes = await fetch(`http://127.0.0.1:8000/apps/${appData.id}/deploy`, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${session?.access_token}`,

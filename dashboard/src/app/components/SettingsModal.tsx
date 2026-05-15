@@ -1,8 +1,10 @@
 "use client";
 import { useState, useEffect } from "react";
-import { X, User, Settings as SettingsIcon, Bell, Shield, CreditCard, Upload, ChevronRight } from "lucide-react";
+import { X, User, Settings as SettingsIcon, Bell, Shield, CreditCard, Upload, ChevronRight, Key, Plus, Trash2, Copy, Check, Loader2 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
+import { useJobs } from "../useJobs";
 import Link from "next/link";
+import toast from "react-hot-toast";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -10,16 +12,45 @@ interface SettingsModalProps {
 }
 
 export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
+  const { profile, settings, apiKeys, updateSettings, createApiKey, revokeApiKey } = useJobs();
   const [activeTab, setActiveTab] = useState<'profile' | 'notifications' | 'security'>('profile');
-  const [user, setUser] = useState<any>(null);
+  const [newKeyName, setNewKeyName] = useState("");
+  const [isCreatingKey, setIsCreatingKey] = useState(false);
+  const [newlyCreatedKey, setNewlyCreatedKey] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (isOpen) {
-      supabase.auth.getUser().then(({ data: { user } }) => {
-        setUser(user);
+  const handleToggleNotification = async (key: string) => {
+    if (!settings) return;
+    
+    const updatedNotifications = {
+      ...settings.notifications_enabled,
+      [key]: !settings.notifications_enabled[key]
+    };
+    
+    try {
+      await updateSettings({
+        ...settings,
+        notifications_enabled: updatedNotifications
       });
+      toast.success("Preference updated");
+    } catch (err) {
+      toast.error("Failed to update preference");
     }
-  }, [isOpen]);
+  };
+
+  const handleCreateKey = async () => {
+    if (!newKeyName) return;
+    setIsCreatingKey(true);
+    try {
+      const result = await createApiKey(newKeyName);
+      setNewlyCreatedKey(result.secret_key);
+      setNewKeyName("");
+      toast.success("API Key generated!");
+    } catch (err) {
+      toast.error("Failed to generate key");
+    } finally {
+      setIsCreatingKey(false);
+    }
+  };
 
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
@@ -44,9 +75,8 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
   if (!isOpen) return null;
 
-  const userMeta = user?.user_metadata || {};
-  const avatarUrl = userMeta.avatar_url;
-  const fullName = userMeta.full_name || userMeta.name || "Developer";
+  const avatarUrl = profile?.avatar_url;
+  const fullName = profile?.full_name || profile?.username || "Developer";
 
   return (
     <div 
@@ -128,24 +158,18 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
                    <div className="space-y-4">
                       <div>
-                         <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Display Name</label>
+                         <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">User ID (Username)</label>
                          <input 
                            type="text" 
-                           value={fullName}
+                           value={profile?.username || ""}
                            readOnly
                            className="w-full bg-background/50 border border-card-border rounded-xl px-4 py-3 text-sm text-gray-400 cursor-not-allowed font-mono"
                          />
                       </div>
-                      <div>
-                         <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Email Address</label>
-                         <input 
-                           type="email" 
-                           value={user?.email || ""}
-                           readOnly
-                           className="w-full bg-background/50 border border-card-border rounded-xl px-4 py-3 text-sm text-gray-400 cursor-not-allowed font-mono"
-                         />
+                      <div className="p-4 bg-accent/5 rounded-2xl border border-accent/10">
+                        <p className="text-[10px] text-accent font-black uppercase tracking-widest mb-1">Account Authority</p>
+                        <p className="text-xs text-gray-400">Managed via Supabase Auth</p>
                       </div>
-                      <p className="text-[10px] text-gray-600 italic">Account details are managed via GitHub OAuth.</p>
                    </div>
                 </div>
               )}
@@ -155,27 +179,105 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                    <h4 className="text-sm font-bold text-white mb-4 uppercase tracking-tight">Notification Channels</h4>
                    <div className="space-y-3">
                       {[
-                        { label: 'Deployment Success', enabled: true },
-                        { label: 'Deployment Failure', enabled: true },
-                        { label: 'System Health Alerts', enabled: false },
-                        { label: 'Weekly Cluster Report', enabled: false }
-                      ].map(item => (
-                        <div key={item.label} className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-card-border">
-                           <span className="text-xs font-bold text-gray-300">{item.label}</span>
-                           <div className={`w-10 h-5 rounded-full relative transition-all ${item.enabled ? 'bg-accent' : 'bg-gray-800'}`}>
-                              <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all ${item.enabled ? 'left-6' : 'left-1'}`} />
-                           </div>
-                        </div>
-                      ))}
+                        { key: 'deploy_success', label: 'Deployment Success' },
+                        { key: 'deploy_failure', label: 'Deployment Failure' },
+                        { key: 'system_health', label: 'System Health Alerts' },
+                        { key: 'weekly_report', label: 'Weekly Cluster Report' }
+                      ].map(item => {
+                        const isEnabled = settings?.notifications_enabled[item.key] || false;
+                        return (
+                          <div key={item.key} className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-card-border">
+                             <span className="text-xs font-bold text-gray-300">{item.label}</span>
+                             <button 
+                               onClick={() => handleToggleNotification(item.key)}
+                               className={`w-10 h-5 rounded-full relative transition-all ${isEnabled ? 'bg-accent' : 'bg-gray-800'}`}
+                             >
+                                <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all ${isEnabled ? 'left-6' : 'left-1'}`} />
+                             </button>
+                          </div>
+                        );
+                      })}
                    </div>
                 </div>
               )}
 
               {activeTab === 'security' && (
-                <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300 text-center py-12">
-                   <Shield className="w-16 h-16 text-gray-800 mx-auto mb-4" />
-                   <h4 className="text-sm font-bold text-white mb-2 uppercase tracking-tight">Secure Cluster Access</h4>
-                   <p className="text-xs text-gray-500 max-w-xs mx-auto">RBAC and Multi-node security keys are part of the upcoming v1.6 Hardening update.</p>
+                <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+                   <div className="flex justify-between items-center mb-4">
+                      <h4 className="text-sm font-bold text-white uppercase tracking-tight">API Access Keys</h4>
+                      <div className="flex gap-2">
+                        <input 
+                          type="text"
+                          placeholder="Key Name"
+                          className="bg-background border border-card-border rounded-lg px-3 py-1 text-[10px] outline-none focus:border-accent"
+                          value={newKeyName}
+                          onChange={(e) => setNewKeyName(e.target.value)}
+                        />
+                        <button 
+                          onClick={handleCreateKey}
+                          disabled={!newKeyName || isCreatingKey}
+                          className="p-1.5 bg-accent text-white rounded-lg disabled:opacity-50"
+                        >
+                          {isCreatingKey ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                        </button>
+                      </div>
+                   </div>
+
+                   {newlyCreatedKey && (
+                     <div className="p-4 bg-green-500/10 border border-green-500/20 rounded-2xl mb-6">
+                        <p className="text-[10px] font-black text-green-500 uppercase tracking-widest mb-2">New Secret Key (Copy now, it won't be shown again!)</p>
+                        <div className="flex items-center gap-2 bg-black/40 p-3 rounded-xl">
+                           <code className="text-xs text-white font-mono truncate flex-1">{newlyCreatedKey}</code>
+                           <button 
+                            onClick={() => {
+                              navigator.clipboard.writeText(newlyCreatedKey);
+                              toast.success("Copied to clipboard");
+                            }}
+                            className="p-2 hover:bg-white/10 rounded-lg text-white"
+                           >
+                              <Copy className="w-4 h-4" />
+                           </button>
+                        </div>
+                        <button 
+                          onClick={() => setNewlyCreatedKey(null)}
+                          className="mt-4 w-full py-2 bg-green-500 text-white text-[10px] font-black rounded-xl uppercase tracking-widest"
+                        >
+                          I have saved it
+                        </button>
+                     </div>
+                   )}
+
+                   <div className="space-y-3">
+                      {apiKeys.length === 0 ? (
+                        <div className="text-center py-8 border-2 border-dashed border-card-border rounded-2xl">
+                           <Key className="w-8 h-8 text-gray-800 mx-auto mb-2" />
+                           <p className="text-[10px] font-black text-gray-600 uppercase">No active API keys</p>
+                        </div>
+                      ) : (
+                        apiKeys.map(key => (
+                          <div key={key.id} className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-card-border group">
+                             <div className="flex items-center gap-4">
+                                <div className="p-2 bg-white/5 rounded-xl">
+                                   <Key className="w-4 h-4 text-gray-500" />
+                                </div>
+                                <div>
+                                   <p className="text-xs font-bold text-white">{key.name}</p>
+                                   <p className="text-[10px] font-mono text-gray-500">{key.key_prefix}••••••••••••</p>
+                                </div>
+                             </div>
+                             <div className="flex items-center gap-4">
+                                <span className="text-[8px] font-black text-gray-600 uppercase">Created {new Date(key.created_at).toLocaleDateString()}</span>
+                                <button 
+                                  onClick={() => revokeApiKey(key.id)}
+                                  className="p-2 text-gray-600 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                                >
+                                   <Trash2 className="w-4 h-4" />
+                                </button>
+                             </div>
+                          </div>
+                        ))
+                      )}
+                   </div>
                 </div>
               )}
            </div>
