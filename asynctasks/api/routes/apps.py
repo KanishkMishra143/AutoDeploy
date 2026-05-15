@@ -1,9 +1,10 @@
 from fastapi import APIRouter, HTTPException, Depends
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import List
+from pydantic import BaseModel
 from core.database import get_db
-from core.models import Application, Job, Log
-from core.schemas import AppCreate, AppResponse, AppListResponse, JobResponse
+from core.models import Application, Job, Log, AppAccess, Profile
+from core.schemas import AppCreate, AppResponse, AppListResponse, JobResponse, AppAccessCreate, AppAccessResponse
 from worker.tasks import process_job, cleanup_app
 from uuid import UUID
 from core.auth import get_current_user
@@ -16,6 +17,36 @@ router = APIRouter(
     tags=["apps"],
     dependencies=[Depends(get_current_user)]
 )
+
+def get_app_with_access(app_id: UUID, user_id: str, db: Session, required_role: str = "VIEWER"):
+    """
+    Helper to fetch an app and verify the user has the required access level.
+    Roles: OWNER > ADMIN > VIEWER
+    """
+    user_uuid = UUID(user_id)
+    app = db.query(Application).filter(Application.id == app_id).first()
+    if not app:
+        raise HTTPException(status_code=404, detail="Application not found")
+    
+    if app.owner_id == user_uuid:
+        app.role = "OWNER"
+        return app
+    
+    access = db.query(AppAccess).filter(
+        AppAccess.app_id == app_id,
+        AppAccess.user_id == user_uuid
+    ).first()
+    
+    if not access:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    # Simple role hierarchy: OWNER and ADMIN can do everything for now, VIEWER only read.
+    if required_role == "ADMIN":
+        if access.role not in ["ADMIN", "OWNER"]:
+             raise HTTPException(status_code=403, detail="Admin privileges required")
+        
+    app.role = access.role
+    return app
 
 @router.get("/branches")
 def get_repo_branches(repo_url: str):
@@ -65,43 +96,62 @@ def create_app(app: AppCreate, db: Session = Depends(get_db), current_user: dict
     
     # Decrypt for the response
     new_app.env_vars = decrypt_dict(new_app.env_vars)
+    new_app.role = "OWNER"
     return new_app
 
 @router.get("", response_model=AppListResponse)
 def list_apps(db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
-    """Lists all managed applications for the current user."""
-    apps = db.query(Application).filter(Application.owner_id == current_user["sub"]).all()
-    for app in apps:
+    """Lists all managed applications for the current user (owned or shared)."""
+    user_uuid = UUID(current_user["sub"])
+    
+    # Owned apps with access list and profiles
+    owned_apps = db.query(Application).options(
+        joinedload(Application.owner_profile),
+        joinedload(Application.access_list).joinedload(AppAccess.profile)
+    ).filter(Application.owner_id == user_uuid).all()
+    
+    for app in owned_apps:
+        app.role = "OWNER"
         app.env_vars = decrypt_dict(app.env_vars)
-    return {"total": len(apps), "apps": apps}
+
+    # Shared apps
+    shared_access = db.query(AppAccess).filter(AppAccess.user_id == user_uuid).all()
+    shared_apps = []
+    for access in shared_access:
+        app = db.query(Application).options(
+            joinedload(Application.owner_profile),
+            joinedload(Application.access_list).joinedload(AppAccess.profile)
+        ).filter(Application.id == access.app_id).first()
+        
+        if app:
+            app.role = access.role
+            app.env_vars = decrypt_dict(app.env_vars)
+            shared_apps.append(app)
+    
+    all_apps = owned_apps + shared_apps
+    return {"total": len(all_apps), "apps": all_apps}
 
 @router.get("/{app_id}", response_model=AppResponse)
 def get_app(app_id: UUID, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     """Gets details of a specific application."""
-    app = db.query(Application).filter(
-        Application.id == app_id, 
-        Application.owner_id == current_user["sub"]
-    ).first()
+    # Ensure access list and profiles are loaded
+    app = db.query(Application).options(
+        joinedload(Application.owner_profile),
+        joinedload(Application.access_list).joinedload(AppAccess.profile)
+    ).filter(Application.id == app_id).first()
+
     if not app:
-        raise HTTPException(status_code=404, detail="Application not found or access denied")
-    
-    app.env_vars = decrypt_dict(app.env_vars)
-    return app
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    app_with_access = get_app_with_access(app_id, current_user["sub"], db)
+    app_with_access.env_vars = decrypt_dict(app_with_access.env_vars)
+    return app_with_access
 
 @router.post("/{app_id}/deploy", response_model=JobResponse)
 def deploy_app(app_id: UUID, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     """Triggers a manual deployment for an application."""
-    app = db.query(Application).filter(
-        Application.id == app_id,
-        Application.owner_id == current_user["sub"]
-    ).first()
-    if not app:
-        raise HTTPException(status_code=404, detail="Application not found or access denied")
-    
-    # Decrypt env vars for the job payload so worker doesn't need to know how to decrypt 
-    # (Optional: Worker can also decrypt, but for now we decrypt here for the task payload)
-    # Actually, best practice is to keep it encrypted in the payload too, 
-    # and let the worker decrypt just before injection.
+    # Deploying requires at least ADMIN role if shared
+    app = get_app_with_access(app_id, current_user["sub"], db, required_role="ADMIN")
     
     new_job = Job(
         app_id=app.id,
@@ -126,6 +176,70 @@ def deploy_app(app_id: UUID, db: Session = Depends(get_db), current_user: dict =
     process_job.delay(str(new_job.id))
     return new_job
 
+class AppShareRequest(BaseModel):
+    user_id_or_username: str
+    role: str
+
+@router.post("/{app_id}/share", response_model=AppAccessResponse)
+def share_app(app_id: UUID, share_req: AppShareRequest, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    """Shares an application with another user via UUID or custom Username."""
+    # Owners and Admins can share
+    app = get_app_with_access(app_id, current_user["sub"], db, required_role="ADMIN")
+    
+    target_user_id = None
+    # 1. Try to resolve as UUID
+    try:
+        target_user_id = UUID(share_req.user_id_or_username)
+    except ValueError:
+        # 2. Try to resolve as Username
+        profile = db.query(Profile).filter(Profile.username == share_req.user_id_or_username.lower()).first()
+        if not profile:
+            raise HTTPException(status_code=404, detail=f"User '{share_req.user_id_or_username}' not found")
+        target_user_id = profile.user_id
+
+    if target_user_id == UUID(current_user["sub"]):
+        raise HTTPException(status_code=400, detail="You cannot share an app with yourself")
+
+    # Check if already shared
+    existing = db.query(AppAccess).filter(AppAccess.app_id == app_id, AppAccess.user_id == target_user_id).first()
+    if existing:
+        existing.role = share_req.role
+        db.commit()
+        db.refresh(existing)
+        return existing
+    
+    new_access = AppAccess(
+        app_id=app_id,
+        user_id=target_user_id,
+        role=share_req.role
+    )
+    db.add(new_access)
+    db.commit()
+    db.refresh(new_access)
+    return new_access
+
+@router.delete("/{app_id}/revoke/{user_id}")
+def revoke_access(app_id: UUID, user_id: UUID, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    """Revokes a user's access to an application."""
+    # Owners and Admins can revoke
+    app = get_app_with_access(app_id, current_user["sub"], db, required_role="ADMIN")
+    
+    # Validation: Admins cannot revoke the owner
+    if user_id == app.owner_id:
+        raise HTTPException(status_code=403, detail="The owner's access cannot be revoked")
+    
+    # Validation: Admins cannot revoke themselves (user must ask owner or another admin)
+    if user_id == UUID(current_user["sub"]) and app.role == "ADMIN":
+        raise HTTPException(status_code=400, detail="You cannot revoke your own access. Contact the owner.")
+
+    access = db.query(AppAccess).filter(AppAccess.app_id == app_id, AppAccess.user_id == user_id).first()
+    if not access:
+        raise HTTPException(status_code=404, detail="Access record not found")
+    
+    db.delete(access)
+    db.commit()
+    return {"message": "Access revoked successfully"}
+
 @router.delete("/purge")
 def purge_apps(db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     """Deletes all applications owned by the current user and their containers."""
@@ -148,13 +262,14 @@ def purge_apps(db: Session = Depends(get_db), current_user: dict = Depends(get_c
 @router.delete("/{app_id}")
 def delete_app(app_id: UUID, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     """Deletes an application and all its history with high-performance cleanup."""
+    # Only owner can delete the whole app
     app = db.query(Application).filter(
         Application.id == app_id,
         Application.owner_id == current_user["sub"]
     ).first()
     
     if not app:
-        raise HTTPException(status_code=404, detail="Application not found or access denied")
+        raise HTTPException(status_code=404, detail="Application not found or you are not the owner")
     
     # 1. Gather all job IDs for this app to clean up Docker images
     job_ids = [str(job.id) for job in app.jobs]
@@ -174,15 +289,12 @@ def delete_app(app_id: UUID, db: Session = Depends(get_db), current_user: dict =
     db.commit()
     
     return {"message": f"Application '{app.name}' and all associated history scheduled for deletion."}
+
 @router.patch("/{app_id}", response_model=AppResponse)
 def update_app(app_id: UUID, payload: dict, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     """Updates application settings with encryption for env vars."""
-    app = db.query(Application).filter(
-        Application.id == app_id,
-        Application.owner_id == current_user["sub"]
-    ).first()
-    if not app:
-        raise HTTPException(status_code=404, detail="Application not found or access denied")
+    # Updating requires at least ADMIN role
+    app = get_app_with_access(app_id, current_user["sub"], db, required_role="ADMIN")
 
     if "env_vars" in payload:
         app.env_vars = encrypt_dict(payload["env_vars"])

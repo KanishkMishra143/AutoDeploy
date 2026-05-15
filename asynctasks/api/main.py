@@ -7,6 +7,7 @@ import asyncio
 from datetime import datetime
 from api.routes.webhooks import router as webhooks_router
 from api.routes.apps import router as apps_router
+from api.routes.auth import router as auth_router
 
 Base.metadata.create_all(bind=engine)
 app = FastAPI(title="AsyncTasks API")
@@ -25,6 +26,7 @@ app.add_middleware(
 app.include_router(jobs_router)
 app.include_router(webhooks_router)
 app.include_router(apps_router)
+app.include_router(auth_router)
 
 
 @app.get("/health")

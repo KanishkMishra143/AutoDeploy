@@ -185,9 +185,7 @@
 - [x] **Day 3 — Role-Based Access Control (RBAC):**
     - **Task:** Define Admin vs. Viewer roles and implement Ownership logic (Users only see their own apps).
     - **Implementation:** Added `owner_id` to Application, Job, and Log models with strict filtering in API routes.
-- [ ] **Day 4 — Audit Logging:**
-    - **Task:** Track every user action (who deployed what and when) for enterprise compliance.
-- [ ] **Advanced Secrets:** Integration with HashiCorp Vault or AWS Secrets Manager.
+- [ ] **Day 4 — Advanced Secrets:** Integration with HashiCorp Vault or AWS Secrets Manager.
 
 ---
 
@@ -233,6 +231,10 @@
 - [x] **Log Batching & Performance:**
     - **Implementation:** Implemented Redis Pub/Sub for real-time streaming and hybrid DB batching (50 lines/5s) in the worker.
     - **Frontend:** Optimized LogViewer with $O(1)$ deduplication and historical log backfilling.
+- [ ] **Audit Logging:**
+    - **Task:** Track every user action (who deployed what and when) for enterprise compliance.
+- [ ] **Audit Logging:**
+    - **Task:** Track every user action (who deployed what and when) for enterprise compliance.
 - [ ] **Team Workspaces:** Allow multiple developers to share a project/cluster.
 - [ ] **Resource Quotas:** Limit CPU/RAM usage per team or project.
 - [ ] **Usage-Based Billing:** Implement Stripe integration for "Pay as you go" container hosting.

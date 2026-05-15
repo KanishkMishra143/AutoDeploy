@@ -23,6 +23,38 @@ class AppUpdate(BaseModel):
     env_vars: Optional[Dict[str, str]] = None
 
 
+class AppAccessBase(BaseModel):
+    user_id: UUID
+    role: str
+
+
+class ProfileCreate(BaseModel):
+    username: str
+
+
+class ProfileResponse(BaseModel):
+    user_id: UUID
+    username: str
+    full_name: Optional[str] = None
+    avatar_url: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class AppAccessCreate(AppAccessBase):
+    pass
+
+
+class AppAccessResponse(AppAccessBase):
+    id: UUID
+    created_at: datetime
+    profile: Optional[ProfileResponse] = None
+
+    class Config:
+        from_attributes = True
+
+
 class AppResponse(BaseModel):
     id: UUID
     owner_id: Optional[UUID] = None
@@ -35,6 +67,9 @@ class AppResponse(BaseModel):
     env_vars: Dict[str, str]
     created_at: datetime
     updated_at: datetime
+    role: Optional[str] = "OWNER" # Computed field for the current user
+    owner_profile: Optional[ProfileResponse] = None
+    access_list: Optional[List[AppAccessResponse]] = []
 
     class Config:
         from_attributes = True

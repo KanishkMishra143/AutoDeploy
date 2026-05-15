@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { 
   Activity, Server, Clock, CheckCircle2, XCircle, Loader2, Plus, 
   StopCircle, RotateCcw, Box, Globe, ChevronRight, User, 
-  Settings as SettingsIcon, LayoutGrid, Rocket, LogOut, Search, Bell, ExternalLink, GitBranch, Terminal
+  Settings as SettingsIcon, LayoutGrid, Rocket, LogOut, Search, Bell, ExternalLink, GitBranch, Terminal, AlertCircle
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { useSearchParams, useRouter } from "next/navigation";
@@ -17,7 +17,7 @@ import Header from "./components/Header";
 import { supabase } from "../lib/supabase";
 
 export default function CanvasPage() {
-  const { jobs, apps, loading, error, workerCount } = useJobs();
+  const { jobs, apps, profile, loading, error, workerCount } = useJobs();
   const searchParams = useSearchParams();
   const router = useRouter();
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
@@ -82,6 +82,13 @@ export default function CanvasPage() {
     jobs.forEach(j => { newStatuses[j.id] = j.status; });
     setPrevJobStatuses(newStatuses);
   }, [jobs, apps]);
+
+  useEffect(() => {
+    if (selectedApp) {
+      const fresh = apps.find(a => a.id === selectedApp.id);
+      if (fresh) setSelectedApp(fresh);
+    }
+  }, [apps]);
 
   // Confirmation Modal State
   const [confirmConfig, setConfirmConfig] = useState<{
@@ -155,24 +162,152 @@ export default function CanvasPage() {
     }
   };
 
-  const filteredApps = apps.filter(app => 
+  const filteredApps = apps.filter(app =>
     app.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     app.repo_url.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const ownedApps = filteredApps.filter(app => app.role === 'OWNER');
+  const sharedApps = filteredApps.filter(app => app.role !== 'OWNER');
+
+  const renderAppCard = (app: Application) => {
+    const latestJob = jobs.find(j => j.app_id === app.id);
+    const isRunning = latestJob?.status === 'running';
+    const progressMsg = latestJob?.result?.progress_msg || "Initializing...";
+    const progressPct = latestJob?.result?.progress_pct || 0;
+
+    return (
+      <div 
+        key={app.id} 
+        onClick={() => setSelectedApp(app)}
+        className="group relative pt-6 z-10 hover:z-20 transition-[z-index] duration-0"
+      >
+        {/* Smart Progress Tab (Slides out from top) */}
+        <div 
+          onClick={(e) => {
+            e.stopPropagation();
+            if (latestJob) setSelectedJobId(latestJob.id);
+          }}
+          className={`absolute top-0 left-0 right-0 h-20 bg-accent rounded-t-[28px] flex items-start pt-4 px-8 transition-all duration-500 ease-out z-0 cursor-pointer hover:bg-accent/90 active:scale-[0.98] ${isRunning ? '-translate-y-8 opacity-100' : 'translate-y-0 opacity-0 pointer-events-none'}`}
+        >
+            <div className="flex flex-col w-full gap-3">
+               <div className="flex justify-between items-center">
+                  <span className="text-[11px] font-black text-white uppercase tracking-widest flex items-center gap-2">
+                     <Loader2 className="w-4 h-4 animate-spin" />
+                     {progressMsg}
+                  </span>
+                  <div className="flex items-center gap-2">
+                     <span className="px-2 py-0.5 bg-white/20 rounded text-[9px] font-black text-white uppercase tracking-tighter flex items-center gap-1">
+                        <Terminal className="w-2.5 h-2.5" /> View Logs
+                     </span>
+                     <span className="text-[11px] font-black text-white/80">{progressPct}%</span>
+                  </div>
+               </div>
+               <div className="h-2 bg-white/20 rounded-full overflow-hidden border border-white/10 p-0.5">
+                  <div 
+                    className="h-full bg-white rounded-full transition-all duration-1000 ease-in-out shadow-[0_0_12px_rgba(255,255,255,0.6)]" 
+                    style={{ width: `${progressPct}%` }} 
+                  />
+               </div>
+            </div>
+        </div>
+
+        <div className="bg-card border border-card-border rounded-[28px] overflow-hidden hover:border-accent/40 transition-all cursor-pointer relative z-10 shadow-xl">
+          <div className="p-8">
+            <div className="flex justify-between items-start mb-8">
+               <div className="flex flex-col gap-3">
+                 <div className="p-4 bg-accent/5 rounded-2xl border border-accent/10 group-hover:bg-accent/10 transition-colors text-accent group-hover:scale-110 duration-300 w-fit">
+                    <Box className="w-7 h-7" />
+                 </div>
+                 {app.role && app.role !== 'OWNER' && (
+                   <span className="px-2 py-0.5 bg-blue-500/10 text-blue-500 text-[8px] font-black rounded uppercase tracking-widest border border-blue-500/20 w-fit animate-in fade-in zoom-in-95">
+                     {app.role} Access
+                   </span>
+                 )}
+               </div>
+               {latestJob ? (
+                 <StatusBadge 
+                   status={latestJob.status} 
+                   onClick={(e) => {
+                     e.stopPropagation();
+                     setSelectedJobId(latestJob.id);
+                   }}
+                 />
+               ) : (
+                 <span className="text-[10px] font-bold text-gray-600 uppercase tracking-widest">Pending</span>
+               )}
+            </div>
+            
+            <h4 className="text-2xl font-black mb-1 text-white uppercase tracking-tighter">{app.name}</h4>
+            <div className="space-y-1.5 mb-8">
+              <p className="text-xs text-gray-500 font-mono flex items-center gap-1.5 truncate opacity-60">
+                <Globe className="w-3.5 h-3.5" /> {app.repo_url}
+              </p>
+              <p className="text-[10px] text-accent/70 font-bold flex items-center gap-1.5 uppercase tracking-widest">
+                <GitBranch className="w-3.5 h-3.5" /> {app.branch || 'main'}
+              </p>
+            </div>
+
+            {latestJob?.status === 'failed' && latestJob.result?.diagnosis && (
+              <div className="mb-6 p-3 bg-red-500/5 border border-red-500/10 rounded-xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-2">
+                 <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
+                 <p className="text-[10px] font-bold text-red-500/80 uppercase tracking-tight truncate">
+                    {latestJob.result.diagnosis.title} Detected
+                 </p>
+              </div>
+            )}
+
+            <div className="flex gap-2.5 pointer-events-auto" onClick={(e) => e.stopPropagation()}>
+
+              <button 
+                onClick={() => deployApp(app.id)}
+                disabled={app.role === 'VIEWER'}
+                title={app.role === 'VIEWER' ? "Only owners and admins can redeploy" : "Redeploy"}
+                className="flex-1 bg-accent/10 hover:bg-accent/20 text-accent py-3 rounded-xl text-[11px] font-black transition-all flex items-center justify-center gap-2 uppercase tracking-widest border border-accent/10 disabled:opacity-20 disabled:cursor-not-allowed"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                Redeploy
+              </button>
+              
+              {latestJob?.status === "success" && latestJob.result?.url && (
+                 <a 
+                   href={latestJob.result.url} 
+                   target="_blank" 
+                   className="p-3 bg-green-500/10 hover:bg-green-500/20 text-green-500 rounded-xl transition-all border border-green-500/10"
+                   title="View Live"
+                 >
+                   <ExternalLink className="w-5 h-5" />
+                 </a>
+              )}
+
+              <button 
+                onClick={(e) => handleStopJob(e, latestJob?.id)}
+                disabled={!latestJob || latestJob.status !== 'success' || app.role === 'VIEWER'}
+                title={app.role === 'VIEWER' ? "Only owners and admins can stop services" : "Stop Service"}
+                className="p-3 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-xl transition-all disabled:opacity-20 disabled:cursor-not-allowed border border-red-500/10"
+              >
+                <StopCircle className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-background">
-      <Header 
-        workerCount={workerCount} 
-        apiError={error} 
+      <Header
+        workerCount={workerCount}
+        apiError={error}
         onSearch={setSearchQuery}
         jobs={jobs}
         apps={apps}
+        profile={profile}
         onViewJob={setSelectedJobId}
         onSelectApp={setSelectedApp}
         isModalOpen={showDeployModal || !!selectedApp || confirmConfig.isOpen || !!selectedJobId}
       />
-
       <main className="pt-48 pb-20 px-8">
         {selectedJobId && (
           <LogViewer jobId={selectedJobId} onClose={() => setSelectedJobId(null)} />
@@ -244,11 +379,6 @@ export default function CanvasPage() {
 
           {/* Applications Section */}
           <div className="mb-24 mt-12">
-            <div className="flex items-center gap-2 mb-10 text-white">
-               <Box className="w-5 h-5 text-accent" />
-               <h3 className="text-xl font-bold uppercase tracking-tight">Managed Applications</h3>
-            </div>
-
             {loading && apps.length === 0 ? (
               <div className="h-64 flex items-center justify-center">
                   <div className="flex flex-col items-center gap-4">
@@ -275,123 +405,35 @@ export default function CanvasPage() {
                   )}
                </div>
             ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredApps.map(app => {
-                const latestJob = jobs.find(j => j.app_id === app.id);
-                const isRunning = latestJob?.status === 'running';
-                const progressMsg = latestJob?.result?.progress_msg || "Initializing...";
-                const progressPct = latestJob?.result?.progress_pct || 0;
-
-                return (
-                  <div 
-                    key={app.id} 
-                    onClick={() => setSelectedApp(app)}
-                    className="group relative pt-6 z-10 hover:z-20 transition-[z-index] duration-0"
-                  >
-                    {/* Smart Progress Tab (Slides out from top) */}
-                    <div 
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (latestJob) setSelectedJobId(latestJob.id);
-                      }}
-                      className={`absolute top-0 left-0 right-0 h-20 bg-accent rounded-t-[28px] flex items-start pt-4 px-8 transition-all duration-500 ease-out z-0 cursor-pointer hover:bg-accent/90 active:scale-[0.98] ${isRunning ? '-translate-y-8 opacity-100' : 'translate-y-0 opacity-0 pointer-events-none'}`}
-                    >
-                        <div className="flex flex-col w-full gap-3">
-                           <div className="flex justify-between items-center">
-                              <span className="text-[11px] font-black text-white uppercase tracking-widest flex items-center gap-2">
-                                 <Loader2 className="w-4 h-4 animate-spin" />
-                                 {progressMsg}
-                              </span>
-                              <div className="flex items-center gap-2">
-                                 <span className="px-2 py-0.5 bg-white/20 rounded text-[9px] font-black text-white uppercase tracking-tighter flex items-center gap-1">
-                                    <Terminal className="w-2.5 h-2.5" /> View Logs
-                                 </span>
-                                 <span className="text-[11px] font-black text-white/80">{progressPct}%</span>
-                              </div>
-                           </div>
-                           <div className="h-2 bg-white/20 rounded-full overflow-hidden border border-white/10 p-0.5">
-                              <div 
-                                className="h-full bg-white rounded-full transition-all duration-1000 ease-in-out shadow-[0_0_12px_rgba(255,255,255,0.6)]" 
-                                style={{ width: `${progressPct}%` }} 
-                              />
-                           </div>
-                        </div>
+              <div className="space-y-20">
+                {/* Your Applications Section */}
+                {ownedApps.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-2 mb-10 text-white">
+                      <Box className="w-5 h-5 text-accent" />
+                      <h3 className="text-xl font-bold uppercase tracking-tight">Your Projects</h3>
+                      <span className="ml-3 px-2 py-0.5 bg-accent/10 text-accent text-[10px] font-black rounded border border-accent/20">{ownedApps.length}</span>
                     </div>
-
-                    <div className="bg-card border border-card-border rounded-[28px] overflow-hidden hover:border-accent/40 transition-all cursor-pointer relative z-10 shadow-xl">
-                      <div className="p-8">
-                        <div className="flex justify-between items-start mb-8">
-                           <div className="p-4 bg-accent/5 rounded-2xl border border-accent/10 group-hover:bg-accent/10 transition-colors text-accent group-hover:scale-110 duration-300">
-                              <Box className="w-7 h-7" />
-                           </div>
-                           {latestJob ? (
-                             <StatusBadge 
-                               status={latestJob.status} 
-                               onClick={(e) => {
-                                 e.stopPropagation();
-                                 setSelectedJobId(latestJob.id);
-                               }}
-                             />
-                           ) : (
-                             <span className="text-[10px] font-bold text-gray-600 uppercase tracking-widest">Pending</span>
-                           )}
-                        </div>
-                        
-                        <h4 className="text-2xl font-black mb-1 text-white uppercase tracking-tighter">{app.name}</h4>
-                        <div className="space-y-1.5 mb-8">
-                          <p className="text-xs text-gray-500 font-mono flex items-center gap-1.5 truncate opacity-60">
-                            <Globe className="w-3.5 h-3.5" /> {app.repo_url}
-                          </p>
-                          <p className="text-[10px] text-accent/70 font-bold flex items-center gap-1.5 uppercase tracking-widest">
-                            <GitBranch className="w-3.5 h-3.5" /> {app.branch || 'main'}
-                          </p>
-                        </div>
-
-                        {latestJob?.status === 'failed' && latestJob.result?.diagnosis && (
-                          <div className="mb-6 p-3 bg-red-500/5 border border-red-500/10 rounded-xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-2">
-                             <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
-                             <p className="text-[10px] font-bold text-red-500/80 uppercase tracking-tight truncate">
-                                {latestJob.result.diagnosis.title} Detected
-                             </p>
-                          </div>
-                        )}
-
-                        <div className="flex gap-2.5 pointer-events-auto" onClick={(e) => e.stopPropagation()}>
-
-                          <button 
-                            onClick={() => deployApp(app.id)}
-                            className="flex-1 bg-accent/10 hover:bg-accent/20 text-accent py-3 rounded-xl text-[11px] font-black transition-all flex items-center justify-center gap-2 uppercase tracking-widest border border-accent/10"
-                          >
-                            <RotateCcw className="w-3.5 h-3.5" />
-                            Redeploy
-                          </button>
-                          
-                          {latestJob?.status === "success" && latestJob.result?.url && (
-                             <a 
-                               href={latestJob.result.url} 
-                               target="_blank" 
-                               className="p-3 bg-green-500/10 hover:bg-green-500/20 text-green-500 rounded-xl transition-all border border-green-500/10"
-                               title="View Live"
-                             >
-                               <ExternalLink className="w-5 h-5" />
-                             </a>
-                          )}
-
-                          <button 
-                            onClick={(e) => handleStopJob(e, latestJob?.id)}
-                            disabled={!latestJob || latestJob.status !== 'success'}
-                            className="p-3 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-xl transition-all disabled:opacity-20 disabled:cursor-not-allowed border border-red-500/10"
-                            title="Stop Service"
-                          >
-                            <StopCircle className="w-5 h-5" />
-                          </button>
-                        </div>
-                      </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {ownedApps.map(app => renderAppCard(app))}
                     </div>
                   </div>
-                )
-              })}
-            </div>
+                )}
+
+                {/* Shared Section */}
+                {sharedApps.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-2 mb-10 text-white">
+                      <User className="w-5 h-5 text-blue-500" />
+                      <h3 className="text-xl font-bold uppercase tracking-tight">Shared with You</h3>
+                      <span className="ml-3 px-2 py-0.5 bg-blue-500/10 text-blue-500 text-[10px] font-black rounded border border-blue-500/20">{sharedApps.length}</span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {sharedApps.map(app => renderAppCard(app))}
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
           </div>
 

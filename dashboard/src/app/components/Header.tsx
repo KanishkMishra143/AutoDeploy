@@ -5,12 +5,13 @@ import {
   Loader2, Cpu, Wifi, WifiOff
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
-import { Job, Application } from "../useJobs";
+import { Job, Application, Profile } from "../useJobs";
 import NotificationPane from "./NotificationPane";
 import SettingsModal from "./SettingsModal";
 import CommandPalette from "./CommandPalette";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import toast from "react-hot-toast";
 
 interface HeaderProps {
   workerCount: number;
@@ -18,6 +19,7 @@ interface HeaderProps {
   onSearch: (query: string) => void;
   jobs: Job[];
   apps: Application[];
+  profile: Profile | null;
   onViewJob: (id: string) => void;
   onSelectApp: (app: Application) => void;
   isModalOpen?: boolean;
@@ -28,7 +30,8 @@ export default function Header({
   apiError, 
   onSearch, 
   jobs, 
-  apps, 
+  apps,
+  profile,
   onViewJob, 
   onSelectApp,
   isModalOpen = false
@@ -214,17 +217,31 @@ export default function Header({
 
                 {showProfileMenu && (
                   <div className="absolute top-full right-0 mt-3 w-64 bg-card border border-card-border rounded-3xl shadow-2xl p-2 animate-in fade-in slide-in-from-top-4 duration-300 z-[110]">
-                       <div className="p-4 border-b border-card-border mb-2 flex items-center gap-3">
-                          {avatarUrl ? (
-                            <img src={avatarUrl} alt={fullName} className="w-10 h-10 rounded-xl" />
-                          ) : (
-                            <div className="w-10 h-10 bg-accent rounded-xl flex items-center justify-center text-white font-black text-xs">
-                              {userInitials}
-                            </div>
-                          )}
-                          <div className="overflow-hidden">
-                             <p className="text-[11px] font-black text-white uppercase truncate">{fullName}</p>
-                             <p className="text-[9px] font-medium text-gray-500 truncate">{user?.email}</p>
+                       <div className="p-4 border-b border-card-border mb-2 flex flex-col gap-3">
+                          <div className="flex items-center gap-3">
+                             {avatarUrl ? (
+                               <img src={avatarUrl} alt={fullName} className="w-10 h-10 rounded-xl" />
+                             ) : (
+                               <div className="w-10 h-10 bg-accent rounded-xl flex items-center justify-center text-white font-black text-xs">
+                                 {userInitials}
+                               </div>
+                             )}
+                             <div className="overflow-hidden">
+                                <p className="text-[11px] font-black text-white uppercase truncate">{fullName}</p>
+                                <p className="text-[9px] font-medium text-gray-500 truncate">{user?.email}</p>
+                             </div>
+                          </div>
+                          <div 
+                            onClick={() => {
+                              if (profile?.username) {
+                                navigator.clipboard.writeText(profile.username);
+                                toast.success("User ID copied!", { icon: "🆔" });
+                              }
+                            }}
+                            className="px-3 py-2 bg-white/5 rounded-xl border border-white/5 cursor-pointer hover:bg-white/10 transition-all group/uuid"
+                          >
+                             <p className="text-[8px] font-black text-gray-500 uppercase tracking-widest mb-1 group-hover/uuid:text-accent transition-colors">Your User ID (Click to copy)</p>
+                             <p className="text-[10px] font-mono text-gray-400 truncate">{profile?.username || 'Loading...'}</p>
                           </div>
                        </div>
                        

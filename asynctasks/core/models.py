@@ -21,6 +21,20 @@ class Application(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     jobs = relationship("Job", back_populates="application", order_by="desc(Job.created_at)", cascade="all, delete-orphan")
+    access_list = relationship("AppAccess", back_populates="application", cascade="all, delete-orphan")
+    owner_profile = relationship("Profile", foreign_keys=[owner_id], primaryjoin="Application.owner_id == Profile.user_id", viewonly=True)
+
+
+class AppAccess(Base):
+    __tablename__ = "app_access"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    app_id = Column(UUID(as_uuid=True), ForeignKey("applications.id"), nullable=False, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("profiles.user_id"), nullable=False, index=True)
+    role = Column(String, nullable=False, default="VIEWER") # "ADMIN", "VIEWER"
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    application = relationship("Application", back_populates="access_list")
+    profile = relationship("Profile", foreign_keys=[user_id], primaryjoin="AppAccess.user_id == Profile.user_id")
 
 
 class Job(Base):
@@ -57,3 +71,14 @@ class Worker(Base):
     id = Column(String, primary_key=True)
     status = Column(String, default="online")
     last_heartbeat = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class Profile(Base):
+    __tablename__ = "profiles"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), nullable=False, unique=True, index=True) # Supabase Auth ID
+    username = Column(String, nullable=False, unique=True, index=True)
+    full_name = Column(String, nullable=True)
+    avatar_url = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

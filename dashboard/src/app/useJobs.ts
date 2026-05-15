@@ -2,6 +2,14 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
 
+export interface AppAccess {
+    id: string;
+    user_id: string;
+    role: string;
+    created_at: string;
+    profile?: Profile;
+}
+
 export interface Application {
     id: string;
     name: string;
@@ -13,6 +21,9 @@ export interface Application {
     env_vars: Record<string, string>;
     created_at: string;
     updated_at: string;
+    role?: "OWNER" | "ADMIN" | "VIEWER";
+    owner_profile?: Profile;
+    access_list?: AppAccess[];
 }
 
 export interface Job {
@@ -33,9 +44,17 @@ export interface Job {
     updated_at: string;
 }
 
+export interface Profile {
+    user_id: string;
+    username: string;
+    full_name?: string;
+    avatar_url?: string;
+}
+
 export function useJobs() {
     const [jobs, setJobs] = useState<Job[]>([]);
     const [apps, setApps] = useState<Application[]>([]);
+    const [profile, setProfile] = useState<Profile | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [workerCount, setWorkerCount] = useState(0);
@@ -46,6 +65,19 @@ export function useJobs() {
             "Authorization": `Bearer ${session?.access_token}`,
             "Content-Type": "application/json"
         };
+    };
+
+    const fetchProfile = async () => {
+        try {
+            const headers = await getAuthHeaders();
+            const response = await fetch("http://localhost:8000/auth/profile", { headers });
+            if (response.ok) {
+                const data = await response.json();
+                setProfile(data);
+            }
+        } catch (err) {
+            console.error("Failed to fetch profile:", err);
+        }
     };
 
     const fetchWorkers = async () => {
@@ -93,6 +125,7 @@ export function useJobs() {
         fetchJobs();
         fetchApps();
         fetchWorkers();
+        fetchProfile();
     };
 
     useEffect(() => {
@@ -101,5 +134,5 @@ export function useJobs() {
         return () => clearInterval(interval);
     }, []);
 
-    return { jobs, apps, loading, error, workerCount };
+    return { jobs, apps, profile, loading, error, workerCount };
 }
