@@ -200,9 +200,11 @@
 - [x] **Day 2 — App Management:**
     - **Task:** Implement `ad apps list` and `ad apps deploy <app_id>`.
     - *Deliverable: Core terminal control for project listing and deployment triggering.*
-- [ ] **Day 3–4 — CLI/GUI Parity (Next):**
-    - **Task:** Implement `ad logs` for real-time terminal log streaming.
-    - **Sub-task:** Implement environment variable management via CLI.
+- [x] **Day 3–4 — CLI/GUI Parity (Next):**
+    - [x] **Task:** Implement `ad logs` for real-time terminal log streaming.
+    - [x] **Sub-task:** Implement environment variable management via CLI (Injection from local `.env`).
+    - [x] **Feature:** Context-aware discovery (Sub-directory support).
+    - [x] **UX:** Quiet Wait mode and 'q' to stop logs.
     - *Deliverable: True parallel workflows—start in the terminal, monitor in the dashboard.*
 
 ---

@@ -57,7 +57,8 @@ def list_apps():
 
 @app.command()
 def deploy(
-    app_id: Optional[str] = typer.Argument(None, help="The ID of the application to deploy (optional if in a linked project)")
+    app_id: Optional[str] = typer.Argument(None, help="The ID of the application to deploy (optional if in a linked project)"),
+    name: Optional[str] = typer.Option(None, "--name", "-n", help="Manually specify the application name (for new apps)")
 ):
     """
     Deploy your application. Automatically detects settings from Git, .env, and autodeploy.yml.
@@ -70,8 +71,9 @@ def deploy(
     api_base = config.get_api_base()
     ctx = context.get_project_context()
     
-    # 1. Resolve which App ID to use
+    # 1. Resolve which App ID and Name to use
     final_app_id = app_id or ctx.get("app_id")
+    final_name = name or ctx["name"]
     headers = {"Authorization": f"Bearer {key}"}
 
     try:
@@ -81,12 +83,12 @@ def deploy(
                 console.print(f"[red]Error:[/red] {ctx['error']}")
                 return
 
-            console.print(f"[bold blue]Creating new application: [cyan]{ctx['name']}[/cyan]...")
+            console.print(f"[bold blue]Creating new application: [cyan]{final_name}[/cyan]...")
             create_res = requests.post(
                 f"{api_base}/apps",
                 headers=headers,
                 json={
-                    "name": ctx["name"],
+                    "name": final_name,
                     "repo_url": ctx["repo_url"],
                     "branch": ctx["branch"],
                     "stack": ctx["stack"],
