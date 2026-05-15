@@ -57,11 +57,25 @@ def list_apps():
 
 @app.command()
 def deploy(
-    app_id: Optional[str] = typer.Argument(None, help="The ID of the application to deploy (optional if in a linked project)"),
-    name: Optional[str] = typer.Option(None, "--name", "-n", help="Manually specify the application name (for new apps)")
+    app_id: Optional[str] = typer.Argument(
+        None, 
+        help="The UUID of the application. If omitted, AutoDeploy looks for a link in .ad_project or creates a new app."
+    ),
+    name: Optional[str] = typer.Option(
+        None, "--name", "-n", 
+        help="Manual name for the app. Only used during initial creation or to override detection."
+    )
 ):
     """
-    Deploy your application. Automatically detects settings from Git, .env, and autodeploy.yml.
+    🚀 Deploy the current project to AutoDeploy.
+
+    This command performs a 'Smart Sync' before triggering:
+    1. Detects Git remote (origin) and branch.
+    2. Loads 'autodeploy.yml' for build steps and stack configuration.
+    3. Injects environment variables from local '.env' file.
+    4. Automatically links the local folder to the remote App ID.
+
+    If the app doesn't exist, it will be created using the detected name or the --name flag.
     """
     key = config.get_api_key()
     if not key:
