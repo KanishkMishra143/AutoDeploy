@@ -33,32 +33,25 @@
     2. **Ownership Logic:** Ensure users only see and manage their own applications.
 
 ### 📅 Friday, May 15, 2026
-- **Status:** Phase 10 Day 3 & Phase 13 Log Optimizations COMPLETE.
+- **Status:** Phase 10 COMPLETE.
 - **Milestones:**
-    - **Multi-Tenant Ownership:** Fully implemented the account system. Every `Application`, `Job`, and `Log` is now tied to a Supabase `owner_id`. API routes enforce strict filtering to ensure users only see and manage their own resources.
-    - **Terminal Performance Fixes:** 
-        - Optimized `LogViewer` deduplication logic from $O(N^2)$ to $O(1)$ using a `Set`, preventing UI freezes during high-volume log streams (e.g., rollbacks).
-        - Added historical log backfilling in `LogViewer` to ensure past operational history is visible even when WebSocket streaming is inactive.
-        - Fixed auto-scroll "stickiness" by increasing tolerance and switching to direct `scrollTop` manipulation.
-    - **UX Robustness:** Standardized modal dismissal for the User Profile menu, adding `Escape` key support and improving void clicking reliability.
-    - **Backend Integrity:** Fixed critical NameErrors in the app deletion routes (`Log` and `cleanup_app` imports), enabling stable multi-tenant cleanup.
+    - **Identity & Profiles:** Implemented a custom `Profile` system that maps Supabase UUIDs to human-readable `username` (User IDs). Added auto-provisioning logic that generates clean handles from GitHub metadata.
+    - **Enterprise RBAC:** Fully implemented Project Sharing. Users can invite collaborators using their User ID/Username.
+        - **Roles:** OWNER (Full control), ADMIN (Manage team/deploys), VIEWER (Read-only).
+        - **UI:** Enhanced HistoryModal with a "Sharing" tab featuring real-time user search and avatar identification.
+    - **Dashboard Segregation:** Refactored the main Canvas to group projects into "Your Projects" and "Shared with You" sections.
+    - **Advanced Secrets (Vault):** Integrated HashiCorp Vault into the `docker-compose` stack.
+        - **Secrets Engine:** Created a `SecretResolver` in the worker that fetches values from Vault at runtime using the `vault://` prefix.
+        - **Security:** Secrets are never stored in the application database, only their references.
+- **Next Task:**
+    1. **Phase 11:** The AutoDeploy CLI - Foundation and `login` command.
 
 ## Mentor Memory (Architectural Notes)
-- **Data Ownership Architecture:** Ownership is enforced at the **API Layer**. Every protected route uses the `get_current_user` dependency, which extracts the Supabase `sub` (user UUID). All SQLAlchemy queries MUST include `.filter(Model.owner_id == current_user["sub"])` to prevent cross-tenant data leaks.
-- **Log Engine Dual-Pathing:**
-    - **Live Stream:** Redis Pub/Sub (`logs:{job_id}`) handles sub-millisecond delivery to the UI.
-    - **Historical Persistence:** Logs are batched in the worker and stored in the `logs` table. The UI now performs an initial fetch from this table before subscribing to the live stream.
-- **Hybrid Architecture (Phase 10+):** The project now uses a Hybrid Cloud model.
-    - **Database & Auth:** Hosted on Supabase (Cloud).
-    - **API & Worker:** Run locally on the host machine/WSL for Docker access.
-- **Manual Schema Migrations:** Because we use Supabase, SQLAlchemy's `create_all()` will NOT add new columns to existing tables. When updating `models.py`:
-    1.  Update the Python model.
-    2.  Go to the Supabase **SQL Editor**.
-    3.  Run an `ALTER TABLE ... ADD COLUMN ...` command to match the new model.
-- **Timezone Sync:** Always use `datetime.utcnow()` for heartbeats to ensure the API, Worker, and DB are synchronized.
-- **WSL Interop:** When working in WSL, ensure the Linux toolchain (node/npm) is used to avoid path and permission collisions with Windows binaries.
-- **App Identity**: Containers are now named `autodeploy_{app_name}`, ensuring that new deployments replace old ones automatically while maintaining stable URLs.
-- **Job Provenance**: Track the `trigger_reason` and `trigger_metadata` for every job to provide a clear audit trail for the developer.
+- **Data Ownership Architecture:** Ownership is enforced at the **API Layer**. Every protected route uses the `get_current_user` dependency. All SQLAlchemy queries MUST include `.filter(Model.owner_id == current_user["sub"])` OR check the `AppAccess` table for shared permissions.
+- **Lazy State Initialization:** In the React dashboard, use lazy initialization or `useRef` guards for settings forms to prevent background polling from overwriting active user input.
+- **Pluggable Secrets:** The `SecretResolver` in `core/secrets_engine.py` is designed to be pluggable. It currently supports local values and `vault://` references but can be extended to `aws://` or `azure://` without changing the worker logic.
+- **Vault Dev Mode:** The local Vault container uses `VAULT_DEV_ROOT_TOKEN_ID: root`. For production, this must be replaced with AppRole or Kubernetes Auth.
+- **Profile Auto-Provisioning:** Profiles are created on-the-fly during the first `/auth/profile` fetch. This ensures every authenticated user has a discoverable User ID without a separate registration step.
 - **UI/UX Laws (The AutoDeploy Standard):**
     - **Modal Dismissal (The Top-Most Rule):** Every modal must handle the `Escape` key and "Click outside to close" (void clicking). The dismissal logic MUST be smart: only the top-most modal (highest z-index) should be dismissed by a single ESC press. Use the `z-index` check logic to verify if the current modal is the top one before closing.
     - **Interactive Feedback:** Actions that take time (deploys, saves) must show immediate visual feedback via `react-hot-toast` and loading states (e.g., `Loader2` spin).

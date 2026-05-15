@@ -207,6 +207,8 @@ def run_command(db, job_id, command, cwd=None, owner_id=None):
 
 def run_container(db, job_id, image_tag, env_vars=None, app_name=None, internal_port=8000, owner_id=None):
     """Starts a Docker container with Hardened Resource Quotas and Traefik labels."""
+    from core.secrets_engine import resolver as secret_resolver
+    
     if app_name:
         clean_name = "".join(e for e in app_name.lower() if e.isalnum() or e == "-")
         container_name = f"autodeploy_{clean_name}"
@@ -226,9 +228,10 @@ def run_container(db, job_id, image_tag, env_vars=None, app_name=None, internal_
 
     env_flags = []
     if env_vars:
-        for key, value in env_vars.items():
+        resolved_env_vars = secret_resolver.resolve_secrets(env_vars)
+        for key, value in resolved_env_vars.items():
             env_flags.extend(["-e", f"{key}={value}"])
-        save_log(db, job_id, f"🔑 Injected {len(env_vars)} environment variables.", owner_id=owner_id)
+        save_log(db, job_id, f"🔑 Injected {len(resolved_env_vars)} environment variables.", owner_id=owner_id)
 
     # Pre-emptive cleanup of existing container with the same name
     save_log(db, job_id, f"🧹 Cleaning up any existing container named {container_name}...", owner_id=owner_id)

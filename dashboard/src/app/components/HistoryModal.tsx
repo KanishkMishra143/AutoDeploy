@@ -21,7 +21,7 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
   const [historyJobs, setHistoryJobs] = useState<Job[]>([]);
   const [totalJobs, setTotalJobs] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"topology" | "history" | "settings" | "pipeline">("topology");
+  const [activeTab, setActiveTab] = useState<"topology" | "history" | "settings" | "pipeline" | "sharing">("topology");
   const [isDeleting, setIsDeleting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
@@ -84,9 +84,18 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
   }, [shareUserId]);
   
   // Local Settings for editing
-  const [localEnv, setLocalEnv] = useState<{key: string, value: string}[]>([]);
-  const [localPreSteps, setLocalPreSteps] = useState<string[]>([]);
-  const [localPostSteps, setLocalPostSteps] = useState<string[]>([]);
+  const [localEnv, setLocalEnv] = useState<{key: string, value: string}[]>(() => {
+    if (initialApp.env_vars) {
+      const vars = Object.entries(initialApp.env_vars).map(([key, value]) => ({ 
+        key, 
+        value: String(value) 
+      }));
+      return vars.length > 0 ? vars : [{key: "", value: ""}];
+    }
+    return [{key: "", value: ""}];
+  });
+  const [localPreSteps, setLocalPreSteps] = useState<string[]>(initialApp.pre_build_steps || []);
+  const [localPostSteps, setLocalPostSteps] = useState<string[]>(initialApp.post_build_steps || []);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Confirmation Modal State
@@ -183,13 +192,87 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
       });
       if (res.ok) {
         const data = await res.json();
-        setHistoryJobs(data.jobs || []);
-        setTotalJobs(data.total || 0);
+        setHistoryJobs(data.jobs);
+        setTotalJobs(data.total);
       }
     } catch (err) {
-      console.error("Failed to fetch history:", err);
+      console.error(err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchHistory();
+  }, [app.id]);
+
+  const handleRollback = (jobId: string) => {
+    setConfirmConfig({
+      isOpen: true,
+      title: "Rollback Deployment",
+      message: "This will create a new deployment using the exact configuration and source code from this historical build. Are you sure?",
+      confirmLabel: "Trigger Rollback",
+      confirmVariant: "accent",
+      onConfirm: async () => {
+        const tId = toast.loading("Triggering rollback...");
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          const res = await fetch(`http://localhost:8000/jobs/${jobId}/rerun`, { 
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${session?.access_token}`,
+            }
+          });
+          if (res.ok) {
+            toast.success("Rollback pipeline started!", { id: tId });
+            onViewLogs(jobId);
+          } else {
+            toast.error("Rollback failed to trigger", { id: tId });
+          }
+          setConfirmConfig(prev => ({ ...prev, isOpen: false }));
+        } catch (err) {
+          console.error(err);
+          toast.error("Network error", { id: tId });
+        }
+      }
+    });
+  };
+
+  const handleSaveSettings = async () => {
+    setIsSaving(true);
+    const tId = toast.loading("Saving configuration...");
+
+    // Convert localEnv array back to dict
+    const envObj: Record<string, string> = {};
+    localEnv.forEach(v => {
+      if (v.key) envObj[v.key] = v.value;
+    });
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`http://localhost:8000/apps/${app.id}`, {
+        method: "PATCH",
+        headers: {
+          "Authorization": `Bearer ${session?.access_token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          env_vars: envObj,
+          pre_build_steps: localPreSteps,
+          post_build_steps: localPostSteps
+        })
+      });
+
+      if (res.ok) {
+        toast.success("Configuration updated!", { id: tId });
+        fetchAppDetails();
+      } else {
+        toast.error("Failed to save configuration", { id: tId });
+      }
+    } catch (err) {
+      toast.error("Network error", { id: tId });
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -201,8 +284,8 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
     reader.onload = (event) => {
       const content = event.target?.result as string;
       const lines = content.split('\n');
-      const newVars: { key: string; value: string }[] = [];
-
+      const newVars: {key: string, value: string}[] = [];
+      
       lines.forEach(line => {
         const trimmedLine = line.trim();
         if (trimmedLine && !trimmedLine.startsWith('#')) {
@@ -230,22 +313,6 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  useEffect(() => {
-    // Initialize settings from app data
-    if (app.env_vars) {
-      const vars = Object.entries(app.env_vars).map(([key, value]) => ({ 
-        key, 
-        value: String(value) 
-      }));
-      setLocalEnv(vars.length > 0 ? vars : [{key: "", value: ""}]);
-    } else {
-      setLocalEnv([{key: "", value: ""}]);
-    }
-
-    setLocalPreSteps(app.pre_build_steps || []);
-    setLocalPostSteps(app.post_build_steps || []);
-  }, [app]);
-
   const handleDeleteApp = () => {
     setConfirmConfig({
       isOpen: true,
@@ -272,7 +339,7 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
           }
         } catch (err) {
           console.error(err);
-          toast.error("Network error during deletion", { id: tId });
+          toast.error("Connection error during deletion", { id: tId });
         } finally {
           setIsDeleting(false);
           setConfirmConfig(prev => ({ ...prev, isOpen: false }));
@@ -281,102 +348,16 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
     });
   };
 
-  const handleSaveSettings = async () => {
-    setIsSaving(true);
-    const tId = toast.loading("Saving configuration...");
-    const envObj = localEnv.reduce((acc, curr) => {
-      if (curr.key) acc[curr.key] = curr.value;
-      return acc;
-    }, {} as Record<string, string>);
-
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`http://localhost:8000/apps/${app.id}`, {
-        method: "PATCH",
-        headers: { 
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${session?.access_token}`,
-        },
-        body: JSON.stringify({ 
-          env_vars: envObj,
-          pre_build_steps: localPreSteps.filter(s => s.trim()),
-          post_build_steps: localPostSteps.filter(s => s.trim())
-        })
-      });
-      if (res.ok) {
-         toast.success("Settings saved. Redeploy to apply changes.", { id: tId });
-      } else {
-         toast.error("Failed to save settings", { id: tId });
-      }
-    } catch (err) {
-      console.error(err);
-      toast.error("Connection error", { id: tId });
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleRollback = (jobId: string) => {
-    setConfirmConfig({
-      isOpen: true,
-      title: "Confirm Rollback",
-      message: "Are you sure you want to rollback to this version? This will trigger a new deployment using the image from this job.",
-      confirmLabel: "Rollback Now",
-      confirmVariant: "accent",
-      onConfirm: async () => {
-        const tId = toast.loading("Initiating rollback...");
-        try {
-          const { data: { session } } = await supabase.auth.getSession();
-          const res = await fetch(`http://localhost:8000/jobs/${jobId}/rerun`, { 
-            method: "POST",
-            headers: {
-              "Authorization": `Bearer ${session?.access_token}`,
-            }
-          });
-          if (res.ok) {
-            const data = await res.json();
-            toast.success("Rollback in progress", { id: tId });
-            onViewLogs(data.id);
-            onClose();
-          } else {
-            toast.error("Rollback failed", { id: tId });
-          }
-        } catch (err) {
-          console.error(err);
-          toast.error("Network error during rollback", { id: tId });
-        } finally {
-          setConfirmConfig(prev => ({ ...prev, isOpen: false }));
-        }
-      }
-    });
-  };
-
-  useEffect(() => {
-    // Initial sync from global jobs state to avoid "empty" state while fetching
-    const filtered = allJobs.filter(j => j.app_id === app.id);
-    if (filtered.length > 0 && historyJobs.length === 0) {
-      setHistoryJobs(filtered.slice(0, 20));
-      setTotalJobs(filtered.length); // Rough estimate until API returns real total
-    }
-  }, [allJobs, app.id]);
-
-  useEffect(() => {
-    if (activeTab === "history") {
-      fetchHistory();
-      const interval = setInterval(fetchHistory, 5000);
-      return () => clearInterval(interval);
-    }
-  }, [app.id, activeTab]);
-
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        // Find the top-most element with a high z-index
-        const allModals = Array.from(document.querySelectorAll('.fixed.inset-0'));
-        const topModal = allModals.reduce((prev, curr) => {
-          const prevZ = parseInt(window.getComputedStyle(prev).zIndex) || 0;
-          const currZ = parseInt(window.getComputedStyle(curr).zIndex) || 0;
-          return currZ > prevZ ? curr : prev;
+        // Find all active modals
+        const allModals = Array.from(document.querySelectorAll('[id$="-modal-wrapper"]'));
+        // Sort by Z-index or DOM order (assumes higher Z-index or later in DOM means top-most)
+        const topModal = allModals.reduce((top, current) => {
+          const currentZ = parseInt(window.getComputedStyle(current).zIndex);
+          const topZ = parseInt(window.getComputedStyle(top).zIndex);
+          return currentZ >= topZ ? current : top;
         }, allModals[0]);
 
         // Only close if THIS modal is the top one
@@ -428,7 +409,8 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
                         {app.role} Access
                       </span>
                     )}
-                    {latestJob?.status === 'success' && latestJob.result?.url && (                        <a 
+                    {latestJob?.status === 'success' && latestJob.result?.url && (
+                        <a 
                             href={latestJob.result.url} 
                             target="_blank" 
                             className="text-[10px] font-black text-accent hover:underline flex items-center gap-1 uppercase tracking-widest"
@@ -452,7 +434,8 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
             <button onClick={onClose} className="p-2 bg-white/5 hover:bg-white/10 rounded-full text-gray-400 hover:text-white transition-all">
                 <X className="w-6 h-6" />
             </button>
-          </div>        </div>
+          </div>
+        </div>
 
         {/* Tab Navigation */}
         <div className="flex px-8 border-b border-card-border bg-background/30">
@@ -473,30 +456,30 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
              </button>
            ))}
         </div>
+
         {/* Content Area */}
         <div className="flex-1 overflow-hidden flex flex-col bg-[#0a0a0a]">
           
           {activeTab === "topology" && (
             <div className="flex-1 p-8">
                <TopologyMap 
-                  apps={allApps} 
-                  jobs={allJobs} 
-                  focusedAppId={app.id} 
+                  apps={allApps.filter(a => a.id === app.id)} 
+                  jobs={allJobs.filter(j => j.app_id === app.id)} 
+                  onAppClick={() => {}}
                />
             </div>
           )}
 
           {activeTab === "history" && (
-            <div className="flex-1 overflow-y-auto p-8 space-y-4 custom-scrollbar">
-                {loading && historyJobs.length === 0 ? (
-                   <div className="h-40 flex items-center justify-center">
-                      <div className="w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin" />
-                   </div>
+            <div className="flex-1 overflow-y-auto p-8 space-y-6 custom-scrollbar">
+                {loading ? (
+                  <div className="h-40 flex items-center justify-center">
+                     <div className="w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+                  </div>
                 ) : historyJobs.length === 0 ? (
-                   <div className="h-40 flex flex-col items-center justify-center text-gray-600 rounded-2xl border border-dashed border-card-border">
-                      <AlertCircle className="w-8 h-8 mb-2 opacity-20" />
-                      <p className="text-sm">No deployment history found.</p>
-                   </div>
+                  <div className="h-40 border border-dashed border-card-border rounded-[24px] flex items-center justify-center text-gray-600">
+                    <p className="text-xs font-bold uppercase tracking-widest">No deployment history found</p>
+                  </div>
                 ) : (
                   historyJobs.map((job, index) => {
                     const isLatest = index === 0;
@@ -509,7 +492,7 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
                       >
                         <div className="flex items-center justify-between w-full">
                           <div className="flex items-center gap-5">
-                            <div className={`w-3 h-3 rounded-full ${job.status === 'success' ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]' : job.status === 'running' ? 'bg-blue-500 animate-pulse' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]'}`} />
+                            <div className={`w-3 h-3 rounded-full ${job.status === 'success' ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]' : job.status === 'running' ? 'bg-blue-500 animate-pulse' : job.status === 'stopped' ? 'bg-gray-500' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]'}`} />
                             <div>
                               <div className="flex items-center gap-2">
                                 <span className="text-base font-bold text-white uppercase tracking-tight">Build #{job.build_number || (totalJobs - index)}</span>
@@ -600,24 +583,27 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
                   <div className="space-y-2">
                     {localPreSteps.map((step, i) => (
                       <div key={i} className="flex gap-2">
-                        <div className="flex-1 bg-background/50 border border-card-border rounded-xl px-4 py-3 flex items-center group focus-within:border-accent transition-all">
-                           <Terminal className="w-3.5 h-3.5 text-gray-600 mr-3" />
-                           <input 
-                             placeholder="e.g. npm install"
-                             className="w-full bg-transparent text-xs font-mono outline-none text-white placeholder:text-gray-800"
-                             value={step}
-                             onChange={(e) => {
-                               const updated = [...localPreSteps];
-                               updated[i] = e.target.value;
-                               setLocalPreSteps(updated);
-                             }}
-                           />
-                        </div>
-                        <button onClick={() => setLocalPreSteps(localPreSteps.filter((_, idx) => idx !== i))} className="p-3 text-gray-600 hover:text-red-500 transition-all">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                         <div className="flex-1 bg-background border border-card-border rounded-xl px-4 py-3 flex items-center focus-within:border-accent transition-all group">
+                            <Terminal className="w-3.5 h-3.5 text-gray-600 mr-3 group-focus-within:text-accent" />
+                            <input 
+                              className="w-full bg-transparent text-xs font-mono outline-none text-white"
+                              value={step}
+                              onChange={(e) => {
+                                const updated = [...localPreSteps];
+                                updated[i] = e.target.value;
+                                setLocalPreSteps(updated);
+                              }}
+                            />
+                         </div>
+                         <button 
+                            onClick={() => setLocalPreSteps(localPreSteps.filter((_, idx) => idx !== i))}
+                            className="p-3 text-gray-600 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-all"
+                          >
+                           <Trash2 className="w-4 h-4" />
+                         </button>
                       </div>
                     ))}
+                    {localPreSteps.length === 0 && <p className="text-[10px] text-gray-700 uppercase font-black text-center py-4 border border-dashed border-card-border rounded-xl">No pre-build steps defined</p>}
                   </div>
                 </div>
 
@@ -628,7 +614,7 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
                   <div className="flex justify-between items-center">
                     <div>
                        <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest">Post-Build Steps</h4>
-                       <p className="text-[10px] text-gray-600 font-bold uppercase tracking-widest">After image build, before deploy</p>
+                       <p className="text-[10px] text-gray-600 font-bold uppercase tracking-widest">After successful build</p>
                     </div>
                     <button onClick={() => setLocalPostSteps([...localPostSteps, ""])} className="p-2 bg-accent/10 hover:bg-accent text-accent hover:text-white rounded-xl transition-all">
                       <Plus className="w-4 h-4" />
@@ -637,36 +623,39 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
                   <div className="space-y-2">
                     {localPostSteps.map((step, i) => (
                       <div key={i} className="flex gap-2">
-                        <div className="flex-1 bg-background/50 border border-card-border rounded-xl px-4 py-3 flex items-center group focus-within:border-accent transition-all">
-                           <Terminal className="w-3.5 h-3.5 text-gray-600 mr-3" />
-                           <input 
-                             placeholder="e.g. python migrate.py"
-                             className="w-full bg-transparent text-xs font-mono outline-none text-white placeholder:text-gray-800"
-                             value={step}
-                             onChange={(e) => {
-                               const updated = [...localPostSteps];
-                               updated[i] = e.target.value;
-                               setLocalPostSteps(updated);
-                             }}
-                           />
-                        </div>
-                        <button onClick={() => setLocalPostSteps(localPostSteps.filter((_, idx) => idx !== i))} className="p-3 text-gray-600 hover:text-red-500 transition-all">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                         <div className="flex-1 bg-background border border-card-border rounded-xl px-4 py-3 flex items-center focus-within:border-accent transition-all group">
+                            <Terminal className="w-3.5 h-3.5 text-gray-600 mr-3 group-focus-within:text-accent" />
+                            <input 
+                              className="w-full bg-transparent text-xs font-mono outline-none text-white"
+                              value={step}
+                              onChange={(e) => {
+                                const updated = [...localPostSteps];
+                                updated[i] = e.target.value;
+                                setLocalPostSteps(updated);
+                              }}
+                            />
+                         </div>
+                         <button 
+                            onClick={() => setLocalPostSteps(localPostSteps.filter((_, idx) => idx !== i))}
+                            className="p-3 text-gray-600 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-all"
+                          >
+                           <Trash2 className="w-4 h-4" />
+                         </button>
                       </div>
                     ))}
+                    {localPostSteps.length === 0 && <p className="text-[10px] text-gray-700 uppercase font-black text-center py-4 border border-dashed border-card-border rounded-xl">No post-build steps defined</p>}
                   </div>
                 </div>
-
-                <div className="pt-4 flex justify-end">
-                   <button 
-                     onClick={handleSaveSettings}
-                     disabled={isSaving}
-                     className="px-8 py-3 bg-accent hover:bg-accent/90 text-white text-xs font-black rounded-xl transition-all shadow-lg shadow-accent/20 flex items-center gap-2 uppercase tracking-widest"
-                   >
-                     {isSaving ? <RotateCcw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                     Save DAG Configuration
-                   </button>
+                
+                <div className="pt-4">
+                  <button 
+                    onClick={handleSaveSettings}
+                    disabled={isSaving || app.role === 'VIEWER'}
+                    className="w-full py-4 bg-accent hover:bg-accent/90 text-white text-[10px] font-black rounded-2xl transition-all shadow-xl shadow-accent/20 flex items-center justify-center gap-3 uppercase tracking-[0.2em] disabled:opacity-50"
+                  >
+                    {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                    Update Pipeline DAG
+                  </button>
                 </div>
             </div>
           )}
@@ -675,75 +664,60 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
             <div className="flex-1 overflow-y-auto p-8 max-w-2xl mx-auto w-full">
                <div className="mb-8 flex justify-between items-end">
                   <div>
-                    <h3 className="text-lg font-bold text-white mb-2">Environment Variables</h3>
-                    <p className="text-sm text-gray-500">Variables defined here will be injected into your container at runtime. Changes require a new deployment to take effect.</p>
+                    <div className="flex items-center gap-2 mb-2">
+                       <h3 className="text-lg font-bold text-white">Environment Variables</h3>
+                       <span className="px-2 py-0.5 bg-accent/10 text-accent text-[8px] font-black rounded uppercase tracking-widest border border-accent/20">Advanced Secrets Supported</span>
+                    </div>
+                    <p className="text-sm text-gray-500">Variables defined here are encrypted at rest. To use HashiCorp Vault, prefix your value with <code className="bg-white/10 px-1 py-0.5 rounded text-accent">vault://path/to/key</code>.</p>
                   </div>
+
                   <div className="flex gap-2">
                     <input 
                         type="file" 
                         ref={fileInputRef} 
                         onChange={handleEnvFileUpload} 
                         className="hidden" 
-                        accept=".env"
+                        accept=".env,text/plain"
                     />
                     <button 
                         onClick={() => fileInputRef.current?.click()}
-                        className="px-4 py-2 bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 border border-white/10"
+                        className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white text-[10px] font-black rounded-xl transition-all border border-white/5 flex items-center gap-2 uppercase tracking-widest"
                     >
-                        <Upload className="w-3.5 h-3.5" /> Import .env
+                        <Upload className="w-3.5 h-3.5" />
+                        Import .env
                     </button>
                   </div>
                </div>
 
-               {/* Drag and Drop Zone */}
-               <div 
-                 onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                 onDrop={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const file = e.dataTransfer.files?.[0];
-                    if (file) {
-                        const inputE = { target: { files: [file] } } as any;
-                        handleEnvFileUpload(inputE);
-                    }
-                 }}
-                 className="group/drop border-2 border-dashed border-card-border rounded-2xl p-8 flex flex-col items-center justify-center bg-white/5 hover:bg-accent/5 hover:border-accent/40 transition-all cursor-pointer mb-8"
-                 onClick={() => fileInputRef.current?.click()}
-               >
-                  <div className="p-3 bg-white/5 rounded-2xl mb-3 group-hover/drop:scale-110 transition-transform duration-300">
-                    <Upload className="w-6 h-6 text-gray-600 group-hover/drop:text-accent" />
-                  </div>
-                  <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest group-hover/drop:text-accent transition-colors">Drag & Drop .env file here</p>
-                  <p className="text-[9px] text-gray-600 font-bold uppercase tracking-widest mt-1">or click to browse local files</p>
-               </div>
-
-               <div className="space-y-3 mb-8">
-                  {localEnv.map((ev, i) => (
-                    <div key={i} className="flex gap-3 animate-in slide-in-from-left-2" style={{animationDelay: `${i * 50}ms`}}>
-                       <input 
-                         placeholder="VARIABLE_NAME"
-                         className="flex-1 bg-background border border-card-border rounded-xl px-4 py-3 text-xs font-mono outline-none focus:border-accent text-white transition-all uppercase placeholder:text-gray-700"
-                         value={ev.key}
-                         onChange={(e) => {
-                            const updated = [...localEnv];
-                            updated[i].key = e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, '_');
-                            setLocalEnv(updated);
-                         }}
-                       />
-                       <input 
-                         placeholder="Value"
-                         className="flex-1 bg-background border border-card-border rounded-xl px-4 py-3 text-xs font-mono outline-none focus:border-accent text-white transition-all placeholder:text-gray-700"
-                         value={ev.value}
-                         onChange={(e) => {
-                            const updated = [...localEnv];
-                            updated[i].value = e.target.value;
-                            setLocalEnv(updated);
-                         }}
-                       />
+               <div className="space-y-3 mb-10">
+                  {localEnv.map((v, i) => (
+                    <div key={i} className="flex gap-3 group animate-in fade-in slide-in-from-left-2 duration-300" style={{ animationDelay: `${i * 50}ms` }}>
+                       <div className="flex-1 bg-background border border-card-border rounded-2xl px-4 py-3 flex items-center focus-within:border-accent transition-all">
+                          <input 
+                             placeholder="KEY"
+                             className="w-1/3 bg-transparent text-xs font-black outline-none text-accent placeholder:text-gray-800 border-r border-card-border mr-4"
+                             value={v.key}
+                             onChange={(e) => {
+                                const updated = [...localEnv];
+                                updated[i].key = e.target.value.toUpperCase();
+                                setLocalEnv(updated);
+                             }}
+                          />
+                          <input 
+                             placeholder="VALUE"
+                             className="w-2/3 bg-transparent text-xs font-mono outline-none text-white placeholder:text-gray-800"
+                             value={v.value}
+                             onChange={(e) => {
+                                const updated = [...localEnv];
+                                updated[i].value = e.target.value;
+                                setLocalEnv(updated);
+                             }}
+                          />
+                       </div>
                        <button 
-                         onClick={() => setLocalEnv(localEnv.filter((_, idx) => idx !== i))}
-                         className="p-3 text-gray-600 hover:text-red-500 transition-colors"
-                       >
+                          onClick={() => setLocalEnv(localEnv.filter((_, idx) => idx !== i))}
+                          className="p-4 text-gray-600 hover:text-red-500 hover:bg-red-500/10 rounded-2xl transition-all opacity-0 group-hover:opacity-100"
+                        >
                          <Trash2 className="w-4 h-4" />
                        </button>
                     </div>
@@ -751,24 +725,20 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
                   
                   <button 
                     onClick={() => setLocalEnv([...localEnv, {key: "", value: ""}])}
-                    className="w-full py-3 border-2 border-dashed border-card-border rounded-xl text-gray-500 hover:text-accent hover:border-accent/40 text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 group"
+                    className="w-full py-4 border-2 border-dashed border-card-border rounded-2xl text-gray-600 hover:text-accent hover:border-accent/40 hover:bg-accent/5 transition-all text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2"
                   >
-                    <Plus className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
+                    <Plus className="w-4 h-4" />
                     Add Variable
                   </button>
                </div>
 
-               <div className="pt-8 border-t border-card-border flex justify-end">
+               <div className="sticky bottom-0 bg-gradient-to-t from-[#0a0a0a] via-[#0a0a0a] to-transparent pt-10 pb-4">
                   <button 
                     onClick={handleSaveSettings}
-                    disabled={isSaving}
-                    className="px-8 py-3 bg-accent hover:bg-accent/90 text-white text-xs font-black rounded-xl transition-all shadow-lg shadow-accent/20 flex items-center gap-2 uppercase tracking-widest disabled:opacity-50"
+                    disabled={isSaving || app.role === 'VIEWER'}
+                    className="w-full py-5 bg-accent hover:bg-accent/90 text-white text-xs font-black rounded-[24px] transition-all shadow-2xl shadow-accent/20 flex items-center justify-center gap-3 uppercase tracking-[0.3em] disabled:opacity-50"
                   >
-                    {isSaving ? (
-                      <RotateCcw className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Save className="w-4 h-4" />
-                    )}
+                    {isSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
                     Save Configuration
                   </button>
                </div>
@@ -776,107 +746,106 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
           )}
 
           {activeTab === "sharing" && (
-           <div className="flex-1 overflow-y-auto p-8 max-w-2xl mx-auto w-full space-y-8 custom-scrollbar">
-              <div className="mb-4">
-                 <h3 className="text-lg font-bold text-white mb-2 uppercase tracking-tight">Project Sharing</h3>
-                 <p className="text-sm text-gray-500">Grant other users access to this application. They will be able to view logs or trigger deployments based on their role.</p>
-              </div>
+            <div className="flex-1 overflow-y-auto p-8 max-w-2xl mx-auto w-full space-y-8 custom-scrollbar">
+               <div className="mb-4">
+                  <h3 className="text-lg font-bold text-white mb-2 uppercase tracking-tight">Project Sharing</h3>
+                  <p className="text-sm text-gray-500">Grant other users access to this application. They will be able to view logs or trigger deployments based on their role.</p>
+               </div>
 
-              {/* Current Access List (MOVED ABOVE) */}
-              <div className="space-y-4">
-                 <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
-                    <Activity className="w-3 h-3 text-accent" />
-                    Active Access
-                 </h4>
-                 {app.access_list?.length === 0 ? (
-                    <div className="p-8 border border-dashed border-card-border rounded-2xl flex flex-col items-center justify-center text-gray-600 bg-white/5">
-                       <p className="text-[10px] font-black uppercase tracking-widest">No external collaborators</p>
-                    </div>
-                 ) : (
-                   <div className="grid grid-cols-1 gap-3">
-                     {/* Owner Row (Fixed at top of list) */}
-                     <div className="bg-accent/5 border border-accent/20 rounded-2xl p-4 flex justify-between items-center group transition-all">
-                        <div className="flex items-center gap-4">
-                           {app.owner_profile?.avatar_url ? (
-                             <img src={app.owner_profile.avatar_url} alt={app.owner_profile.username} className="w-10 h-10 rounded-xl border border-accent/20" />
-                           ) : (
-                             <div className="w-10 h-10 bg-accent rounded-xl flex items-center justify-center">
-                                <Shield className="w-5 h-5 text-white" />
-                             </div>
-                           )}
-                           <div>
-                              <p className="text-xs font-black text-white uppercase tracking-tight">
-                                 {app.owner_profile?.username || "Project Owner"}
-                                 {currentUser?.id === app.owner_id && <span className="ml-2 text-[8px] bg-accent/20 text-accent px-1.5 py-0.5 rounded">YOU</span>}
-                              </p>
-                              <p className="text-[9px] font-black text-accent uppercase tracking-[0.2em] mt-1">Creator</p>
-                           </div>
-                        </div>
+               {/* Current Access List */}
+               <div className="space-y-4">
+                  <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                     <Activity className="w-3 h-3 text-accent" />
+                     Active Access
+                  </h4>
+                  {app.access_list?.length === 0 ? (
+                     <div className="p-8 border border-dashed border-card-border rounded-2xl flex flex-col items-center justify-center text-gray-600 bg-white/5">
+                        <p className="text-[10px] font-black uppercase tracking-widest">No external collaborators</p>
                      </div>
-                     {/* Collaborators */}
-                     {app.access_list?.map((access) => {
-                       const isMe = currentUser?.id === access.user_id;
-                       return (
-                         <div key={access.id} className={`bg-background/50 border border-card-border rounded-2xl p-4 flex justify-between items-center group hover:border-accent/20 transition-all ${isMe ? 'ring-1 ring-accent/20' : ''}`}>
-                            <div className="flex items-center gap-4">
-                               {access.profile?.avatar_url ? (
-                                 <img src={access.profile.avatar_url} alt={access.profile.username} className="w-10 h-10 rounded-xl border border-white/10" />
-                               ) : (
-                                 <div className="w-10 h-10 bg-white/5 rounded-xl flex items-center justify-center">
-                                    <User className="w-5 h-5 text-gray-500" />
-                                 </div>
-                               )}
-                               <div>
-                                  <p className="text-xs font-black text-white uppercase tracking-tight">
-                                     {access.profile?.username || access.user_id.split('-')[0]}
-                                     {isMe && <span className="ml-2 text-[8px] bg-accent/20 text-accent px-1.5 py-0.5 rounded">YOU</span>}
-                                  </p>
-                                  <p className="text-[9px] font-black text-accent uppercase tracking-[0.2em] mt-1">{access.role}</p>
-                               </div>
-                            </div>
-
-                            {/* Only show revoke if it's not the current user and current user is Admin/Owner */}
-                            {!isMe && (
-                              <button 
-                                onClick={() => handleRevoke(access.user_id)}
-                                className="p-3 text-gray-600 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-all opacity-0 group-hover:opacity-100"
-                                title="Revoke Access"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-3">
+                      {/* Owner Row (Fixed at top of list) */}
+                      <div className="bg-accent/5 border border-accent/20 rounded-2xl p-4 flex justify-between items-center group transition-all">
+                         <div className="flex items-center gap-4">
+                            {app.owner_profile?.avatar_url ? (
+                              <img src={app.owner_profile.avatar_url} alt={app.owner_profile.username} className="w-10 h-10 rounded-xl border border-accent/20" />
+                            ) : (
+                              <div className="w-10 h-10 bg-accent rounded-xl flex items-center justify-center">
+                                 <Shield className="w-5 h-5 text-white" />
+                              </div>
                             )}
+                            <div>
+                               <p className="text-xs font-black text-white uppercase tracking-tight">
+                                  {app.owner_profile?.username || "Project Owner"}
+                                  {currentUser?.id === app.owner_id && <span className="ml-2 text-[8px] bg-accent/20 text-accent px-1.5 py-0.5 rounded">YOU</span>}
+                               </p>
+                               <p className="text-[9px] font-black text-accent uppercase tracking-[0.2em] mt-1">Creator</p>
+                            </div>
                          </div>
-                       )
-                     })}
-                   </div>
-                 )}
-
-              </div>
-
-              <div className="h-px bg-card-border opacity-50" />
-
-              {/* Add New Access */}
-              <div className="bg-white/5 border border-card-border rounded-[24px] p-6 space-y-6">
-                 <div className="flex justify-between items-start">
-                   <div>
-                     <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Invite New Collaborator</h4>
-                     <p className="text-[10px] text-gray-600 font-bold uppercase tracking-tight">Search by username or paste a User ID</p>
-                   </div>
-                   <div className="flex gap-4">
-                      <div className="flex flex-col items-end">
-                         <span className="text-[9px] font-black text-accent uppercase tracking-widest">Admin</span>
-                         <span className="text-[8px] text-gray-600 font-medium">Deploy, Edit, Restart</span>
                       </div>
-                      <div className="w-px h-6 bg-card-border" />
-                      <div className="flex flex-col items-start">
-                         <span className="text-[9px] font-black text-blue-500 uppercase tracking-widest">Viewer</span>
-                         <span className="text-[8px] text-gray-600 font-medium">Read-only logs & map</span>
-                      </div>
-                   </div>
-                 </div>
 
-                 <div className="flex gap-3 relative">
+                      {/* Collaborators */}
+                      {app.access_list?.map((access) => {
+                        const isMe = currentUser?.id === access.user_id;
+                        return (
+                          <div key={access.id} className={`bg-background/50 border border-card-border rounded-2xl p-4 flex justify-between items-center group hover:border-accent/20 transition-all ${isMe ? 'ring-1 ring-accent/20' : ''}`}>
+                             <div className="flex items-center gap-4">
+                                {access.profile?.avatar_url ? (
+                                  <img src={access.profile.avatar_url} alt={access.profile.username} className="w-10 h-10 rounded-xl border border-white/10" />
+                                ) : (
+                                  <div className="w-10 h-10 bg-white/5 rounded-xl flex items-center justify-center">
+                                     <User className="w-5 h-5 text-gray-500" />
+                                  </div>
+                                )}
+                                <div>
+                                   <p className="text-xs font-black text-white uppercase tracking-tight">
+                                      {access.profile?.username || access.user_id.split('-')[0]}
+                                      {isMe && <span className="ml-2 text-[8px] bg-accent/20 text-accent px-1.5 py-0.5 rounded">YOU</span>}
+                                   </p>
+                                   <p className="text-[9px] font-black text-accent uppercase tracking-[0.2em] mt-1">{access.role}</p>
+                                </div>
+                             </div>
+                             
+                             {/* Only show revoke if it's not the current user and current user is Admin/Owner */}
+                             {!isMe && (
+                               <button 
+                                 onClick={() => handleRevoke(access.user_id)}
+                                 className="p-3 text-gray-600 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-all opacity-0 group-hover:opacity-100"
+                                 title="Revoke Access"
+                               >
+                                 <Trash2 className="w-4 h-4" />
+                               </button>
+                             )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+               </div>
 
+               <div className="h-px bg-card-border opacity-50" />
+
+               {/* Add New Access */}
+               <div className="bg-white/5 border border-card-border rounded-[24px] p-6 space-y-6">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Invite New Collaborator</h4>
+                      <p className="text-[10px] text-gray-600 font-bold uppercase tracking-tight">Search by username or paste a User ID</p>
+                    </div>
+                    <div className="flex gap-4">
+                       <div className="flex flex-col items-end">
+                          <span className="text-[9px] font-black text-accent uppercase tracking-widest">Admin</span>
+                          <span className="text-[8px] text-gray-600 font-medium">Deploy, Edit, Restart</span>
+                       </div>
+                       <div className="w-px h-6 bg-card-border" />
+                       <div className="flex flex-col items-start">
+                          <span className="text-[9px] font-black text-blue-500 uppercase tracking-widest">Viewer</span>
+                          <span className="text-[8px] text-gray-600 font-medium">Read-only logs & map</span>
+                       </div>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3 relative">
                      <div className="flex-1 bg-background border border-card-border rounded-xl px-4 py-3 flex items-center focus-within:border-accent transition-all relative">
                         <User className="w-3.5 h-3.5 text-gray-600 mr-3" />
                         <input 
@@ -900,7 +869,7 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
                                    setUserSuggestions([]);
                                  }}
                                  className="w-full px-4 py-3 hover:bg-accent/10 flex items-center gap-3 transition-colors text-left border-b border-card-border last:border-0"
-                               >
+                                >
                                   {suggestion.avatar_url ? (
                                     <img src={suggestion.avatar_url} alt={suggestion.username} className="w-8 h-8 rounded-full border border-white/10" />
                                   ) : (
@@ -914,7 +883,6 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
                                   </div>
                                </button>
                              ))}
-
                           </div>
                         )}
                      </div>
