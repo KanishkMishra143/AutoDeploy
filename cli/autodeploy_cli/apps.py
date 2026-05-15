@@ -138,7 +138,7 @@ def deploy(
         # 2. TRIGGER DEPLOYMENT
         with console.status(f"[bold blue]Triggering deployment..."):
             response = requests.post(
-                f"{api_base}/apps/{final_app_id}/deploy",
+                f"{api_base}/apps/{final_app_id}/deploy?trigger_reason=Manual:CLI",
                 headers=headers
             )
         
@@ -160,3 +160,105 @@ def deploy(
             
     except Exception as e:
         console.print(f"[red]Error:[/red] Connection failed: {e}")
+
+@app.command(name="env-list")
+def env_list(
+    app_id: Optional[str] = typer.Argument(None, help="The ID of the application")
+):
+    """
+    📋 List all environment variables for an application.
+    """
+    key = config.get_api_key()
+    api_base = config.get_api_base()
+    ctx = context.get_project_context()
+    final_app_id = app_id or ctx.get("app_id")
+
+    if not final_app_id:
+        console.print("[red]Error:[/red] No application linked. Provide an app_id or run inside a linked project.")
+        return
+
+    try:
+        res = requests.get(f"{api_base}/apps/{final_app_id}", headers={"Authorization": f"Bearer {key}"})
+        if res.ok:
+            app_data = res.json()
+            env_vars = app_data.get("env_vars", {})
+            if not env_vars:
+                console.print("[yellow]No environment variables found.[/yellow]")
+                return
+
+            table = Table(title=f"Environment Variables: {app_data['name']}", border_style="cyan")
+            table.add_column("Key", style="bold green")
+            table.add_column("Value", style="dim")
+
+            for k, v in env_vars.items():
+                # Mask secrets if they look sensitive but show enough for context
+                display_val = f"{v[:4]}...{v[-4:]}" if len(v) > 12 else "***"
+                if v.startswith("vault://"): display_val = f"[magenta]{v}[/magenta]"
+                table.add_row(k, display_val)
+            
+            console.print(table)
+        else:
+            console.print("[red]Error:[/red] Could not fetch environment variables.")
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+
+@app.command(name="env-set")
+def env_set(
+    pair: str = typer.Argument(..., help="The KEY=VALUE pair to set"),
+    app_id: Optional[str] = typer.Argument(None, help="The ID of the application")
+):
+    """
+    🔑 Set an environment variable (KEY=VALUE).
+    """
+    if "=" not in pair:
+        console.print("[red]Error:[/red] Format must be KEY=VALUE")
+        return
+
+    key_name, val = pair.split("=", 1)
+    key = config.get_api_key()
+    api_base = config.get_api_base()
+    ctx = context.get_project_context()
+    final_app_id = app_id or ctx.get("app_id")
+
+    try:
+        # Get current env first to merge
+        res = requests.get(f"{api_base}/apps/{final_app_id}", headers={"Authorization": f"Bearer {key}"})
+        if res.ok:
+            current_env = res.json().get("env_vars", {})
+            current_env[key_name.strip()] = val.strip()
+            
+            update_res = requests.patch(
+                f"{api_base}/apps/{final_app_id}",
+                headers={"Authorization": f"Bearer {key}"},
+                json={"env_vars": current_env}
+            )
+            if update_res.ok:
+                console.print(f"[green]✔ Set {key_name.strip()} successfully.[/green]")
+            else:
+                console.print("[red]Error updating environment variables.[/red]")
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+
+@app.command(name="env-get")
+def env_get(
+    key_name: str = typer.Argument(..., help="The key to retrieve"),
+    app_id: Optional[str] = typer.Argument(None, help="The ID of the application")
+):
+    """
+    🔍 Get the value of a specific environment variable.
+    """
+    key = config.get_api_key()
+    api_base = config.get_api_base()
+    ctx = context.get_project_context()
+    final_app_id = app_id or ctx.get("app_id")
+
+    try:
+        res = requests.get(f"{api_base}/apps/{final_app_id}", headers={"Authorization": f"Bearer {key}"})
+        if res.ok:
+            val = res.json().get("env_vars", {}).get(key_name)
+            if val:
+                console.print(f"[bold green]{key_name}[/bold green] = [cyan]{val}[/cyan]")
+            else:
+                console.print(f"[yellow]Key '{key_name}' not found.[/yellow]")
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")

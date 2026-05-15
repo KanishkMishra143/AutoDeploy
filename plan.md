@@ -205,6 +205,7 @@
     - [x] **Sub-task:** Implement environment variable management via CLI (Injection from local `.env`).
     - [x] **Feature:** Context-aware discovery (Sub-directory support).
     - [x] **UX:** Quiet Wait mode and 'q' to stop logs.
+    - [x] **Auditability:** Implemented `Manual:CLI` and `Manual:Canvas` trigger source differentiation.
     - *Deliverable: True parallel workflows—start in the terminal, monitor in the dashboard.*
 
 ---

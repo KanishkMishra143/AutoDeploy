@@ -151,7 +151,7 @@ def get_app(app_id: UUID, db: Session = Depends(get_db), current_user: dict = De
     return app_with_access
 
 @router.post("/{app_id}/deploy", response_model=JobResponse)
-def deploy_app(app_id: UUID, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+def deploy_app(app_id: UUID, trigger_reason: str = "Manual", db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     """Triggers a manual deployment for an application."""
     # Deploying requires at least ADMIN role if shared
     app = get_app_with_access(app_id, current_user["sub"], db, required_role="ADMIN")
@@ -161,7 +161,7 @@ def deploy_app(app_id: UUID, db: Session = Depends(get_db), current_user: dict =
         owner_id=current_user["sub"],
         type="DEPLOY",
         status="queued",
-        trigger_reason="Manual",
+        trigger_reason=trigger_reason,
         payload={
             "repo": app.repo_url,
             "branch": app.branch,

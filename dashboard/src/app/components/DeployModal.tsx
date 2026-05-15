@@ -156,7 +156,7 @@ export default function DeployModal({ onClose }: { onClose: (jobId?: string) => 
       }
 
       const appData = await appRes.json();
-      const deployRes = await fetch(`http://127.0.0.1:8000/apps/${appData.id}/deploy`, {
+      const deployRes = await fetch(`http://127.0.0.1:8000/apps/${appData.id}/deploy?trigger_reason=Manual:Canvas`, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${session?.access_token}`,

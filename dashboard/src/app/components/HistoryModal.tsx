@@ -239,15 +239,16 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
   };
 
   const handleDeploy = async () => {
-    const tId = toast.loading("Triggering deployment...");
-    try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const res = await fetch(`http://127.0.0.1:8000/apps/${app.id}/deploy`, { 
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${session?.access_token}`,
-          }
-        });
+   const tId = toast.loading("Triggering deployment...");
+   try {
+       const { data: { session } } = await supabase.auth.getSession();
+       const res = await fetch(`http://127.0.0.1:8000/apps/${app.id}/deploy?trigger_reason=Manual:Canvas`, {
+         method: "POST",
+         headers: {
+           "Authorization": `Bearer ${session?.access_token}`,
+         }
+       });
+
         if (res.ok) {
             const data = await res.json();
             toast.success("Deployment started!", { id: tId });

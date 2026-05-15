@@ -62,6 +62,9 @@
         - **Purge Engine:** Fixed the "Purge All Applications" feature by correcting a UUID type mismatch in the backend filtering logic.
         - **Data Integrity:** Ensured the project owner is always explicitly visible in the Sharing tab.
         - **Env Injection Fix:** Verified and fixed environment variable injection from local `.env` files through the CLI to the Docker worker.
+        - **Trigger Source Differentiation:** Refactored the API and both interfaces (CLI/GUI) to distinguish deployment sources. Fixed the "Redeploy" button on application cards to correctly send `Manual:Canvas`. History badges now explicitly show `Manual:CLI` or `Manual:Canvas` for better auditability.
+    - **Developer Experience (UI Cleanliness):**
+        - **Dev Indicator Removal:** Suppressed the Next.js 15.2+ unified "N" badge and dev tools from the dashboard canvas by disabling `devIndicators` in `next.config.ts`. This ensures a high-fidelity, production-like view of the infrastructure map without development overlays.
 - **Next Task:**
     1. **Phase 11 Continued:** CLI Environment Variable management (`ad env set/get`).
     2. **Phase 12:** Enterprise-Grade Distribution (The Unified Service Bundle).
