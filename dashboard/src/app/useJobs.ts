@@ -16,6 +16,7 @@ export interface Application {
     repo_url: string;
     branch?: string;
     stack: string;
+    internal_port: number;
     pre_build_steps: string[];
     post_build_steps: string[];
     env_vars: Record<string, string>;

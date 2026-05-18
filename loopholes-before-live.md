@@ -4,7 +4,7 @@ This document tracks critical architectural vulnerabilities and edge cases ident
 
 ---
 
-## 1. Multi-tenant Name Collisions
+- [x] 1. Multi-tenant Name Collisions
 **Problem:** Currently, container names and hostnames are derived solely from the app name (e.g., `ad-api`). If two users create an app named "api", the second deployment will fail or overwrite the first.
 
 ### 🛠️ Solution
@@ -22,7 +22,7 @@ This document tracks critical architectural vulnerabilities and edge cases ident
 
 ---
 
-## 2. Hardcoded Port Assumption
+- [x] 2. Hardcoded Port Assumption
 **Problem:** The worker assumes all apps listen on port `8000` (API) or `80` (Static). Apps like Next.js (`3000`) or Vite (`5173`) will result in 504 Gateway Timeouts.
 
 ### 🛠️ Solution
@@ -41,7 +41,7 @@ This document tracks critical architectural vulnerabilities and edge cases ident
 
 ---
 
-## 3. Persistent Data Loss (Volumes)
+- [x] 3. Persistent Data Loss (Volumes)
 **Problem:** Containers are ephemeral. Every new deployment deletes the previous container and its local filesystem. Users lose SQLite databases, uploads, and logs stored inside the container.
 
 ### 🛠️ Solution
@@ -49,7 +49,7 @@ This document tracks critical architectural vulnerabilities and edge cases ident
 - Mapping: `host_path` (persistent storage) -> `container_path`.
 - Update `docker run` flags in the worker to include `-v`.
 
-### 📦 Deliverables
+### 📦 Deliverable
 - Volume mapping support in `autodeploy.yml` parser.
 - Docker volume mounting logic in `tasks.py`.
 
@@ -60,7 +60,7 @@ This document tracks critical architectural vulnerabilities and edge cases ident
 
 ---
 
-## 4. Zombie Image Storage Leak
+- [ ] 4. Zombie Image Storage Leak
 **Problem:** Every build creates a new Docker image. Without a cleanup policy, the production server will run out of disk space, crashing the entire platform.
 
 ### 🛠️ Solution
@@ -79,7 +79,7 @@ This document tracks critical architectural vulnerabilities and edge cases ident
 
 ---
 
-## 5. Private Repository Access
+- [ ] 5. Private Repository Access
 **Problem:** `git clone` fails for private repositories. Most professional users will not use public repos for their source code.
 
 ### 🛠️ Solution
@@ -97,7 +97,7 @@ This document tracks critical architectural vulnerabilities and edge cases ident
 
 ---
 
-## 6. SSL/TLS Termination
+- [ ] 6. SSL/TLS Termination
 **Problem:** Traefik is currently configured for HTTP (`:80`). Public users expect HTTPS (`:443`).
 
 ### 🛠️ Solution
@@ -115,7 +115,7 @@ This document tracks critical architectural vulnerabilities and edge cases ident
 
 ---
 
-## 7. Sub-directory (Monorepo) Support
+- [x] 7. Sub-directory (Monorepo) Support
 **Problem:** Auto-detection fails if `package.json` or the `Dockerfile` is not in the repository root.
 
 ### 🛠️ Solution
@@ -133,7 +133,7 @@ This document tracks critical architectural vulnerabilities and edge cases ident
 
 ---
 
-## 8. Security: The Docker Socket Risk
+- [ ] 8. Security: The Docker Socket Risk
 **Problem:** Giving the worker access to `/var/run/docker.sock` allows a malicious user to potentially escape their container and take over the host.
 
 ### 🛠️ Solution
@@ -147,3 +147,21 @@ This document tracks critical architectural vulnerabilities and edge cases ident
 ### ✅ Validation
 - Attempt to run a privileged container from a user's `Dockerfile`.
 - Verify the deployment is blocked or fails due to permission restrictions.
+
+---
+
+- [ ] 9. API Race Conditions (The Double-Click Panics)
+**Problem:** High-frequency repeated requests (double-clicks) on state-changing buttons cause database deadlocks, unique constraint violations, or 500 errors.
+
+### 🛠️ Solution
+- **Server Side:** Implement `with_for_update()` locking on critical resource fetches.
+- **Server Side:** Wrap destructive commits in `try/except` blocks to handle concurrent deletions or unique constraint hits gracefully.
+- **Client Side:** Implement global button debouncing and loading state locks to prevent secondary triggers while a request is "In Flight".
+
+### 📦 Deliverables
+- Idempotency logic for `delete_app`, `share_app`, and `get_profile`.
+- Mutex-style locking for `trigger_deployment` to prevent multiple builds for the same app starting at the same time.
+
+### ✅ Validation
+- Double-click the "Delete" button rapidly. Verify one succeeds and the second returns a clean 404/409 instead of a crash.
+- Trigger "Deploy" 5 times in 1 second. Verify only 1 build sequence is initiated.

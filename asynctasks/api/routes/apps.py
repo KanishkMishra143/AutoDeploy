@@ -5,18 +5,53 @@ from pydantic import BaseModel
 from core.database import get_db
 from core.models import Application, Job, Log, AppAccess, Profile
 from core.schemas import AppCreate, AppResponse, AppListResponse, JobResponse, AppAccessCreate, AppAccessResponse
-from worker.tasks import process_job, cleanup_app
+from worker.tasks import process_job, cleanup_app, discover_port
 from uuid import UUID
 from core.auth import get_current_user
 from core.crypto import encrypt_dict, decrypt_dict
 
 import subprocess
+import shutil
+import tempfile
+import os
 
 router = APIRouter(
     prefix="/apps", 
     tags=["apps"],
     dependencies=[Depends(get_current_user)]
 )
+
+@router.get("/{app_id}/detect-port")
+def detect_app_port(app_id: UUID, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    app = db.query(Application).filter(Application.id == app_id).first()
+    if not app:
+        raise HTTPException(status_code=404, detail="Application not found")
+    
+    get_app_with_access(app_id, current_user["sub"], db)
+
+    temp_dir = tempfile.mkdtemp(prefix="port_detect_")
+    try:
+        from worker.tasks import clone_repository, discover_port
+        clone_repository(app.repo_url, temp_dir, branch=app.branch)
+        
+        # Handle monorepo root directory
+        effective_path = os.path.join(temp_dir, app.root_dir.lstrip("/")) if app.root_dir else temp_dir
+        
+        port, source = discover_port(effective_path)
+        
+        # --- TEMPLATE AWARE FALLBACK ---
+        # If no port discovered but using a template, use stack default
+        if not port:
+            if app.stack == "nodejs": port, source = 8000, "Node.js Template"
+            elif app.stack == "python": port, source = 8000, "Python Template"
+            elif app.stack == "static": port, source = 80, "Static Site Template"
+
+        return {"detected_port": port, "source": source}
+    except Exception as e:
+        # Include detailed error for frontend debugging
+        return {"detected_port": None, "source": None, "error": f"Repository Scan Failed: {str(e)}"}
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
 def get_app_with_access(app_id: UUID, user_id: str, db: Session, required_role: str = "VIEWER"):
     """
@@ -86,6 +121,9 @@ def create_app(app: AppCreate, db: Session = Depends(get_db), current_user: dict
         repo_url=app.repo_url,
         branch=app.branch,
         stack=app.stack,
+        internal_port=app.internal_port,
+        volumes=app.volumes or [],
+        root_dir=app.root_dir or ".",
         pre_build_steps=app.pre_build_steps or [],
         post_build_steps=app.post_build_steps or [],
         env_vars=encrypted_env
@@ -168,6 +206,9 @@ def deploy_app(app_id: UUID, trigger_reason: str = "Manual", db: Session = Depen
             "env": app.env_vars, # Keep encrypted in payload
             "app_name": app.name,
             "stack": app.stack,
+            "internal_port": app.internal_port,
+            "volumes": app.volumes,
+            "root_dir": app.root_dir,
             "pre_build_steps": app.pre_build_steps,
             "post_build_steps": app.post_build_steps
         }
@@ -203,8 +244,13 @@ def share_app(app_id: UUID, share_req: AppShareRequest, db: Session = Depends(ge
     if target_user_id == UUID(current_user["sub"]):
         raise HTTPException(status_code=400, detail="You cannot share an app with yourself")
 
-    # Check if already shared
-    existing = db.query(AppAccess).filter(AppAccess.app_id == app_id, AppAccess.user_id == target_user_id).first()
+    # Use with_for_update or simply handle IntegrityError if we add a unique constraint.
+    # For now, let's use a lock-based check to prevent duplicates.
+    existing = db.query(AppAccess).with_for_update().filter(
+        AppAccess.app_id == app_id, 
+        AppAccess.user_id == target_user_id
+    ).first()
+    
     if existing:
         existing.role = share_req.role
         db.commit()
@@ -217,8 +263,16 @@ def share_app(app_id: UUID, share_req: AppShareRequest, db: Session = Depends(ge
         role=share_req.role
     )
     db.add(new_access)
-    db.commit()
-    db.refresh(new_access)
+    try:
+        db.commit()
+        db.refresh(new_access)
+    except Exception:
+        db.rollback()
+        # Retry fetch if commit failed (likely due to concurrent insert)
+        existing = db.query(AppAccess).filter(AppAccess.app_id == app_id, AppAccess.user_id == target_user_id).first()
+        if existing: return existing
+        raise HTTPException(status_code=500, detail="Failed to share application")
+        
     return new_access
 
 @router.delete("/{app_id}/revoke/{user_id}")
@@ -252,7 +306,7 @@ def purge_apps(db: Session = Depends(get_db), current_user: dict = Depends(get_c
     for app in apps:
         job_ids = [str(job.id) for job in app.jobs]
         image_tags = [f"autodeploy-app:{jid[:8]}" for jid in job_ids]
-        cleanup_app.delay(app.name, image_tags)
+        cleanup_app.delay(app.name, image_tags, owner_id=str(user_uuid))
 
         job_uuid_list = [job.id for job in app.jobs]
         if job_uuid_list:
@@ -267,33 +321,40 @@ def purge_apps(db: Session = Depends(get_db), current_user: dict = Depends(get_c
 def delete_app(app_id: UUID, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     """Deletes an application and all its history with high-performance cleanup."""
     user_uuid = UUID(current_user["sub"])
-    # Only owner can delete the whole app
-    app = db.query(Application).filter(
+    
+    # Use with_for_update to lock the row and prevent race conditions
+    app = db.query(Application).with_for_update().filter(
         Application.id == app_id,
         Application.owner_id == user_uuid
     ).first()
     
     if not app:
-        raise HTTPException(status_code=404, detail="Application not found or you are not the owner")
+        # If the app is already deleted by a concurrent request, return 204 or 404
+        # Since the user wants to delete it, 204 No Content is also acceptable, 
+        # but 404 is standard for "resource doesn't exist".
+        raise HTTPException(status_code=404, detail="Application already deleted or you are not the owner")
     
-    # 1. Gather all job IDs for this app to clean up Docker images
+    # 1. Eagerly load job IDs to avoid lazy loading issues after deletion
     job_ids = [str(job.id) for job in app.jobs]
-    image_tags = [f"autodeploy-app:{jid[:8]}" for jid in job_ids]
+    app_name = app.name # Capture name before deletion
     
     # 2. Trigger background Docker cleanup (Container + Images)
-    cleanup_app.delay(app.name, image_tags)
+    image_tags = [f"autodeploy-app:{jid[:8]}" for jid in job_ids]
+    cleanup_app.delay(app_name, image_tags, owner_id=str(user_uuid))
     
     # 3. HIGH-PERFORMANCE DB DELETE
-    job_uuid_list = [job.id for job in app.jobs]
-    if job_uuid_list:
-        db.query(Log).filter(Log.job_id.in_(job_uuid_list)).delete(synchronize_session=False)
+    # We delete everything manually using bulk deletes for speed.
+    if job_ids:
+        db.query(Log).filter(Log.job_id.in_(job_ids)).delete(synchronize_session=False)
         db.query(Job).filter(Job.app_id == app_id).delete(synchronize_session=False)
     
-    # 4. Final App deletion
-    db.delete(app)
+    db.query(AppAccess).filter(AppAccess.app_id == app_id).delete(synchronize_session=False)
+    
+    # 4. Final App deletion (Bulk)
+    db.query(Application).filter(Application.id == app_id).delete(synchronize_session=False)
     db.commit()
     
-    return {"message": f"Application '{app.name}' and all associated history scheduled for deletion."}
+    return {"message": f"Application '{app_name}' and all associated history successfully deleted."}
 
 @router.patch("/{app_id}", response_model=AppResponse)
 def update_app(app_id: UUID, payload: dict, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
@@ -301,6 +362,13 @@ def update_app(app_id: UUID, payload: dict, db: Session = Depends(get_db), curre
     # Updating requires at least ADMIN role
     app = get_app_with_access(app_id, current_user["sub"], db, required_role="ADMIN")
 
+    if "name" in payload:
+        # Check for collision if name is changing
+        if payload["name"] != app.name:
+            existing = db.query(Application).filter(Application.name == payload["name"]).first()
+            if existing:
+                raise HTTPException(status_code=400, detail="App name already taken.")
+        app.name = payload["name"]
     if "env_vars" in payload:
         app.env_vars = encrypt_dict(payload["env_vars"])
     if "pre_build_steps" in payload:
@@ -309,6 +377,12 @@ def update_app(app_id: UUID, payload: dict, db: Session = Depends(get_db), curre
         app.post_build_steps = payload["post_build_steps"]
     if "branch" in payload:
         app.branch = payload["branch"]
+    if "internal_port" in payload:
+        app.internal_port = payload["internal_port"]
+    if "volumes" in payload:
+        app.volumes = payload["volumes"]
+    if "root_dir" in payload:
+        app.root_dir = payload["root_dir"]
     
     db.commit()
     db.refresh(app)

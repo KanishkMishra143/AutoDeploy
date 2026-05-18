@@ -94,22 +94,25 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
-EXPOSE 8000
+ENV PORT {port}
+EXPOSE {port}
 CMD ["python", "main.py"]
 """,
     "nodejs":"""
-FROM node:20-slim
+FROM node:18-slim
 WORKDIR /app
 COPY package*.json ./
-RUN npm install
+RUN npm install --production
 COPY . .
-EXPOSE 8000
-CMD ["npm", "start"]    
+ENV PORT {port}
+EXPOSE {port}
+CMD ["npm", "start"]
 """,
     "static": """
 FROM nginx:alpine
 COPY . /usr/share/nginx/html
-EXPOSE 80    
+RUN printf "server { listen %s; location / { root /usr/share/nginx/html; index index.html; } }" {port} > /etc/nginx/conf.d/default.conf
+EXPOSE {port}
 """
 }
 
@@ -165,6 +168,19 @@ def run_command(db, job_id, command, cwd=None, owner_id=None):
 
     for line in iter(process.stdout.readline, ""):
         if line:
+            # --- CANCELLATION CHECK ---
+            if redis_client.get(f"cancel:{job_id}"):
+                process.terminate()
+                save_log(db, job_id, " ", owner_id=owner_id)
+                save_log(db, job_id, "🛑 CANCELLATION SIGNAL RECEIVED. Terminating process...", owner_id=owner_id)
+                save_log(db, job_id, "🧹 Re-rolling state and cleaning up ghosts...", owner_id=owner_id)
+                # Ensure the status is updated to stopped
+                job = db.query(Job).filter(Job.id == job_id).first()
+                if job:
+                    job.status = "stopped"
+                    db.commit()
+                raise RuntimeError("Job cancelled by user")
+
             save_log(db, job_id, line.strip(), owner_id=owner_id, buffer=log_buffer)
             
             # 🕒 Periodical Flush (Every 5 seconds) to reduce DB latency
@@ -205,17 +221,20 @@ def run_command(db, job_id, command, cwd=None, owner_id=None):
     if return_code != 0:
         raise subprocess.CalledProcessError(return_code, command)
 
-def run_container(db, job_id, image_tag, env_vars=None, app_name=None, internal_port=8000, owner_id=None):
+def run_container(db, job_id, image_tag, env_vars=None, app_name=None, internal_port=8000, owner_id=None, volumes=None):
     """Starts a Docker container with Hardened Resource Quotas and Traefik labels."""
     from core.secrets_engine import resolver as secret_resolver
     
     if app_name:
         clean_name = "".join(e for e in app_name.lower() if e.isalnum() or e == "-")
-        container_name = f"autodeploy_{clean_name}"
+        user_suffix = str(owner_id)[:8] if owner_id else "local"
+        container_name = f"ad-{clean_name}-{user_suffix}"
+        hostname = f"{clean_name}-{user_suffix}.localhost"
     else:
-        container_name = f"autodeploy_{str(job_id)[:8]}"
+        clean_name = "unknown"
+        container_name = f"ad-{str(job_id)[:8]}"
+        hostname = f"{container_name}.localhost"
         
-    hostname = f"{container_name}.localhost"
     network_name = "autodeploy-net"
     
     resource_flags = ["--memory", "512m", "--cpus", "0.5"]
@@ -233,6 +252,34 @@ def run_container(db, job_id, image_tag, env_vars=None, app_name=None, internal_
             env_flags.extend(["-e", f"{key}={value}"])
         save_log(db, job_id, f"🔑 Injected {len(resolved_env_vars)} environment variables.", owner_id=owner_id)
 
+    volume_flags = []
+    if volumes:
+        # Base directory for persistent volumes on the host
+        vol_root = os.path.expanduser("~/.autodeploy/volumes")
+        app_vol_dir = os.path.join(vol_root, clean_name)
+        
+        for vol in volumes:
+            if ":" not in vol:
+                save_log(db, job_id, f"⚠️ Invalid volume format: {vol}. Expected host_path:container_path", owner_id=owner_id)
+                continue
+                
+            host_path, container_path = vol.split(":", 1)
+            
+            # Handle relative host paths (e.g. ./data or data)
+            if not host_path.startswith("/"):
+                # Clean up relative path if it starts with ./
+                rel_path = host_path[2:] if host_path.startswith("./") else host_path
+                host_path = os.path.abspath(os.path.join(app_vol_dir, rel_path))
+                
+            # Ensure host path directory exists
+            try:
+                os.makedirs(os.path.dirname(host_path), exist_ok=True)
+            except Exception as e:
+                save_log(db, job_id, f"⚠️ Failed to create host directory for volume {host_path}: {str(e)}", owner_id=owner_id)
+            
+            volume_flags.extend(["-v", f"{host_path}:{container_path}"])
+            save_log(db, job_id, f"📦 Mounted volume: {host_path} -> {container_path}", owner_id=owner_id)
+
     # Pre-emptive cleanup of existing container with the same name
     save_log(db, job_id, f"🧹 Cleaning up any existing container named {container_name}...", owner_id=owner_id)
     subprocess.run(["docker", "rm", "-f", container_name], capture_output=True)
@@ -242,7 +289,7 @@ def run_container(db, job_id, image_tag, env_vars=None, app_name=None, internal_
         "--name", container_name, 
         "--network", network_name,
         "--restart", "unless-stopped"
-    ] + resource_flags + labels + env_flags + ["-p", f"0:{internal_port}", image_tag]
+    ] + resource_flags + labels + env_flags + volume_flags + ["-p", f"0:{internal_port}", image_tag]
 
     try:
         result = subprocess.run(command, capture_output=True, text=True, check=True)
@@ -285,6 +332,146 @@ def update_job_progress(db, job_id, message, progress=None):
         current_result = job.result or {}
         job.result = {**current_result, "progress_msg": message, "progress_pct": progress}
         db.commit()
+
+# --- CONFIG AUTODISCOVERY ---
+
+def reconcile_port_in_dockerfile(dockerfile_path, port, db, job_id, owner_id):
+    """
+    Surgically modifies a Dockerfile to match the overridden internal_port.
+    Handles both shell-style and JSON-style (exec) commands.
+    """
+    try:
+        with open(dockerfile_path, "r") as f:
+            lines = f.readlines()
+        
+        new_lines = []
+        modified = False
+        
+        # We'll inject the ENV before the first CMD/ENTRYPOINT or at the end
+        injection_index = -1
+        
+        for i, line in enumerate(lines):
+            line_upper = line.strip().upper()
+            
+            # 1. Update EXPOSE (Handle EXPOSE 8000 or EXPOSE 8000/tcp)
+            if line_upper.startswith("EXPOSE"):
+                new_line = re.sub(r"\d+", str(port), line)
+                if new_line != line:
+                    new_lines.append(new_line)
+                    modified = True
+                    continue
+            
+            # 2. Update --port in CMD/ENTRYPOINT (Robust regex for JSON and shell)
+            # Matches: --port 8000, --port=8000, "--port", "8000", '--port', '8000'
+            if line_upper.startswith("CMD") or line_upper.startswith("ENTRYPOINT"):
+                if injection_index == -1: injection_index = len(new_lines)
+
+                # Complex regex to handle quotes and commas in JSON arrays
+                new_line = re.sub(r'(--port["\s,=]+)(\d+)', f"\\g<1>{port}", line)
+                if new_line != line:
+                    new_lines.append(new_line)
+                    modified = True
+                    continue
+            
+            new_lines.append(line)
+        
+        # 3. Inject ENV PORT (Try to put it before CMD, otherwise at the end)
+        env_line = f"\n# Auto-injected by AutoDeploy Swift-Resolution\nENV PORT {port}\n"
+        if injection_index != -1:
+            new_lines.insert(injection_index, env_line)
+        else:
+            new_lines.append(env_line)
+        
+        # Always write if we reached here to ensure the ENV is present
+        with open(dockerfile_path, "w") as f:
+            f.writelines(new_lines)
+        
+        if modified:
+            save_log(db, job_id, f"⚡ SWIFT-RESOLUTION: Patched Dockerfile to use port {port}.", owner_id=owner_id)
+            
+    except Exception as e:
+        save_log(db, job_id, f"⚠️ SWIFT-RESOLUTION failed: {str(e)}", owner_id=owner_id)
+
+def reconcile_port_in_yml(yml_path, port, db, job_id, owner_id):
+    """Surgically modifies autodeploy.yml to match the overridden internal_port."""
+    if not os.path.exists(yml_path): return
+    try:
+        import yaml
+        with open(yml_path, "r") as f:
+            data = yaml.safe_load(f) or {}
+        
+        if data.get("internal_port") != port:
+            data["internal_port"] = port
+            with open(yml_path, "w") as f:
+                yaml.dump(data, f)
+            save_log(db, job_id, f"⚡ SWIFT-RESOLUTION: Updated autodeploy.yml to use port {port}.", owner_id=owner_id)
+    except Exception as e:
+        save_log(db, job_id, f"⚠️ SWIFT-RESOLUTION (YAML) failed: {str(e)}", owner_id=owner_id)
+
+def discover_config(workspace_dir: str):
+    """
+    Scans the repository for configuration (port, volumes, etc.).
+    Priority: autodeploy.yml > Dockerfile > None
+    """
+    config = {
+        "internal_port": None,
+        "volumes": [],
+        "source": None,
+        "warning": None
+    }
+    
+    yml_port = None
+    docker_port = None
+    
+    # 1. Check autodeploy.yml
+    yml_path = os.path.join(workspace_dir, "autodeploy.yml")
+    if os.path.exists(yml_path):
+        try:
+            import yaml
+            with open(yml_path, "r") as f:
+                yml_data = yaml.safe_load(f)
+                if yml_data:
+                    yml_port = yml_data.get("internal_port")
+                    config["volumes"] = yml_data.get("volumes", [])
+        except Exception as e:
+            print(f"Error parsing autodeploy.yml: {e}")
+
+    # 2. Check Dockerfile (only for port)
+    docker_path = os.path.join(workspace_dir, "Dockerfile")
+    if os.path.exists(docker_path):
+        try:
+            with open(docker_path, "r") as f:
+                content = f.read()
+                # Look for EXPOSE XXXX
+                expose_match = re.search(r"EXPOSE\s+(\d+)", content, re.IGNORECASE)
+                if expose_match:
+                    docker_port = int(expose_match.group(1))
+                else:
+                    # Look for --port XXXX in CMD/ENTRYPOINT
+                    port_match = re.search(r"--port[\s=](\d+)", content, re.IGNORECASE)
+                    if port_match:
+                        docker_port = int(port_match.group(1))
+        except:
+            pass
+
+    # 3. Resolve Priority & detect mismatches
+    if yml_port and docker_port and yml_port != docker_port:
+        config["internal_port"] = yml_port
+        config["source"] = "autodeploy.yml (Override)"
+        config["warning"] = f"⚠️ Port Conflict: autodeploy.yml specifies {yml_port} but Dockerfile indicates {docker_port}. Using autodeploy.yml."
+    elif yml_port:
+        config["internal_port"] = yml_port
+        config["source"] = "autodeploy.yml"
+    elif docker_port:
+        config["internal_port"] = docker_port
+        config["source"] = "Dockerfile"
+
+    return config
+
+def discover_port(workspace_dir: str):
+    """Legacy wrapper for discover_config().internal_port"""
+    config = discover_config(workspace_dir)
+    return config["internal_port"], config["source"]
 
 # --- ATOMIC PIPELINE TASKS ---
 
@@ -357,26 +544,76 @@ def pipeline_build(prev_result: dict):
     with session_scope() as db:
         job = db.query(Job).filter(Job.id == job_id).first()
         stack = job.payload.get("stack", "dockerfile")
+        root_dir = job.payload.get("root_dir", ".")
         
-        dockerfile_path = os.path.join(workspace_dir, "Dockerfile")
+        # Calculate effective workspace dir for monorepos
+        effective_workspace = os.path.abspath(os.path.join(workspace_dir, root_dir))
+        save_log(db, job_id, f"📂 Effective workspace: {root_dir}", owner_id=owner_id)
+        
+        dockerfile_path = os.path.join(effective_workspace, "Dockerfile")
         
         # Template Injection
         if not os.path.exists(dockerfile_path):
             if stack == "dockerfile":
-                if os.path.exists(os.path.join(workspace_dir, "package.json")): stack = "nodejs"
-                elif os.path.exists(os.path.join(workspace_dir, "requirements.txt")): stack = "python"
-                elif os.path.exists(os.path.join(workspace_dir, "index.html")): stack = "static"
+                if os.path.exists(os.path.join(effective_workspace, "package.json")): stack = "nodejs"
+                elif os.path.exists(os.path.join(effective_workspace, "requirements.txt")): stack = "python"
+                elif os.path.exists(os.path.join(effective_workspace, "index.html")): stack = "static"
             
             if stack in STACK_TEMPLATES:
                 save_log(db, job_id, f"💡 Injecting {stack} template...", owner_id=owner_id)
+                
+                # Dynamic port injection for templates
+                internal_port = job.payload.get("internal_port", 8000)
+                template_content = STACK_TEMPLATES[stack].strip()
+                if "{port}" in template_content:
+                    template_content = template_content.format(port=internal_port)
+                
                 with open(dockerfile_path, "w") as f:
-                    f.write(STACK_TEMPLATES[stack].strip())
+                    f.write(template_content)
 
         update_job_progress(db, job_id, "Building Image", 60)
-        image_tag = f"autodeploy-app:{str(job_id)[:8]}"
         
+        # New Tagging Convention: ad-{clean_app_name}:{job_id_short}
+        app_name = job.payload.get("app_name", "unknown")
+        clean_name = "".join(e for e in app_name.lower() if e.isalnum() or e == "-")
+        image_tag = f"ad-{clean_name}:{str(job_id)[:8]}"
+        
+        # --- CONFIG AUTODISCOVERY ---
+        config = discover_config(effective_workspace)
+        payload_updates = {}
+        
+        dashboard_port = job.payload.get("internal_port")
+        discovered_port = config["internal_port"]
+
+        if config["warning"]:
+            save_log(db, job_id, config["warning"], owner_id=owner_id)
+        
+        # --- SWIFT-RESOLUTION: Respect Dashboard Choice & Patch Repo ---
+        if discovered_port and dashboard_port and discovered_port != dashboard_port:
+            save_log(db, job_id, f"⚡ User override detected: Enforcing port {dashboard_port} (Dashboard) over {discovered_port} ({config['source']}).", owner_id=owner_id)
+            reconcile_port_in_dockerfile(dockerfile_path, dashboard_port, db, job_id, owner_id)
+            reconcile_port_in_yml(os.path.join(effective_workspace, "autodeploy.yml"), dashboard_port, db, job_id, owner_id)
+            # We keep internal_port as dashboard_port
+        elif discovered_port:
+            save_log(db, job_id, f"🔍 Autodiscovered port {discovered_port} from {config['source']}.", owner_id=owner_id)
+            payload_updates["internal_port"] = discovered_port
+            
+        if config["volumes"]:
+            save_log(db, job_id, f"📦 Found {len(config['volumes'])} volume mappings in autodeploy.yml.", owner_id=owner_id)
+            payload_updates["volumes"] = config["volumes"]
+            
+        if payload_updates:
+            job.payload = {**job.payload, **payload_updates}
+            # Sync with Application record
+            app_id = job.app_id
+            if app_id:
+                from core.models import Application
+                db.query(Application).filter(Application.id == app_id).update(payload_updates)
+            db.commit()
+
         try:
-            run_command(db, job_id, ["docker", "build", "-t", image_tag, "."], cwd=workspace_dir, owner_id=owner_id)
+            # Important: We build with context as effective_workspace
+            run_command(db, job_id, ["docker", "build", "-t", image_tag, "."], cwd=effective_workspace, owner_id=owner_id)
             save_log(db, job_id, "✅ Build successful.", owner_id=owner_id)
             return {**prev_result, "image_tag": image_tag, "stack": stack}
         except Exception as e:
@@ -399,17 +636,22 @@ def pipeline_deploy(prev_result: dict):
         decrypted_env = decrypt_dict(encrypted_env)
         
         app_name = job.payload.get("app_name")
-        internal_port = 80 if stack == "static" else 8000
+        internal_port = job.payload.get("internal_port")
+        if not internal_port:
+            internal_port = 80 if stack == "static" else 8000
+            
+        volumes = job.payload.get("volumes", [])
         
         update_job_progress(db, job_id, "Deploying", 90)
         
-        # We pass decrypted_env here!
+        # We pass decrypted_env and volumes here!
         deploy_info = run_container(
             db, job_id, image_tag, 
             env_vars=decrypted_env, 
             app_name=app_name, 
             internal_port=internal_port,
-            owner_id=owner_id
+            owner_id=owner_id,
+            volumes=volumes
         )
         
         save_log(db, job_id, "✅ Deployment live with secure secrets.", owner_id=owner_id)
@@ -450,6 +692,11 @@ def pipeline_error_handler(request, exc, traceback, job_id):
     with session_scope() as db:
         job = db.query(Job).filter(Job.id == job_id).first()
         if job:
+            # If the job was already marked as stopped, don't overwrite with 'failed'
+            if job.status == "stopped":
+                save_log(db, job_id, f"🛑 Pipeline sequence halted. Cleanup complete.")
+                return "Handled (Cancelled)"
+                
             job.status = "failed"
             job.result = {
                 "error": str(exc), 
@@ -548,27 +795,45 @@ def worker_heartbeat():
         
 @app.task(name="worker.tasks.stop_job")
 def stop_job(job_id: str):
-    """Kills a running container and removes its associated Docker image."""
-    container_name = f"autodeploy_{str(job_id)[:8]}"
-    image_tag = f"autodeploy-app:{str(job_id)[:8]}"
-    
+    """Kills a running container, removes its associated Docker image, and cleans up workspace."""
     with session_scope() as db:
         job = db.query(Job).filter(Job.id == job_id).first()
         if not job:
             return "Job not found"
 
+        app_name = job.payload.get("app_name")
+        owner_id = job.owner_id
+        
+        if app_name:
+            clean_name = "".join(e for e in app_name.lower() if e.isalnum() or e == "-")
+            user_suffix = str(owner_id)[:8] if owner_id else "local"
+            container_name = f"ad-{clean_name}-{user_suffix}"
+        else:
+            container_name = f"ad-{str(job_id)[:8]}"
+
+        image_tag = f"ad-{clean_name}:{str(job_id)[:8]}"
+
+        # 1. Cleanup Docker
         subprocess.run(["docker", "rm", "-f", container_name], capture_output=True)
         subprocess.run(["docker", "rmi", image_tag], capture_output=True)
         
+        # 2. Cleanup Workspace (Search for temp dirs)
+        tmp_dir = tempfile.gettempdir()
+        for d in os.listdir(tmp_dir):
+            if d.startswith(f"build_{job_id}_"):
+                save_log(db, job_id, f"🧹 Cleaning up ghost workspace: {d}", owner_id=owner_id)
+                shutil.rmtree(os.path.join(tmp_dir, d), ignore_errors=True)
+
         job.status = "stopped"
         db.commit()
         return "Stopped"
 
 @app.task(name="worker.tasks.cleanup_app")
-def cleanup_app(app_name: str, image_tags: list):
+def cleanup_app(app_name: str, image_tags: list, owner_id: str = None):
     """Background task to remove all Docker resources for an application."""
     clean_name = "".join(e for e in app_name.lower() if e.isalnum() or e == "-")
-    container_name = f"autodeploy_{clean_name}"
+    user_suffix = str(owner_id)[:8] if owner_id else "local"
+    container_name = f"ad-{clean_name}-{user_suffix}"
     
     # 1. Stop and remove the container
     subprocess.run(["docker", "rm", "-f", container_name], capture_output=True)

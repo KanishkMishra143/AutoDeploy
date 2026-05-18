@@ -17,6 +17,7 @@ from rich.table import Table
 from rich.progress_bar import ProgressBar
 from rich.align import Align
 from rich.padding import Padding
+from rich.prompt import Confirm
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from . import config
@@ -34,6 +35,7 @@ class LogStreamer:
         self.job_id = job_id
         self.app_name = app_name
         self.logs = []
+        self.seen_log_hashes = set() # To prevent duplicates on reconnect
         self.status = "RUNNING"
         self.progress = 0
         self.url = None
@@ -162,8 +164,15 @@ async def stream_logs(streamer):
                 while not streamer._stop_event.is_set():
                     message = await asyncio.wait_for(websocket.recv(), timeout=0.5)
                     data = json.loads(message)
-                    if isinstance(data, list): streamer.logs.extend(data)
-                    else: streamer.logs.append(data)
+                    
+                    logs_to_add = data if isinstance(data, list) else [data]
+                    for log in logs_to_add:
+                        # Create a unique signature for the log to prevent duplicates on reconnect
+                        # We use message + timestamp. If both are identical, it's likely a duplicate.
+                        log_sig = (log.get("message"), log.get("created_at"))
+                        if log_sig not in streamer.seen_log_hashes:
+                            streamer.logs.append(log)
+                            streamer.seen_log_hashes.add(log_sig)
         except (asyncio.TimeoutError, websockets.ConnectionClosed) as e:
             logging.warning(f"WS Connection closed/timeout: {e}")
             streamer.ws_status = "DISCONNECTED"
@@ -250,7 +259,7 @@ async def run_logs(job_id: Optional[str] = None):
     streamer = LogStreamer(job_id, app_name)
     
     console.print(f"[bold blue]STREAMING LOGS:[/bold blue] [cyan]{app_name}[/cyan] ([dim]{job_id}[/dim])")
-    console.print("[dim]Press 'q' to stop logs (job continues) or Ctrl+C to exit.[/dim]\n")
+    console.print("[dim]Press 'q' to stop logs (job continues) or Ctrl+C to exit/cancel.[/dim]\n")
 
     tasks = [
         asyncio.create_task(stream_logs(streamer)),
@@ -288,9 +297,27 @@ async def run_logs(job_id: Optional[str] = None):
                 
             await asyncio.sleep(0.2)
     except KeyboardInterrupt:
-        console.print("\n[yellow]Deployment monitor stopped.[/yellow]")
-    finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        if streamer.status == "RUNNING":
+            console.print("\n\n[bold red]CTRL+C DETECTED.[/bold red]")
+            if Confirm.ask("Do you want to [bold red]CANCEL[/] the deployment and cleanup resources?"):
+                headers = {"Authorization": f"Bearer {streamer.api_key}"}
+                try:
+                    res = requests.delete(f"{streamer.api_base}/jobs/{streamer.job_id}", headers=headers, timeout=5)
+                    if res.ok:
+                        console.print("[green]Cancellation signal sent. Orchestrator is rolling back state and purging ghosts...[/green]")
+                    else:
+                        console.print(f"[red]Failed to send cancellation signal: {res.text}[/red]")
+                except Exception as e:
+                    console.print(f"[red]Error while cancelling: {e}[/red]")
+            else:
+                console.print("[yellow]Deployment monitor stopped. Deployment continues in background.[/yellow]")
+        else:
+            console.print("\n[yellow]Deployment monitor stopped.[/yellow]")
+    finally:
+        try:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        except: pass
         for t in tasks: t.cancel()
 
     # Final Summary

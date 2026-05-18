@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { X, Plus, Trash2, Rocket, Globe, Tag, GitBranch, Layers, Terminal, Settings2, Upload } from "lucide-react";
 import toast from "react-hot-toast";
 import { supabase } from "../../lib/supabase";
+import PortCollisionModal from "./PortCollisionModal";
 
 type TabType = "general" | "env" | "pipeline";
 
@@ -11,7 +12,9 @@ export default function DeployModal({ onClose }: { onClose: (jobId?: string) => 
   const [name, setName] = useState("");
   const [repo, setRepo] = useState("");
   const [branch, setBranch] = useState("master");
+  const [rootDir, setRootDir] = useState(".");
   const [stack, setStack] = useState("dockerfile");
+  const [internalPort, setInternalPort] = useState(8000);
   const [availableBranches, setAvailableBranches] = useState<string[]>([]);
   const [fetchingBranches, setFetchingBranches] = useState(false);
   const [envVars, setEnvVars] = useState<{ key: string; value: string }[]>([
@@ -19,8 +22,12 @@ export default function DeployModal({ onClose }: { onClose: (jobId?: string) => 
   ]);
   const [preBuildSteps, setPreBuildSteps] = useState<string[]>([]);
   const [postBuildSteps, setPostBuildSteps] = useState<string[]>([]);
+  const [volumes, setVolumes] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [createdAppId, setCreatedAppId] = useState<string | null>(null);
+  const [portCollision, setPortCollision] = useState<{isOpen: boolean, detectedPort?: number, source?: string}>({ isOpen: false });
 
   // Fetch branches when repo URL changes
   useEffect(() => {
@@ -122,7 +129,8 @@ export default function DeployModal({ onClose }: { onClose: (jobId?: string) => 
     else setPostBuildSteps(postBuildSteps.filter((_, i) => i !== index));
   };
 
-  const handleDeploy = async () => {
+  const handleDeploy = async (overridePort?: number) => {
+    const isOverride = typeof overridePort === 'number';
     setLoading(true);
     const envObj = envVars.reduce((acc, curr) => {
       if (curr.key) acc[curr.key] = curr.value;
@@ -131,32 +139,84 @@ export default function DeployModal({ onClose }: { onClose: (jobId?: string) => 
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const appRes = await fetch("http://127.0.0.1:8000/apps", {
-        method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${session?.access_token}`,
-        },
-        body: JSON.stringify({
-          name: name,
-          repo_url: repo,
-          branch: branch,
-          stack: stack,
-          env_vars: envObj,
-          pre_build_steps: preBuildSteps.filter(s => s.trim()),
-          post_build_steps: postBuildSteps.filter(s => s.trim())
-        }),
-      });
+      
+      let appId = createdAppId;
 
-      if (!appRes.ok) {
-        const err = await appRes.json();
-        toast.error(err.detail || "Failed to create application");
-        setLoading(false);
-        return;
+      // 1. Create app if it doesn't exist yet
+      if (!appId) {
+        const appRes = await fetch("http://127.0.0.1:8000/apps", {
+          method: "POST",
+          headers: { 
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${session?.access_token}`,
+          },
+          body: JSON.stringify({
+            name: name,
+            repo_url: repo,
+            branch: branch,
+            stack: stack,
+            internal_port: internalPort,
+            root_dir: rootDir,
+            volumes: volumes.filter(v => v.trim()),
+            env_vars: envObj,
+            pre_build_steps: preBuildSteps.filter(s => s.trim()),
+            post_build_steps: postBuildSteps.filter(s => s.trim())
+          }),
+        });
+
+        if (!appRes.ok) {
+          const err = await appRes.json();
+          toast.error(err.detail || "Failed to create application");
+          setLoading(false);
+          return;
+        }
+
+        const appData = await appRes.json();
+        appId = appData.id;
+        setCreatedAppId(appId as string);
       }
 
-      const appData = await appRes.json();
-      const deployRes = await fetch(`http://127.0.0.1:8000/apps/${appData.id}/deploy?trigger_reason=Manual:Canvas`, {
+      // 2. If no override port, check for collision first
+      if (!isOverride && appId) {
+        const tId = toast.loading("Analyzing repository configuration...");
+        const detectRes = await fetch(`http://127.0.0.1:8000/apps/${appId}/detect-port`, {
+          headers: { "Authorization": `Bearer ${session?.access_token}` }
+        });
+        
+        if (detectRes.ok) {
+          const { detected_port, source, error } = await detectRes.json();
+          toast.dismiss(tId);
+
+          if (error) {
+            toast.error(error);
+          } else if (detected_port && detected_port !== internalPort) {
+            setLoading(false);
+            setPortCollision({ isOpen: true, detectedPort: detected_port, source: source });
+            return;
+          } else {
+            toast.success("No configuration conflicts detected.", { duration: 1000 });
+          }
+        } else {
+          toast.dismiss(tId);
+          toast.error("Failed to connect to orchestrator scanner.");
+        }
+      }
+
+      // 3. If an override port was chosen, update the app first
+      if (isOverride && appId) {
+        await fetch(`http://127.0.0.1:8000/apps/${appId}`, {
+          method: "PATCH",
+          headers: {
+            "Authorization": `Bearer ${session?.access_token}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ internal_port: overridePort })
+        });
+        setInternalPort(overridePort);
+      }
+
+      // 4. Trigger actual deployment
+      const deployRes = await fetch(`http://127.0.0.1:8000/apps/${appId}/deploy?trigger_reason=Manual:Canvas`, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${session?.access_token}`,
@@ -296,7 +356,11 @@ export default function DeployModal({ onClose }: { onClose: (jobId?: string) => 
                      <select 
                        className="w-full bg-background border border-card-border rounded-2xl py-4 pl-12 pr-6 text-sm focus:border-accent outline-none transition-all text-white appearance-none font-bold"
                        value={stack}
-                       onChange={(e) => setStack(e.target.value)}
+                       onChange={(e) => {
+                          setStack(e.target.value);
+                          if (e.target.value === 'static') setInternalPort(80);
+                          else setInternalPort(8000);
+                       }}
                      >
                        <option value="dockerfile">NATIVE DOCKERFILE</option>
                        <option value="python">PYTHON ENVIRONMENT</option>
@@ -306,6 +370,38 @@ export default function DeployModal({ onClose }: { onClose: (jobId?: string) => 
                    </div>
                  </div>
                </div>
+
+               <div className="grid grid-cols-2 gap-6">
+                 <div>
+                   <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-3">Root Directory</label>
+                   <div className="relative group">
+                     <Layers className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600 group-focus-within:text-accent transition-colors" />
+                     <input 
+                       type="text" 
+                       placeholder="E.G. ./apps/api"
+                       className="w-full bg-background border border-card-border rounded-2xl py-4 pl-12 pr-6 text-sm focus:border-accent outline-none transition-all text-white placeholder:text-gray-700 font-bold"
+                       value={rootDir}
+                       onChange={(e) => setRootDir(e.target.value)}
+                     />
+                   </div>
+                 </div>
+                 <div>
+                   <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-3">Internal Port</label>
+                   <div className="relative group">
+                     <Terminal className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600 group-focus-within:text-accent transition-colors" />
+                     <input 
+                       type="number" 
+                       placeholder="Defaults to 8000"
+                       className="w-full bg-background border border-card-border rounded-2xl py-4 pl-12 pr-6 text-sm focus:border-accent outline-none transition-all text-white placeholder:text-gray-700 font-bold"
+                       value={internalPort || ''}
+                       onChange={(e) => setInternalPort(parseInt(e.target.value) || 0)}
+                     />
+                   </div>
+                 </div>
+               </div>
+               <p className="mt-[-24px] text-[9px] text-gray-600 font-bold uppercase tracking-widest leading-relaxed">
+                 Use Root Directory for monorepos. Port detection will scan this folder for Dockerfile or autodeploy.yml.
+               </p>
             </div>
           )}
 
@@ -422,35 +518,44 @@ export default function DeployModal({ onClose }: { onClose: (jobId?: string) => 
 
                <div className="h-px bg-card-border" />
 
-               {/* Post-Build Section */}
+               {/* Volumes Section */}
                <div className="space-y-4">
                   <div className="flex justify-between items-center">
                     <div>
-                       <h4 className="text-sm font-bold text-white uppercase tracking-tight">Post-Build Steps</h4>
-                       <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Executed after image build, before deploy</p>
+                       <h4 className="text-sm font-bold text-white uppercase tracking-tight">Persistent Volumes</h4>
+                       <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Map host storage to container paths</p>
                     </div>
-                    <button onClick={() => addStep("post")} className="px-4 py-2 bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 border border-white/5">
-                      <Plus className="w-3.5 h-3.5" /> Add Step
+                    <button onClick={() => setVolumes([...volumes, ""])} className="px-4 py-2 bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 border border-white/5">
+                      <Plus className="w-3.5 h-3.5" /> Add Volume
                     </button>
                   </div>
                   
                   <div className="space-y-2">
-                    {postBuildSteps.map((step, i) => (
+                    {volumes.map((vol, i) => (
                       <div key={i} className="flex gap-2">
                         <div className="flex-1 bg-background/50 border border-card-border rounded-xl px-4 py-3 flex items-center group focus-within:border-accent transition-all">
-                           <Terminal className="w-3.5 h-3.5 text-gray-600 mr-3" />
+                           <Layers className="w-3.5 h-3.5 text-gray-600 mr-3" />
                            <input 
-                             placeholder="e.g. python migrate.py"
+                             placeholder="e.g. ./data:/app/data"
                              className="w-full bg-transparent text-xs font-mono outline-none text-white placeholder:text-gray-800"
-                             value={step}
-                             onChange={(e) => updateStep("post", i, e.target.value)}
+                             value={vol}
+                             onChange={(e) => {
+                                const updated = [...volumes];
+                                updated[i] = e.target.value;
+                                setVolumes(updated);
+                             }}
                            />
                         </div>
-                        <button onClick={() => removeStep("post", i)} className="p-3 text-gray-600 hover:text-red-500 transition-all">
+                        <button onClick={() => setVolumes(volumes.filter((_, idx) => idx !== i))} className="p-3 text-gray-600 hover:text-red-500 transition-all">
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
                     ))}
+                    {volumes.length === 0 && (
+                      <p className="text-[9px] text-gray-600 font-bold uppercase tracking-widest text-center py-4 border border-dashed border-card-border rounded-2xl">
+                        No volumes configured. Containers will be ephemeral.
+                      </p>
+                    )}
                   </div>
                </div>
             </div>
@@ -461,7 +566,7 @@ export default function DeployModal({ onClose }: { onClose: (jobId?: string) => 
         <div className="p-8 bg-background border-t border-card-border flex flex-col gap-4">
            <button 
              disabled={loading || !repo || !name || fetchingBranches}
-             onClick={handleDeploy}
+             onClick={() => handleDeploy()}
              className="w-full bg-accent hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed text-white font-black py-5 rounded-2xl transition-all shadow-xl shadow-accent/20 flex items-center justify-center gap-3 uppercase tracking-[0.2em] text-sm group"
            >
              {loading ? <div className="flex items-center gap-3 animate-pulse">Initializing Engine...</div> : 
@@ -473,6 +578,17 @@ export default function DeployModal({ onClose }: { onClose: (jobId?: string) => 
            <p className="text-[9px] text-gray-600 font-bold uppercase tracking-[0.3em] text-center">AutoDeploy Distributed Orchestrator v1.5</p>
         </div>
       </div>
+      <PortCollisionModal
+        isOpen={portCollision.isOpen}
+        onClose={() => setPortCollision(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={(port) => {
+          setPortCollision(prev => ({ ...prev, isOpen: false }));
+          handleDeploy(port);
+        }}
+        detectedPort={portCollision.detectedPort}
+        source={portCollision.source}
+        currentPort={internalPort}
+      />
     </div>
   );
 }

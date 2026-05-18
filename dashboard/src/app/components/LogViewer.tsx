@@ -1,8 +1,10 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
-import { X, ExternalLink, Globe, AlertCircle, Loader2, Activity, ArrowDown, Terminal } from "lucide-react";
+import { X, ExternalLink, Globe, AlertCircle, Loader2, Activity, ArrowDown, Terminal, Trash2 } from "lucide-react";
 import { Job } from "../useJobs";
 import { supabase } from "../../lib/supabase";
+import { toast } from "react-hot-toast";
+import ConfirmationModal from "./ConfirmationModal";
 
 export default function LogViewer({ jobId, onClose }: { jobId: string; onClose: () => void }) {
   const [logs, setLogs] = useState<any[]>([]);
@@ -10,6 +12,8 @@ export default function LogViewer({ jobId, onClose }: { jobId: string; onClose: 
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [isConfirmCancelOpen, setIsConfirmCancelOpen] = useState(false);
   const seenKeys = useRef<Set<string>>(new Set());
 
   // Reset seen keys when jobId changes
@@ -149,6 +153,32 @@ export default function LogViewer({ jobId, onClose }: { jobId: string; onClose: 
     return () => window.removeEventListener("keydown", handleEsc, true);
   }, [onClose]);
 
+  const handleCancel = async () => {
+    if (!job) return;
+
+    setIsConfirmCancelOpen(false);
+    setIsCancelling(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`http://127.0.0.1:8000/jobs/${jobId}`, {
+        method: "DELETE",
+        headers: {
+          "Authorization": `Bearer ${session?.access_token}`,
+        }
+      });
+      if (res.ok) {
+        toast.success("Cancellation signal sent to orchestrator.");
+      } else {
+        const err = await res.json();
+        toast.error(err.detail || "Failed to cancel job.");
+      }
+    } catch (err) {
+      toast.error("Network error while cancelling.");
+    } finally {
+      setIsCancelling(false);
+    }
+  };
+
   const renderLogMessage = (message: string) => {
     const urlRegex = /(https?:\/\/[^\s]+)/g;
     const parts = message.split(urlRegex);
@@ -283,6 +313,17 @@ export default function LogViewer({ jobId, onClose }: { jobId: string; onClose: 
                 </a>
              )}
 
+             {["queued", "running", "pending"].includes(job?.status || "") && (
+                <button 
+                  onClick={() => setIsConfirmCancelOpen(true)}
+                  disabled={isCancelling}
+                  className="bg-red-500 hover:bg-red-600 text-white px-8 py-3 rounded-2xl text-[10px] font-black shadow-2xl transition-all flex items-center gap-3 animate-in fade-in slide-in-from-right-4 uppercase tracking-widest disabled:opacity-50"
+                >
+                  {isCancelling ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                  Cancel Deployment
+                </button>
+             )}
+
              {!isAtBottom && logs.length > 0 && (
                 <button 
                   onClick={() => {
@@ -315,6 +356,16 @@ export default function LogViewer({ jobId, onClose }: { jobId: string; onClose: 
             </div>
         </div>
       </div>
+      
+      <ConfirmationModal
+        isOpen={isConfirmCancelOpen}
+        title="Abort Deployment?"
+        message="Are you sure you want to cancel this deployment? This will stop all active build processes and cleanup allocated resources. This action cannot be undone."
+        confirmLabel="Abort Deployment"
+        confirmVariant="danger"
+        onConfirm={handleCancel}
+        onCancel={() => setIsConfirmCancelOpen(false)}
+      />
     </div>
   );
 }

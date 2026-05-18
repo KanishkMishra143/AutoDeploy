@@ -45,8 +45,15 @@ def get_profile(db: Session = Depends(get_db), current_user: dict = Depends(get_
         settings = UserSettings(user_id=user_uuid)
         db.add(settings)
         
-        db.commit()
-        db.refresh(profile)
+        try:
+            db.commit()
+            db.refresh(profile)
+        except Exception:
+            db.rollback()
+            # If commit fails, another request likely created the profile already
+            profile = db.query(Profile).filter(Profile.user_id == user_uuid).first()
+            if not profile:
+                raise HTTPException(status_code=500, detail="Failed to provision profile")
     
     return profile
 

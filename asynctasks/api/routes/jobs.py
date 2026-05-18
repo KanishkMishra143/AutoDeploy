@@ -8,6 +8,7 @@ from core.schemas import JobCreate, JobResponse, JobListResponse, JobLogsRespons
 from worker.tasks import process_job, stop_job
 from uuid import UUID
 from core.auth import get_current_user
+import subprocess
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
 
@@ -34,6 +35,17 @@ def rerun_job(job_id: UUID, db: Session = Depends(get_db), current_user: dict = 
     """Creates a new job using the payload of an existing job (Rollback/Restore)."""
     # Rerunning (Rollback) requires ADMIN role
     old_job = check_job_access(job_id, current_user["sub"], db, required_role="ADMIN")
+
+    # --- SMART ROLLBACK GUARD ---
+    # Check if the Docker image for this build still exists
+    image_tag = f"autodeploy-app:{str(job_id)[:8]}"
+    try:
+        subprocess.run(["docker", "image", "inspect", image_tag], check=True, capture_output=True)
+    except subprocess.CalledProcessError:
+        raise HTTPException(
+            status_code=400, 
+            detail="Rollback not possible. Build past the set backup history."
+        )
 
     # Calculate version number of the old job for better UX
     old_version_number = db.query(Job).filter(
@@ -65,6 +77,11 @@ def delete_job(job_id: UUID, db: Session = Depends(get_db), current_user: dict =
     """Triggers the termination of a running job/service."""
     # Stopping a job requires ADMIN role
     job = check_job_access(job_id, current_user["sub"], db, required_role="ADMIN")
+    
+    # --- CANCELLATION SIGNAL ---
+    # Set a flag in Redis that the worker will check during execution
+    from core.redis import redis_client
+    redis_client.setex(f"cancel:{str(job_id)}", 60, "true")
     
     stop_job.delay(str(job_id))
     return job

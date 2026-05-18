@@ -32,43 +32,22 @@
     1. **Phase 10 Day 3:** Role-Based Access Control (RBAC) - Admin vs. Viewer roles.
     2. **Ownership Logic:** Ensure users only see and manage their own applications.
 
-### 📅 Friday, May 15, 2026
-- **Status:** Phase 11 (CLI V1) COMPLETE.
+### 📅 Monday, May 18, 2026
+- **Status:** Loopholes Task 3 (Persistent Volumes) & Task 7 (Monorepo Support) COMPLETE.
 - **Milestones:**
-    - **Identity & Profiles:** Implemented a custom `Profile` system that maps Supabase UUIDs to human-readable `username` (User IDs). Added auto-provisioning logic that generates clean handles from GitHub metadata.
-    - **Enterprise RBAC:** Fully implemented Project Sharing. Users can invite collaborators using their User ID/Username.
-        - **Roles:** OWNER (Full control), ADMIN (Manage team/deploys), VIEWER (Read-only).
-        - **UI:** Enhanced HistoryModal with a "Sharing" tab featuring real-time user search and avatar identification.
-    - **Dashboard Segregation:** Refactored the main Canvas to group projects into "Your Projects" and "Shared with You" sections.
-    - **Advanced Secrets (Vault):** Integrated HashiCorp Vault into the `docker-compose` stack.
-        - **Secrets Engine:** Created a `SecretResolver` in the worker that fetches values from Vault at runtime using the `vault://` prefix.
-        - **Security:** Secrets are never stored in the application database, only their references.
-    - **UX Sorting:** Implemented a smart sort toggle for application cards. 
-        - **Default:** Apps are now sorted by `updated_at` (Descending) so latest changes appear first.
-        - **Interactive:** Added a toggle button in both "Your Projects" and "Shared" sections to switch between Newest and Oldest modified views.
-    - **Persistent Preferences:** Replaced settings placeholders with a real `UserSettings` engine. Notification toggles and appearance modes are now saved to PostgreSQL and persist across sessions.
-    - **API Key Management:** Built a "Security" dashboard for generating and revoking API keys. Uses SHA-256 hashing for secure storage and one-time-only secret exposure for CLI/Orchestrator access.
-    - **AutoDeploy CLI (Phase 11):** Launched and polished the `ad` terminal tool.
-        - **Auth:** Implemented `ad login`, `ad whoami`, and `ad logout` using the API Key system.
-        - **Management:** Added `ad apps list` and `ad apps deploy` to control the cluster from the terminal.
-        - **Real-Time Logs:** Built a robust log streaming engine (`ad logs`) that handles terminal flicker, auto-scrolling, and provides a final "Success Button" with the live URL.
-        - **UX Refinement:** Implemented "Quiet Wait" mode (progress spinner) when logs are skipped and support for 'q' to stop streaming without killing the deployment job.
-        - **Sub-directory Context:** Refactored the CLI to be "context-aware," correctly detecting `.env` and `autodeploy.yml` files in the current directory (supporting sub-directory projects).
-    - **UI/UX Polishing:**
-        - **Scroll Locking:** Implemented a unified scroll-lock engine that prevents background page scrolling whenever any modal, notification pane, or settings overlay is active.
-        - **Redeploy Logic:** Added a "Redeploy Application" button directly inside the History tab for instant pipeline re-runs.
-        - **Terminal Aesthetics:** Professionalized the Log Viewer by removing macOS dots and adding a "System Health" status bar.
-    - **Critical Bug Fixes:**
-        - **Purge Engine:** Fixed the "Purge All Applications" feature by correcting a UUID type mismatch in the backend filtering logic.
-        - **Data Integrity:** Ensured the project owner is always explicitly visible in the Sharing tab.
-        - **Env Injection Fix:** Verified and fixed environment variable injection from local `.env` files through the CLI to the Docker worker.
-        - **Trigger Source Differentiation:** Refactored the API and both interfaces (CLI/GUI) to distinguish deployment sources. Fixed the "Redeploy" button on application cards to correctly send `Manual:Canvas`. History badges now explicitly show `Manual:CLI` or `Manual:Canvas` for better auditability.
-    - **Developer Experience (UI Cleanliness):**
-        - **Dev Indicator Removal:** Suppressed the Next.js 15.2+ unified "N" badge and dev tools from the dashboard canvas by disabling `devIndicators` in `next.config.ts`. This ensures a high-fidelity, production-like view of the infrastructure map without development overlays.
+    - **Infrastructure Persistence (Volumes):** Implemented full end-to-end support for Docker Volumes.
+        - **Worker Engine:** Updated `run_container` to support `-v` flags. Implemented a smart volume mapping logic that handles both absolute and relative host paths, storing persistent data in `~/.autodeploy/volumes/{app_name}/`.
+        - **Config Autodiscovery:** Refactored `discover_port` into `discover_config` in the worker. It now automatically extracts both `internal_port` and `volumes` from `autodeploy.yml` during the build phase.
+        - **API Layer:** Updated `Application` model, Pydantic schemas, and FastAPI routes to persist and transmit volume configurations.
+        - **CLI V1.1:** Enhanced the `ad` CLI to be "volume-aware," automatically syncing volume mappings from local `autodeploy.yml` to the remote cluster.
+        - **Dashboard UI:** Added interactive "Persistent Volumes" management to both the `DeployModal` (for new apps) and `HistoryModal` (for existing app settings).
+    - **Monorepo Support (Sub-directories):** Resolved the "open Dockerfile: no such file or directory" error by implementing Task 7.
+        - **Automatic Path Detection:** The CLI now calculates the `root_dir` (relative path from Git root to CWD) and sends it to the API.
+        - **Effective Workspace Logic:** The worker now uses `root_dir` to set the correct build context and find the `Dockerfile` in monorepo structures.
+    - **Dependency Management:** Integrated `PyYAML` into the core worker dependencies to ensure robust configuration parsing.
 - **Next Task:**
-    1. **Phase 11 Continued:** CLI Environment Variable management (`ad env set/get`).
-    2. **Phase 12:** Enterprise-Grade Distribution (The Unified Service Bundle).
-    3. **Phase 12:** System PATH and IDE integration.
+    1. **Loopholes Task 4:** Zombie Image Storage Leak (Pruning Policy).
+    2. **Loopholes Task 5:** Private Repository Access (SSH/PAT integration).
 
 ## Mentor Memory (Architectural Notes)
 - **Data Ownership Architecture:** Ownership is enforced at the **API Layer**. Every protected route uses the `get_current_user` dependency. All SQLAlchemy queries MUST include `.filter(Model.owner_id == current_user["sub"])` OR check the `AppAccess` table for shared permissions.
@@ -152,6 +131,7 @@ autodeploy/
 
 ## Engineering Constraints & Decisions
 
+- **No Autonomous Testing:** Gemini CLI MUST NEVER initiate autonomous testing, create test scripts, or execute validation sequences without explicit, per-task permission from the user within the current session. Instead, provide detailed instructions for the user to perform these actions themselves.
 - **Direct SQLAlchemy:** No extra abstraction layers (yet) to ensure deep understanding of the DB flow.
 - **Synchronous DB:** Database interactions are currently synchronous for simplicity and debugging.
 - **Distributed First:** Every component (API, Worker, Redis) is designed to run on separate machines eventually.

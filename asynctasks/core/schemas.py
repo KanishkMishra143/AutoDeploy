@@ -9,6 +9,9 @@ class AppCreate(BaseModel):
     repo_url: str
     branch: str = "main"
     stack: str = "dockerfile"
+    internal_port: Optional[int] = 8000
+    volumes: Optional[List[str]] = []
+    root_dir: Optional[str] = "."
     pre_build_steps: Optional[List[str]] = []
     post_build_steps: Optional[List[str]] = []
     env_vars: Optional[Dict[str, str]] = {}
@@ -18,6 +21,9 @@ class AppUpdate(BaseModel):
     name: Optional[str] = None
     repo_url: Optional[str] = None
     branch: Optional[str] = None
+    internal_port: Optional[int] = None
+    volumes: Optional[List[str]] = None
+    root_dir: Optional[str] = None
     pre_build_steps: Optional[List[str]] = None
     post_build_steps: Optional[List[str]] = None
     env_vars: Optional[Dict[str, str]] = None
@@ -91,6 +97,9 @@ class AppResponse(BaseModel):
     repo_url: str
     branch: str
     stack: str
+    internal_port: int
+    volumes: List[str]
+    root_dir: str
     pre_build_steps: List[str]
     post_build_steps: List[str]
     env_vars: Dict[str, str]

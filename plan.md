@@ -241,5 +241,9 @@
     - **Task:** Track every user action (who deployed what and when) for enterprise compliance.
 - [ ] **Team Workspaces:** Allow multiple developers to share a project/cluster.
 - [ ] **Resource Quotas:** Limit CPU/RAM usage per team or project.
+- [ ] **Tiered Build Retention & Smart Rollbacks:**
+    - **Task:** Implement dynamic image pruning based on a per-app `retention_limit`.
+    - **Monetization:** Free tier limited to 3-5 historical builds; Pro tier allows extended history.
+    - **UX:** API-level guards to prevent rollbacks to pruned builds with clear error messaging.
 - [ ] **Usage-Based Billing:** Implement Stripe integration for "Pay as you go" container hosting.
 - [ ] **Custom Domains & SSL:** Automated Let's Encrypt provisioning for production URLs.

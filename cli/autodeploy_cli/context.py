@@ -88,6 +88,14 @@ def get_project_context() -> Dict[str, Any]:
     yml_config = load_autodeploy_yml(cwd, root)
     env_vars = load_env_vars(cwd, root)
 
+    # Calculate root_dir (relative path from git root to CWD)
+    try:
+        root_dir = str(cwd.relative_to(root))
+        if root_dir == ".":
+            root_dir = "."
+    except ValueError:
+        root_dir = "."
+
     # Link file stores the app_id after the first deployment
     # Check CWD first for the link
     link_path = cwd / ".ad_project"
@@ -106,6 +114,9 @@ def get_project_context() -> Dict[str, Any]:
         "repo_url": git_url,
         "branch": yml_config.get("branch", branch),
         "stack": yml_config.get("stack", "dockerfile"),
+        "internal_port": yml_config.get("internal_port", 8000),
+        "volumes": yml_config.get("volumes", []),
+        "root_dir": root_dir,
         "pre_build_steps": yml_config.get("build", {}).get("pre", []),
         "post_build_steps": yml_config.get("build", {}).get("post", []),
         "env_vars": env_vars

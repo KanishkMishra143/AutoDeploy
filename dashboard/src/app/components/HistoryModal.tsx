@@ -1,10 +1,11 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
-import { X, Clock, RotateCcw, AlertCircle, Box, ExternalLink, Globe, Activity, History as HistoryIcon, Layers, Terminal, Trash2, Settings, Plus, Save, Upload, User, Loader2, Shield } from "lucide-react";
+import { X, Clock, RotateCcw, AlertCircle, Box, ExternalLink, Globe, Activity, History as HistoryIcon, Layers, Terminal, Trash2, Settings, Plus, Save, Upload, User, Loader2, Shield, GitBranch } from "lucide-react";
 import toast from "react-hot-toast";
 import { Job, Application } from "../useJobs";
 import TopologyMap from "./TopologyMap";
 import ConfirmationModal from "./ConfirmationModal";
+import PortCollisionModal from "./PortCollisionModal";
 import { supabase } from "../../lib/supabase";
 
 interface AppDetailModalProps {
@@ -94,6 +95,10 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
     }
     return [{key: "", value: ""}];
   });
+  const [localPort, setLocalPort] = useState(initialApp.internal_port || 8000);
+  const [localBranch, setLocalBranch] = useState(initialApp.branch || "main");
+  const [localRootDir, setLocalRootDir] = useState(initialApp.root_dir || ".");
+  const [localVolumes, setLocalVolumes] = useState<string[]>(initialApp.volumes || []);
   const [localPreSteps, setLocalPreSteps] = useState<string[]>(initialApp.pre_build_steps || []);
   const [localPostSteps, setLocalPostSteps] = useState<string[]>(initialApp.post_build_steps || []);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -113,6 +118,17 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
     confirmLabel: "",
     confirmVariant: "accent",
     onConfirm: () => {}
+  });
+
+  // Port Collision State
+  const [portCollision, setPortCollision] = useState<{
+    isOpen: boolean;
+    detectedPort: number | null;
+    source: string | null;
+  }>({
+    isOpen: false,
+    detectedPort: null,
+    source: null
   });
 
   const handleShare = async () => {
@@ -227,7 +243,8 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
             toast.success("Rollback pipeline started!", { id: tId });
             onViewLogs(jobId);
           } else {
-            toast.error("Rollback failed to trigger", { id: tId });
+            const data = await res.json();
+            toast.error(data.detail || "Rollback failed to trigger", { id: tId });
           }
           setConfirmConfig(prev => ({ ...prev, isOpen: false }));
         } catch (err) {
@@ -238,16 +255,47 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
     });
   };
 
-  const handleDeploy = async () => {
-   const tId = toast.loading("Triggering deployment...");
-   try {
-       const { data: { session } } = await supabase.auth.getSession();
-       const res = await fetch(`http://127.0.0.1:8000/apps/${app.id}/deploy?trigger_reason=Manual:Canvas`, {
-         method: "POST",
-         headers: {
-           "Authorization": `Bearer ${session?.access_token}`,
-         }
-       });
+  const handleDeploy = async (overridePort?: number) => {
+    const isOverride = typeof overridePort === 'number';
+    const tId = toast.loading(isOverride ? "Applying port & redeploying..." : "Checking configuration...");
+    try {
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        // 1. If no override port, check for collision first
+        if (!isOverride) {
+          const detectRes = await fetch(`http://127.0.0.1:8000/apps/${app.id}/detect-port`, {
+            headers: { "Authorization": `Bearer ${session?.access_token}` }
+          });
+          if (detectRes.ok) {
+            const { detected_port, source } = await detectRes.json();
+            if (detected_port && detected_port !== app.internal_port) {
+              toast.dismiss(tId);
+              setPortCollision({ isOpen: true, detectedPort: detected_port, source: source });
+              return;
+            }
+          }
+        }
+
+        // 2. If an override port was chosen, update the app first
+        if (isOverride) {
+          await fetch(`http://127.0.0.1:8000/apps/${app.id}`, {
+            method: "PATCH",
+            headers: {
+              "Authorization": `Bearer ${session?.access_token}`,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ internal_port: overridePort })
+          });
+          setLocalPort(overridePort);
+        }
+
+        // 3. Trigger actual deployment
+        const res = await fetch(`http://127.0.0.1:8000/apps/${app.id}/deploy?trigger_reason=Manual:Canvas`, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${session?.access_token}`,
+          }
+        });
 
         if (res.ok) {
             const data = await res.json();
@@ -283,6 +331,10 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
         },
         body: JSON.stringify({
           env_vars: envObj,
+          internal_port: localPort,
+          branch: localBranch,
+          root_dir: localRootDir,
+          volumes: localVolumes.filter(v => v.trim()),
           pre_build_steps: localPreSteps,
           post_build_steps: localPostSteps
         })
@@ -415,6 +467,18 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
           confirmVariant={confirmConfig.confirmVariant}
           onConfirm={confirmConfig.onConfirm}
           onCancel={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))}
+        />
+
+        <PortCollisionModal 
+          isOpen={portCollision.isOpen}
+          onClose={() => setPortCollision(prev => ({ ...prev, isOpen: false }))}
+          onConfirm={(port) => {
+            setPortCollision(prev => ({ ...prev, isOpen: false }));
+            handleDeploy(port);
+          }}
+          detectedPort={portCollision.detectedPort}
+          source={portCollision.source}
+          currentPort={app.internal_port}
         />
 
         {/* Header */}
@@ -590,7 +654,7 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
               {/* Redeploy Button (Bottom Right) */}
               <div className="absolute bottom-8 right-8 animate-in slide-in-from-bottom-4 duration-500">
                 <button 
-                  onClick={handleDeploy}
+                  onClick={() => handleDeploy()}
                   disabled={app.role === 'VIEWER'}
                   className="px-8 py-4 bg-accent hover:bg-accent/90 text-white text-xs font-black rounded-2xl transition-all shadow-2xl shadow-accent/40 flex items-center gap-3 uppercase tracking-widest border border-accent/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
@@ -701,86 +765,174 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
 
           {activeTab === "settings" && (
             <div className="flex-1 overflow-y-auto p-8 max-w-2xl mx-auto w-full">
-               <div className="mb-8 flex justify-between items-end">
-                  <div>
-                    <div className="flex items-center gap-2 mb-2">
-                       <h3 className="text-lg font-bold text-white">Environment Variables</h3>
-                       <span className="px-2 py-0.5 bg-accent/10 text-accent text-[8px] font-black rounded uppercase tracking-widest border border-accent/20">Advanced Secrets Supported</span>
+              <div className="mb-8 flex justify-between items-end">
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <h3 className="text-lg font-bold text-white">Environment Variables</h3>
+                    <span className="px-2 py-0.5 bg-accent/10 text-accent text-[8px] font-black rounded uppercase tracking-widest border border-accent/20">Advanced Secrets Supported</span>
+                  </div>
+                  <p className="text-sm text-gray-500">Variables defined here are encrypted at rest. To use HashiCorp Vault, prefix your value with <code className="bg-white/10 px-1 py-0.5 rounded text-accent">vault://path/to/key</code>.</p>
+                </div>
+
+                <div className="flex gap-2">
+                  <input 
+                    type="file" 
+                    ref={fileInputRef} 
+                    onChange={handleEnvFileUpload} 
+                    className="hidden" 
+                    accept=".env,text/plain"
+                  />
+                  <button 
+                    onClick={() => fileInputRef.current?.click()}
+                    className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white text-[10px] font-black rounded-xl transition-all border border-white/5 flex items-center gap-2 uppercase tracking-widest"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    Import .env
+                  </button>
+                </div>
+              </div>
+
+              <div className="mb-8 grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Service Networking</h4>
+                  <div className="flex items-center gap-4 bg-background border border-card-border rounded-2xl px-6 py-4 focus-within:border-accent transition-all group">
+                    <Terminal className="w-4 h-4 text-gray-600 group-focus-within:text-accent" />
+                    <div className="flex-1">
+                      <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest mb-1">Internal Target Port</p>
+                      <input 
+                        type="number"
+                        className="w-full bg-transparent text-sm font-bold text-white outline-none"
+                        value={localPort}
+                        onChange={(e) => setLocalPort(parseInt(e.target.value) || 0)}
+                      />
                     </div>
-                    <p className="text-sm text-gray-500">Variables defined here are encrypted at rest. To use HashiCorp Vault, prefix your value with <code className="bg-white/10 px-1 py-0.5 rounded text-accent">vault://path/to/key</code>.</p>
                   </div>
+                </div>
 
-                  <div className="flex gap-2">
+                <div>
+                  <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Target Branch</h4>
+                  <div className="flex items-center gap-4 bg-background border border-card-border rounded-2xl px-6 py-4 focus-within:border-accent transition-all group">
+                    <GitBranch className="w-4 h-4 text-gray-600 group-focus-within:text-accent" />
+                    <div className="flex-1">
+                      <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest mb-1">Source Branch</p>
+                      <input 
+                        className="w-full bg-transparent text-sm font-bold text-white outline-none"
+                        value={localBranch}
+                        onChange={(e) => setLocalBranch(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mb-8">
+                <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Repository Configuration</h4>
+                <div className="flex items-center gap-4 bg-background border border-card-border rounded-2xl px-6 py-4 focus-within:border-accent transition-all group">
+                  <Layers className="w-4 h-4 text-gray-600 group-focus-within:text-accent" />
+                  <div className="flex-1">
+                    <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest mb-1">Root Directory (Monorepo)</p>
                     <input 
-                        type="file" 
-                        ref={fileInputRef} 
-                        onChange={handleEnvFileUpload} 
-                        className="hidden" 
-                        accept=".env,text/plain"
+                      className="w-full bg-transparent text-sm font-bold text-white outline-none"
+                      value={localRootDir}
+                      onChange={(e) => setLocalRootDir(e.target.value)}
                     />
-                    <button 
-                        onClick={() => fileInputRef.current?.click()}
-                        className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white text-[10px] font-black rounded-xl transition-all border border-white/5 flex items-center gap-2 uppercase tracking-widest"
-                    >
-                        <Upload className="w-3.5 h-3.5" />
-                        Import .env
-                    </button>
                   </div>
-               </div>
+                </div>
+                <p className="mt-3 text-[9px] text-gray-600 font-bold uppercase tracking-widest leading-relaxed">
+                  Set this if your Dockerfile is not in the repository root.
+                </p>
+              </div>
 
-               <div className="space-y-3 mb-10">
-                  {localEnv.map((v, i) => (
-                    <div key={i} className="flex gap-3 group animate-in fade-in slide-in-from-left-2 duration-300" style={{ animationDelay: `${i * 50}ms` }}>
-                       <div className="flex-1 bg-background border border-card-border rounded-2xl px-4 py-3 flex items-center focus-within:border-accent transition-all">
-                          <input 
-                             placeholder="KEY"
-                             className="w-1/3 bg-transparent text-xs font-black outline-none text-accent placeholder:text-gray-800 border-r border-card-border mr-4"
-                             value={v.key}
-                             onChange={(e) => {
-                                const updated = [...localEnv];
-                                updated[i].key = e.target.value.toUpperCase();
-                                setLocalEnv(updated);
-                             }}
-                          />
-                          <input 
-                             placeholder="VALUE"
-                             className="w-2/3 bg-transparent text-xs font-mono outline-none text-white placeholder:text-gray-800"
-                             value={v.value}
-                             onChange={(e) => {
-                                const updated = [...localEnv];
-                                updated[i].value = e.target.value;
-                                setLocalEnv(updated);
-                             }}
-                          />
-                       </div>
-                       <button 
-                          onClick={() => setLocalEnv(localEnv.filter((_, idx) => idx !== i))}
-                          className="p-4 text-gray-600 hover:text-red-500 hover:bg-red-500/10 rounded-2xl transition-all opacity-0 group-hover:opacity-100"
-                        >
-                         <Trash2 className="w-4 h-4" />
-                       </button>
+              <div className="mb-8">
+                <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Persistent Volumes</h4>
+                <p className="text-[10px] text-gray-500 mb-3 uppercase tracking-tight">Map host storage to container paths. Relative host paths are stored in <code className="bg-white/10 px-1 py-0.5 rounded text-accent">~/.autodeploy/volumes/</code>.</p>
+                <div className="space-y-3">
+                  {localVolumes.map((vol, i) => (
+                    <div key={i} className="flex gap-2 group/vol">
+                      <div className="flex-1 bg-background border border-card-border rounded-xl px-4 py-3 flex items-center focus-within:border-accent transition-all group">
+                        <Layers className="w-3.5 h-3.5 text-gray-600 mr-3 group-focus-within:text-accent" />
+                        <input 
+                          placeholder="e.g. ./data:/app/data"
+                          className="w-full bg-transparent text-xs font-mono outline-none text-white"
+                          value={vol}
+                          onChange={(e) => {
+                            const updated = [...localVolumes];
+                            updated[i] = e.target.value;
+                            setLocalVolumes(updated);
+                          }}
+                        />
+                      </div>
+                      <button 
+                        onClick={() => setLocalVolumes(localVolumes.filter((_, idx) => idx !== i))}
+                        className="p-3 text-gray-600 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-all opacity-0 group-hover/vol:opacity-100"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
                   ))}
-                  
                   <button 
-                    onClick={() => setLocalEnv([...localEnv, {key: "", value: ""}])}
-                    className="w-full py-4 border-2 border-dashed border-card-border rounded-2xl text-gray-600 hover:text-accent hover:border-accent/40 hover:bg-accent/5 transition-all text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2"
+                    onClick={() => setLocalVolumes([...localVolumes, ""])}
+                    className="w-full py-3 border border-dashed border-card-border rounded-xl text-gray-600 hover:text-accent hover:border-accent/40 hover:bg-accent/5 transition-all text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2"
                   >
-                    <Plus className="w-4 h-4" />
-                    Add Variable
+                    <Plus className="w-3 h-3" />
+                    Add Volume Mapping
                   </button>
-               </div>
+                </div>
+              </div>
 
-               <div className="sticky bottom-0 bg-gradient-to-t from-[#0a0a0a] via-[#0a0a0a] to-transparent pt-10 pb-4">
-                  <button 
-                    onClick={handleSaveSettings}
-                    disabled={isSaving || app.role === 'VIEWER'}
-                    className="w-full py-5 bg-accent hover:bg-accent/90 text-white text-xs font-black rounded-[24px] transition-all shadow-2xl shadow-accent/20 flex items-center justify-center gap-3 uppercase tracking-[0.3em] disabled:opacity-50"
-                  >
-                    {isSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-                    Save Configuration
-                  </button>
-               </div>
+              <div className="space-y-3 mb-10">
+                {localEnv.map((v, i) => (
+                  <div key={i} className="flex gap-3 group animate-in fade-in slide-in-from-left-2 duration-300" style={{ animationDelay: `${i * 50}ms` }}>
+                    <div className="flex-1 bg-background border border-card-border rounded-2xl px-4 py-3 flex items-center focus-within:border-accent transition-all">
+                      <input 
+                        placeholder="KEY"
+                        className="w-1/3 bg-transparent text-xs font-black outline-none text-accent placeholder:text-gray-800 border-r border-card-border mr-4"
+                        value={v.key}
+                        onChange={(e) => {
+                          const updated = [...localEnv];
+                          updated[i].key = e.target.value.toUpperCase();
+                          setLocalEnv(updated);
+                        }}
+                      />
+                      <input 
+                        placeholder="VALUE"
+                        className="w-2/3 bg-transparent text-xs font-mono outline-none text-white placeholder:text-gray-800"
+                        value={v.value}
+                        onChange={(e) => {
+                          const updated = [...localEnv];
+                          updated[i].value = e.target.value;
+                          setLocalEnv(updated);
+                        }}
+                      />
+                    </div>
+                    <button 
+                      onClick={() => setLocalEnv(localEnv.filter((_, idx) => idx !== i))}
+                      className="p-4 text-gray-600 hover:text-red-500 hover:bg-red-500/10 rounded-2xl transition-all opacity-0 group-hover:opacity-100"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+                
+                <button 
+                  onClick={() => setLocalEnv([...localEnv, {key: "", value: ""}])}
+                  className="w-full py-4 border-2 border-dashed border-card-border rounded-2xl text-gray-600 hover:text-accent hover:border-accent/40 hover:bg-accent/5 transition-all text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add Variable
+                </button>
+              </div>
+
+              <div className="sticky bottom-0 bg-gradient-to-t from-[#0a0a0a] via-[#0a0a0a] to-transparent pt-10 pb-4">
+                <button 
+                  onClick={handleSaveSettings}
+                  disabled={isSaving || app.role === 'VIEWER'}
+                  className="w-full py-5 bg-accent hover:bg-accent/90 text-white text-xs font-black rounded-[24px] transition-all shadow-2xl shadow-accent/20 flex items-center justify-center gap-3 uppercase tracking-[0.3em] disabled:opacity-50"
+                >
+                  {isSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+                  Save Configuration
+                </button>
+              </div>
             </div>
           )}
 

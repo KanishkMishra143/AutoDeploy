@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, JSON, DateTime, ForeignKey, Text
+from sqlalchemy import Column, String, JSON, DateTime, ForeignKey, Text, Integer
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
@@ -14,6 +14,10 @@ class Application(Base):
     repo_url = Column(String, nullable=False)
     branch = Column(String, nullable=False, default="main")
     stack = Column(String, nullable=False, default="dockerfile")
+    internal_port = Column(Integer, nullable=False, default=8000)
+    volumes = Column(JSON, nullable=True, default=[]) # List of "host_path:container_path" or relative "path:container_path"
+    root_dir = Column(String, nullable=False, default=".") # Relative path from git root
+    retention_limit = Column(Integer, nullable=False, default=10) # Max builds to keep
     pre_build_steps = Column(JSON, nullable=True, default=[])
     post_build_steps = Column(JSON, nullable=True, default=[])
     env_vars = Column(JSON, nullable=True, default={})
@@ -48,6 +52,7 @@ class Job(Base):
     trigger_metadata = Column(JSON, nullable=True) # e.g. {"commit_id": "...", "from_version": 4}
     payload = Column(JSON, nullable=False)
     result = Column(JSON, nullable=True)
+    celery_task_id = Column(String, nullable=True) # ID of the root task for cancellation
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
