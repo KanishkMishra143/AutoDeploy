@@ -329,7 +329,7 @@ export default function CanvasPage() {
               )}
 
               <button 
-                onClick={(e) => handleStopJob(e, latestJob?.id)}
+                onClick={(e) => latestJob?.id && handleStopJob(e, latestJob.id)}
                 disabled={!latestJob || latestJob.status !== 'success' || app.role === 'VIEWER'}
                 title={app.role === 'VIEWER' ? "Only owners and admins can stop services" : "Stop Service"}
                 className="p-3 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-xl transition-all disabled:opacity-20 disabled:cursor-not-allowed border border-red-500/10"

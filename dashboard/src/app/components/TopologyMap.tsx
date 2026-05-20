@@ -11,7 +11,8 @@ import {
   Node,
   Panel,
   ReactFlowProvider,
-  useReactFlow
+  useReactFlow,
+  BackgroundVariant
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { 
@@ -37,8 +38,8 @@ const GatewayNode = () => (
   </div>
 );
 
-const AppNode = ({ data }: NodeProps<{ app: Application; latestJob?: Job }>) => {
-  const { app, latestJob } = data;
+const AppNode = ({ data }: NodeProps) => {
+  const { app, latestJob } = data as { app: Application; latestJob?: Job };
   const isOnline = latestJob?.status === 'success';
 
   return (
@@ -61,7 +62,8 @@ const AppNode = ({ data }: NodeProps<{ app: Application; latestJob?: Job }>) => 
   );
 };
 
-const ServiceNode = ({ data }: NodeProps<{ name: string; type: string }>) => {
+const ServiceNode = ({ data }: NodeProps) => {
+    const { name, type } = data as { name: string; type: string };
     const icons: Record<string, any> = {
         postgres: { icon: Database, color: 'text-blue-400' },
         redis: { icon: Zap, color: 'text-red-400' },
@@ -81,7 +83,7 @@ const ServiceNode = ({ data }: NodeProps<{ name: string; type: string }>) => {
         datadog: { icon: BarChart3, color: 'text-purple-500' },
         generic: { icon: Cpu, color: 'text-gray-400' }
     };
-    const config = icons[data.type] || icons.generic;
+    const config = icons[type] || icons.generic;
     const Icon = config.icon;
 
     return (
@@ -89,7 +91,7 @@ const ServiceNode = ({ data }: NodeProps<{ name: string; type: string }>) => {
           <Handle type="target" position={Position.Left} className="w-2 h-2 bg-accent border-none" />
           <div className="flex items-center gap-2">
             <Icon className={`w-4 h-4 ${config.color}`} />
-            <span className="text-xs font-bold uppercase tracking-wider">{data.name}</span>
+            <span className="text-xs font-bold uppercase tracking-wider">{name}</span>
           </div>
         </div>
     );
@@ -130,7 +132,7 @@ function TopologyMapContent({ nodes, edges, compact, onAppClick, focusedAppId }:
             minZoom={0.2}
             maxZoom={1.5}
         >
-            <Background color="#333" gap={25} variant="dots" />
+            <Background color="#333" gap={25} variant={BackgroundVariant.Dots} />
             <Controls 
                 showInteractive={false} 
                 position="bottom-left" 

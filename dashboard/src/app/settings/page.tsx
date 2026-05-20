@@ -289,8 +289,9 @@ export default function SettingsPage() {
                          </div>
                        ) : (
                          apiKeys.map(key => {
-                           const isExpired = key.expires_at && new Date(key.expires_at) < new Date();
+                           const isExpired = !!(key.expires_at && new Date(key.expires_at) < new Date());
                            return (
+
                              <div key={key.id} className={`flex items-center justify-between p-5 bg-white/5 rounded-2xl border ${isExpired ? 'border-red-500/30' : 'border-card-border'} group hover:border-accent/30 transition-all`}>
                                 <div className="flex items-center gap-5">
                                    <div className={`w-12 h-12 ${isExpired ? 'bg-red-500/10' : 'bg-white/5'} rounded-xl flex items-center justify-center`}>
