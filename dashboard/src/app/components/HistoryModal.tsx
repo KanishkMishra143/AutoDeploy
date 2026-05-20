@@ -7,6 +7,7 @@ import TopologyMap from "./TopologyMap";
 import ConfirmationModal from "./ConfirmationModal";
 import PortCollisionModal from "./PortCollisionModal";
 import { supabase } from "../../lib/supabase";
+import { API_BASE_URL } from "@/lib/api";
 
 interface AppDetailModalProps {
   app: Application;
@@ -46,7 +47,7 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
   const fetchAppDetails = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`http://127.0.0.1:8000/apps/${initialApp.id}`, {
+      const res = await fetch(`${API_BASE_URL}/apps/${initialApp.id}`, {
         headers: {
           "Authorization": `Bearer ${session?.access_token}`,
         }
@@ -69,7 +70,7 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
       setIsSearching(true);
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        const res = await fetch(`http://127.0.0.1:8000/auth/search?q=${shareUserId}`, {
+        const res = await fetch(`${API_BASE_URL}/auth/search?q=${shareUserId}`, {
           headers: { "Authorization": `Bearer ${session?.access_token}` }
         });
         if (res.ok) {
@@ -152,7 +153,7 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
     const tId = toast.loading("Granting access...");
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`http://127.0.0.1:8000/apps/${app.id}/share`, {
+      const res = await fetch(`${API_BASE_URL}/apps/${app.id}/share`, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${session?.access_token}`,
@@ -189,7 +190,7 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
     const tId = toast.loading("Revoking access...");
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`http://127.0.0.1:8000/apps/${app.id}/revoke/${userId}`, {
+      const res = await fetch(`${API_BASE_URL}/apps/${app.id}/revoke/${userId}`, {
         method: "DELETE",
         headers: {
           "Authorization": `Bearer ${session?.access_token}`,
@@ -211,7 +212,7 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
   const fetchHistory = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`http://127.0.0.1:8000/jobs?app_id=${app.id}&limit=20`, {
+      const res = await fetch(`${API_BASE_URL}/jobs?app_id=${app.id}&limit=20`, {
         headers: {
           "Authorization": `Bearer ${session?.access_token}`,
         }
@@ -245,7 +246,7 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
         const tId = toast.loading("Triggering rollback...");
         try {
           const { data: { session } } = await supabase.auth.getSession();
-          const res = await fetch(`http://127.0.0.1:8000/jobs/${jobId}/rerun`, { 
+          const res = await fetch(`${API_BASE_URL}/jobs/${jobId}/rerun`, { 
             method: "POST",
             headers: {
               "Authorization": `Bearer ${session?.access_token}`,
@@ -279,7 +280,7 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
         
         // 1. If no override port, check for collision first
         if (!isOverride) {
-          const detectRes = await fetch(`http://127.0.0.1:8000/apps/${app.id}/detect-port`, {
+          const detectRes = await fetch(`${API_BASE_URL}/apps/${app.id}/detect-port`, {
             headers: { "Authorization": `Bearer ${session?.access_token}` }
           });
           if (detectRes.ok) {
@@ -295,7 +296,7 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
 
         // 2. If an override port was chosen, update the app first
         if (isOverride) {
-          await fetch(`http://127.0.0.1:8000/apps/${app.id}`, {
+          await fetch(`${API_BASE_URL}/apps/${app.id}`, {
             method: "PATCH",
             headers: {
               "Authorization": `Bearer ${session?.access_token}`,
@@ -307,7 +308,7 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
         }
 
         // 3. Trigger actual deployment
-        const res = await fetch(`http://127.0.0.1:8000/apps/${app.id}/deploy?trigger_reason=Manual:Canvas`, {
+        const res = await fetch(`${API_BASE_URL}/apps/${app.id}/deploy?trigger_reason=Manual:Canvas`, {
           method: "POST",
           headers: {
             "Authorization": `Bearer ${session?.access_token}`,
@@ -344,7 +345,7 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`http://127.0.0.1:8000/apps/${app.id}`, {
+      const res = await fetch(`${API_BASE_URL}/apps/${app.id}`, {
         method: "PATCH",
         headers: {
           "Authorization": `Bearer ${session?.access_token}`,
@@ -425,7 +426,7 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
         const tId = toast.loading(`Deleting ${app.name}...`);
         try {
           const { data: { session } } = await supabase.auth.getSession();
-          const res = await fetch(`http://127.0.0.1:8000/apps/${app.id}`, { 
+          const res = await fetch(`${API_BASE_URL}/apps/${app.id}`, { 
             method: "DELETE",
             headers: {
               "Authorization": `Bearer ${session?.access_token}`,

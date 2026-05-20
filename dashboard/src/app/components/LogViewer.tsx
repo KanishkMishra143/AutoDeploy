@@ -3,6 +3,7 @@ import { useEffect, useState, useRef } from "react";
 import { X, ExternalLink, Globe, AlertCircle, Loader2, Activity, ArrowDown, Terminal, Trash2 } from "lucide-react";
 import { Job } from "../useJobs";
 import { supabase } from "../../lib/supabase";
+import { API_BASE_URL, WS_BASE_URL } from "@/lib/api";
 import { toast } from "react-hot-toast";
 import ConfirmationModal from "./ConfirmationModal";
 
@@ -27,7 +28,7 @@ export default function LogViewer({ jobId, onClose }: { jobId: string; onClose: 
     const fetchJob = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        const res = await fetch(`http://127.0.0.1:8000/jobs/${jobId}`, {
+        const res = await fetch(`${API_BASE_URL}/jobs/${jobId}`, {
           headers: {
             "Authorization": `Bearer ${session?.access_token}`,
           }
@@ -44,7 +45,7 @@ export default function LogViewer({ jobId, onClose }: { jobId: string; onClose: 
     const fetchLogs = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        const res = await fetch(`http://127.0.0.1:8000/jobs/${jobId}/logs`, {
+        const res = await fetch(`${API_BASE_URL}/jobs/${jobId}/logs`, {
           headers: {
             "Authorization": `Bearer ${session?.access_token}`,
           }
@@ -81,7 +82,7 @@ export default function LogViewer({ jobId, onClose }: { jobId: string; onClose: 
 
       if (!isMounted) return;
 
-      ws = new WebSocket(`ws://127.0.0.1:8000/ws/logs/${jobId}?token=${token}`);
+      ws = new WebSocket(`${WS_BASE_URL}/ws/logs/${jobId}?token=${token}`);
 
       ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
@@ -160,7 +161,7 @@ export default function LogViewer({ jobId, onClose }: { jobId: string; onClose: 
     setIsCancelling(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`http://127.0.0.1:8000/jobs/${jobId}`, {
+      const res = await fetch(`${API_BASE_URL}/jobs/${jobId}`, {
         method: "DELETE",
         headers: {
           "Authorization": `Bearer ${session?.access_token}`,

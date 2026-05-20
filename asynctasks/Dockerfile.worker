@@ -1,0 +1,17 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Crucial step: Install the Docker CLI and Git inside the container. 
+# We don't install the Docker Daemon (Engine), just the CLI tools. It will talk to the host's Daemon.
+RUN apt-get update && apt-get install -y docker.io git && rm -rf /var/lib/apt/lists/*
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-cache
+
+COPY . .
+ENV PATH="/app/.venv/bin:$PATH"
+
+# The command to start the worker process
+CMD ["celery", "-A", "worker.celery_app", "worker", "--loglevel=info"]

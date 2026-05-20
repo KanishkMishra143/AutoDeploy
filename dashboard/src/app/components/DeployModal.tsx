@@ -4,6 +4,7 @@ import { X, Plus, Trash2, Rocket, Globe, Tag, GitBranch, Layers, Terminal, Setti
 import toast from "react-hot-toast";
 import { supabase } from "../../lib/supabase";
 import { useJobs } from "../useJobs";
+import { API_BASE_URL } from "@/lib/api";
 import PortCollisionModal from "./PortCollisionModal";
 
 type TabType = "general" | "env" | "pipeline";
@@ -45,7 +46,7 @@ export default function DeployModal({ onClose }: { onClose: (jobId?: string) => 
         try {
           const { data: { session } } = await supabase.auth.getSession();
           // Include credential if available to fetch branches from private repos
-          let url = `http://127.0.0.1:8000/apps/branches?repo_url=${repo}`;
+          let url = `${API_BASE_URL}/apps/branches?repo_url=${repo}`;
           if (isPrivate) {
             if (selectedCredentialId) url += `&credential_id=${selectedCredentialId}`;
             else if (inlinePat) url += `&pat=${inlinePat}`;
@@ -174,7 +175,7 @@ export default function DeployModal({ onClose }: { onClose: (jobId?: string) => 
 
       // 1. Create app if it doesn't exist yet
       if (!appId) {
-        const appRes = await fetch("http://127.0.0.1:8000/apps", {
+        const appRes = await fetch(`${API_BASE_URL}/apps`, {
           method: "POST",
           headers: { 
             "Content-Type": "application/json",
@@ -210,7 +211,7 @@ export default function DeployModal({ onClose }: { onClose: (jobId?: string) => 
       // 2. If no override port, check for collision first
       if (!isOverride && appId) {
         const tId = toast.loading("Analyzing repository configuration...");
-        const detectRes = await fetch(`http://127.0.0.1:8000/apps/${appId}/detect-port`, {
+        const detectRes = await fetch(`${API_BASE_URL}/apps/${appId}/detect-port`, {
           headers: { "Authorization": `Bearer ${session?.access_token}` }
         });
         
@@ -235,7 +236,7 @@ export default function DeployModal({ onClose }: { onClose: (jobId?: string) => 
 
       // 3. If an override port was chosen, update the app first
       if (isOverride && appId) {
-        await fetch(`http://127.0.0.1:8000/apps/${appId}`, {
+        await fetch(`${API_BASE_URL}/apps/${appId}`, {
           method: "PATCH",
           headers: {
             "Authorization": `Bearer ${session?.access_token}`,
@@ -247,7 +248,7 @@ export default function DeployModal({ onClose }: { onClose: (jobId?: string) => 
       }
 
       // 4. Trigger actual deployment
-      const deployRes = await fetch(`http://127.0.0.1:8000/apps/${appId}/deploy?trigger_reason=Manual:Canvas`, {
+      const deployRes = await fetch(`${API_BASE_URL}/apps/${appId}/deploy?trigger_reason=Manual:Canvas`, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${session?.access_token}`,

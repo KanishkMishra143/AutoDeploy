@@ -1,16 +1,18 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
-import { Search, Box, Globe, GitBranch, Command, ChevronRight } from "lucide-react";
-import { Application } from "../useJobs";
+import { Search, Box, Globe, GitBranch, Command, ChevronRight, Terminal } from "lucide-react";
+import { Application, Job } from "../useJobs";
 
 interface CommandPaletteProps {
   isOpen: boolean;
   onClose: () => void;
   apps: Application[];
+  jobs: Job[];
+  onViewJob: (id: string) => void;
   onSelectApp: (app: Application) => void;
 }
 
-export default function CommandPalette({ isOpen, onClose, apps, onSelectApp }: CommandPaletteProps) {
+export default function CommandPalette({ isOpen, onClose, apps, jobs, onViewJob, onSelectApp }: CommandPaletteProps) {
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -19,6 +21,14 @@ export default function CommandPalette({ isOpen, onClose, apps, onSelectApp }: C
     app.name.toLowerCase().includes(query.toLowerCase()) ||
     app.repo_url.toLowerCase().includes(query.toLowerCase())
   );
+
+  const filteredJobs = jobs.filter(job => 
+    job.type.toLowerCase().includes(query.toLowerCase()) ||
+    job.status.toLowerCase().includes(query.toLowerCase()) ||
+    job.id.toLowerCase().includes(query.toLowerCase())
+  ).slice(0, 5);
+
+  const totalItems = filteredApps.length + filteredJobs.length;
 
   useEffect(() => {
     if (isOpen) {
@@ -34,15 +44,17 @@ export default function CommandPalette({ isOpen, onClose, apps, onSelectApp }: C
 
       if (e.key === "ArrowDown") {
         e.preventDefault();
-        setSelectedIndex(prev => (prev + 1) % Math.max(1, filteredApps.length));
+        setSelectedIndex(prev => (prev + 1) % Math.max(1, totalItems));
       } else if (e.key === "ArrowUp") {
         e.preventDefault();
-        setSelectedIndex(prev => (prev - 1 + filteredApps.length) % Math.max(1, filteredApps.length));
+        setSelectedIndex(prev => (prev - 1 + totalItems) % Math.max(1, totalItems));
       } else if (e.key === "Enter") {
-        if (filteredApps[selectedIndex]) {
+        if (selectedIndex < filteredApps.length) {
           onSelectApp(filteredApps[selectedIndex]);
-          onClose();
+        } else {
+          onViewJob(filteredJobs[selectedIndex - filteredApps.length].id);
         }
+        onClose();
       } else if (e.key === "Escape") {
         const allModals = Array.from(document.querySelectorAll('.fixed.inset-0'));
         const topModal = allModals.reduce((prev, curr) => {

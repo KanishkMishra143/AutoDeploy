@@ -44,22 +44,23 @@
         - **Proactive Pruning:** Configured Celery Beat to run a global sweep every 24 hours.
     - **Dashboard Branding Sync:** Updated versioning to `v0.5 ALPHA` across the entire UI.
 ### 📅 Wednesday, May 20, 2026
-- **Status:** Core Hardening & Concurrency Protection COMPLETE.
+- **Status:** Core Hardening, Cloudflare SSL & Production Persistence COMPLETE.
 - **Milestones:**
     - **Container Security (Task 7 Fix):** Implemented short-term "Defense in Depth" for user containers.
-        - **Resource Quotas:** Applied strict CPU (0.5), Memory (512MB), and Process (100 pids) limits to prevent DoS and resource exhaustion.
-        - **Privilege Lockdown:** Enforced `--security-opt no-new-privileges` and `--cap-drop ALL` to prevent container escapes and host takeover.
-        - **Process Control:** Added ulimits for file handles and disabled swap to ensure predictable performance and security.
+        - **Resource Quotas:** Applied strict CPU (0.5), Memory (512MB), and Process (100 pids) limits.
+        - **Privilege Lockdown:** Enforced `--security-opt no-new-privileges` and `--cap-drop ALL`.
     - **Concurrency & Race Protection (Task 8 Fix):** Resolved the "Double-Click Panic" at both UI and API layers.
-        - **Pessimistic Locking:** Implemented `with_for_update()` in SQLAlchemy for all state-changing endpoints (Create, Deploy, Delete).
-        - **Frontend Interlocks:** Standardized a "Visual Interlock" pattern across the dashboard. Every button now disables immediately and shows a loading spinner to prevent rapid-fire requests.
-        - **Idempotency Guards:** The API now detects overlapping deployments and returns `409 Conflict` instead of spawning duplicate builds.
-    - **Refined Credential Management:**
-        - Added an "Add Credential" form to the Integrations tab for proactive infrastructure setup.
-        - Implemented SSH Key format validation to guide users toward providing Private Keys instead of Public Keys.
+        - **Pessimistic Locking:** Implemented `with_for_update()` in SQLAlchemy for state-changing endpoints.
+    - **SSL/TLS & Global Access (Task 6 COMPLETE):** Transitioned to a public-facing infrastructure.
+        - **Cloudflare Tunnel:** Secured outbound connectivity from local hardware to `auto-deploy.tech` without port forwarding.
+        - **Dynamic Hostnames:** Updated the worker to generate `*.auto-deploy.tech` URLs dynamically via a `BASE_DOMAIN` environment variable.
+        - **Traefik Hardening:** Removed root privileges from the Traefik container for production security standards.
+    - **Server Persistence & Monitoring:**
+        - **Auto-Boot:** Configured `restart: unless-stopped` across the entire stack to ensure AutoDeploy wakes up on system boot.
+        - **Portainer Integration:** Added a visual management layer for monitoring system logs and container health in real-time.
 - **Next Task:**
-    1. **Task 6:** SSL/TLS Termination via Cloudflare Tunnels.
-    2. **Public Launch:** Transitioning from `.localhost` to `*.auto-deploy.tech`.
+    1. **Task 11:** Refining the AutoDeploy CLI for production use.
+    2. **Public Launch:** Onboarding first test users.
 
 ## Mentor Memory (Architectural Notes)
 - **Data Ownership Architecture:** Ownership is enforced at the **API Layer**. Every protected route uses the `get_current_user` dependency. All SQLAlchemy queries MUST include `.filter(Model.owner_id == current_user["sub"])` OR check the `AppAccess` table for shared permissions.

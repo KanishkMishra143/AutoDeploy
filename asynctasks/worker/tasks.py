@@ -224,17 +224,20 @@ def run_command(db, job_id, command, cwd=None, owner_id=None):
 def run_container(db, job_id, image_tag, env_vars=None, app_name=None, internal_port=8000, owner_id=None, volumes=None, cpu_limit=0.5, memory_limit_mb=512, pids_limit=100):
     """Starts a Docker container with Hardened Resource Quotas and Traefik labels."""
     from core.secrets_engine import resolver as secret_resolver
-    
+    import os
+
+    # Get the base domain from environment variables, default to auto-deploy.tech for production
+    base_domain = os.getenv("BASE_DOMAIN", "auto-deploy.tech")
+
     if app_name:
         clean_name = "".join(e for e in app_name.lower() if e.isalnum() or e == "-")
         user_suffix = str(owner_id)[:8] if owner_id else "local"
         container_name = f"ad-{clean_name}-{user_suffix}"
-        hostname = f"{clean_name}-{user_suffix}.localhost"
+        hostname = f"{clean_name}-{user_suffix}.{base_domain}"
     else:
         clean_name = "unknown"
         container_name = f"ad-{str(job_id)[:8]}"
-        hostname = f"{container_name}.localhost"
-        
+        hostname = f"{container_name}.{base_domain}"        
     network_name = "autodeploy-net"
     
     # --- TASK 7 SECURITY HARDENING (DATABASE DRIVEN) ---

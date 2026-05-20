@@ -1,35 +1,78 @@
 services:
+  # --- Control Plane (Our Apps) ---
+  api:
+    build: 
+      context: ./asynctasks
+      dockerfile: Dockerfile
+    container_name: autodeploy-api
+    restart: unless-stopped
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000
+    env_file:
+      - ./asynctasks/.env
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+      - redis
+      - vault
+
+  worker:
+    build: 
+      context: ./asynctasks
+      dockerfile: Dockerfile.worker
+    container_name: autodeploy-worker
+    restart: unless-stopped
+    env_file:
+      - ./asynctasks/.env
+    volumes:
+      # We mount the host's Docker socket into the worker container. 
+      # This allows the Worker's Docker CLI to spawn user apps on the host machine!
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - db
+      - redis
+      - api
+
+  # --- Infrastructure ---
   db:
     image: postgres:15
+    container_name: autodeploy-db
+    restart: unless-stopped
     environment:
       POSTGRES_USER: kanishk
       POSTGRES_PASSWORD: kanishk
       POSTGRES_DB: asynctasks
     ports:
       - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
   
   redis:
     image: redis:7-alpine
+    container_name: autodeploy-redis
+    restart: unless-stopped
     ports:
       - "6379:6379"
 
   vault:
     image: hashicorp/vault:1.15
     container_name: autodeploy-vault-1
+    restart: unless-stopped
     environment:
       VAULT_DEV_ROOT_TOKEN_ID: root
       VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
-      VAULT_LOCAL_CONFIG: '{"storage": {"file": {"path": "/vault/file"}}}'
     ports:
       - "8200:8200"
-    volumes:
-      - ./vault_data:/vault/file # Maps local folder 'vault_data' to Vault storage
     cap_add:
       - IPC_LOCK
 
   traefik:
     image: traefik:v2.11
-    user: root
+    container_name: autodeploy-traefik
+    restart: unless-stopped
+    # Running as non-root (unprivileged) for production security. 
+    # Note: On some systems, you may need to 'sudo chmod 666 /var/run/docker.sock' 
+    # or add the container user to the 'docker' group to allow socket access.
     command:
       - "--api.insecure=true"
       - "--providers.docker=true"
@@ -41,13 +84,18 @@ services:
       - "8080:8080"
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
-    networks:
-      - autodeploy-net
 
-networks:
-  autodeploy-net:
-    name: autodeploy-net
+  # --- Server Management ---
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: portainer
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
 
 volumes:
   postgres_data:
-  redis_data:
+  portainer_data:

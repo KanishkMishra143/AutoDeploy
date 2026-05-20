@@ -9,6 +9,7 @@ import PurgeModal from "../components/PurgeModal";
 import ConfirmationModal from "../components/ConfirmationModal";
 import toast from "react-hot-toast";
 import { supabase } from "../../lib/supabase";
+import { API_BASE_URL } from "../../lib/api";
 
 type TabType = 'General' | 'Security' | 'Integrations' | 'Notifications' | 'Billing' | 'Danger';
 
@@ -128,7 +129,7 @@ export default function SettingsPage() {
   const handlePurgeCluster = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch("http://127.0.0.1:8000/apps/purge", { 
+      const res = await fetch(`${API_BASE_URL}/apps/purge`, { 
         method: "DELETE",
         headers: {
           "Authorization": `Bearer ${session?.access_token}`,

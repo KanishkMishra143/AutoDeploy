@@ -9,6 +9,7 @@ import {
 import toast from "react-hot-toast";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useJobs, Job, Application } from "./useJobs";
+import { API_BASE_URL } from "@/lib/api";
 import LogViewer from "./components/LogViewer";
 import DeployModal from "./components/DeployModal";
 import AppDetailModal from "./components/HistoryModal"; 
@@ -139,7 +140,7 @@ export default function CanvasPage() {
         setConfirmConfig(prev => ({ ...prev, isLoading: true }));
         try {
           const { data: { session } } = await supabase.auth.getSession();
-          const res = await fetch(`http://127.0.0.1:8000/jobs/${jobId}`, {
+          const res = await fetch(`${API_BASE_URL}/jobs/${jobId}`, {
             method: "DELETE",
             headers: {
               "Authorization": `Bearer ${session?.access_token}`,
@@ -172,7 +173,7 @@ export default function CanvasPage() {
     
     try {
         const { data: { session } } = await supabase.auth.getSession();
-        const res = await fetch(`http://127.0.0.1:8000/apps/${appId}/deploy?trigger_reason=Manual:Canvas`, { 
+        const res = await fetch(`${API_BASE_URL}/apps/${appId}/deploy?trigger_reason=Manual:Canvas`, { 
           method: "POST",
           headers: {
             "Authorization": `Bearer ${session?.access_token}`,

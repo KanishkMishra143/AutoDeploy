@@ -5,8 +5,8 @@ interface PortCollisionModalProps {
     isOpen: boolean;
     onClose: () => void;
     onConfirm: (port: number) => void;
-    detectedPort: number | null;
-    source: string | null;
+    detectedPort?: number | null;
+    source?: string | null;
     currentPort: number;
 }
 
