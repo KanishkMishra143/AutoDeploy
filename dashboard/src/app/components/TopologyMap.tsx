@@ -309,7 +309,7 @@ export default function TopologyMap({ apps, jobs, compact = false, onAppClick, f
   }, [apps, jobs, compact, focusedAppId]);
 
   return (
-    <div className={`${compact ? 'h-[300px]' : 'h-[500px]'} w-full bg-card/20 rounded-3xl border border-card-border overflow-hidden relative shadow-inner group/flow`}>
+    <div className={`${compact ? 'h-[200px] md:h-[300px]' : 'h-[350px] md:h-[500px]'} w-full bg-card/20 rounded-2xl md:rounded-3xl border border-card-border overflow-hidden relative shadow-inner group/flow`}>
       <style jsx global>{`
         .react-flow__attribution { display: none !important; }
         .react-flow__controls { 

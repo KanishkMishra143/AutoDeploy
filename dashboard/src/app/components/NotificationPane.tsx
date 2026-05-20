@@ -68,16 +68,16 @@ export default function NotificationPane({ isOpen, onClose, jobs, apps, onViewJo
       />
       
       {/* Side Panel */}
-      <div className="relative w-full max-w-md bg-card border-l border-card-border h-full shadow-[0_0_50px_rgba(0,0,0,0.5)] flex flex-col animate-in slide-in-from-right duration-500 ease-out pointer-events-auto">
+      <div className="relative w-full md:max-w-md bg-card border-l border-card-border h-full shadow-[0_0_50px_rgba(0,0,0,0.5)] flex flex-col animate-in slide-in-from-right md:slide-in-from-right duration-500 ease-out pointer-events-auto">
         {/* Header */}
-        <div className="p-8 border-b border-card-border flex justify-between items-center bg-background/80 backdrop-blur-md sticky top-0 z-10">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 bg-accent/10 rounded-2xl flex items-center justify-center border border-accent/20">
-              <Bell className="w-6 h-6 text-accent" />
+        <div className="p-6 md:p-8 border-b border-card-border flex justify-between items-center bg-background/80 backdrop-blur-md sticky top-0 z-10">
+          <div className="flex items-center gap-3 md:gap-4">
+            <div className="w-10 h-10 md:w-12 md:h-12 bg-accent/10 rounded-xl md:rounded-2xl flex items-center justify-center border border-accent/20">
+              <Bell className="w-5 h-5 md:w-6 md:h-6 text-accent" />
             </div>
             <div>
-              <h3 className="text-xl font-black text-white uppercase tracking-tighter">Activity Feed</h3>
-              <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest flex items-center gap-1.5">
+              <h3 className="text-lg md:text-xl font-black text-white uppercase tracking-tighter">Activity Feed</h3>
+              <p className="text-[9px] md:text-[10px] font-bold text-gray-500 uppercase tracking-widest flex items-center gap-1.5">
                  <Sparkles className="w-3 h-3 text-accent/50" />
                  Live System Events
               </p>
@@ -85,7 +85,7 @@ export default function NotificationPane({ isOpen, onClose, jobs, apps, onViewJo
           </div>
           <button 
             onClick={onClose} 
-            className="p-2.5 hover:bg-white/5 rounded-xl text-gray-400 hover:text-white transition-all group"
+            className="p-2 hover:bg-white/5 rounded-xl text-gray-400 hover:text-white transition-all group"
           >
             <X className="w-6 h-6 group-hover:rotate-90 transition-transform duration-300" />
           </button>

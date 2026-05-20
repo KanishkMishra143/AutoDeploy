@@ -144,32 +144,32 @@ export default function Header({
     <>
       <header 
         className={`fixed top-0 left-0 right-0 z-[100] transition-all duration-500 ${
-          scrolled || isModalOpen ? 'py-4 px-8' : 'py-8 px-12'
+          scrolled || isModalOpen ? 'py-2 md:py-4 px-4 md:px-8' : 'py-4 md:py-8 px-4 md:px-12'
         }`}
       >
         <div 
-          className={`max-w-[1600px] mx-auto transition-all duration-500 flex items-center justify-between px-6 rounded-[28px] border relative ${
+          className={`max-w-[1600px] mx-auto transition-all duration-500 flex items-center justify-between px-4 md:px-6 rounded-[22px] md:rounded-[28px] border relative ${
             scrolled || isModalOpen
-              ? 'bg-card/80 backdrop-blur-2xl border-card-border h-20 shadow-2xl' 
-              : 'bg-background/20 backdrop-blur-md border-white/5 h-24 shadow-none'
+              ? 'bg-card/80 backdrop-blur-2xl border-card-border h-16 md:h-20 shadow-2xl' 
+              : 'bg-background/20 backdrop-blur-md border-white/5 h-20 md:h-24 shadow-none'
           }`}
         >
           {/* Logo Section */}
-          <Link href="/" className="flex items-center gap-6 group cursor-pointer z-10">
-            <div className="relative">
+          <Link href="/" className="flex items-center gap-3 md:gap-6 group cursor-pointer z-10">
+            <div className="relative shrink-0">
               <div className="absolute inset-0 bg-accent blur-xl opacity-20 group-hover:opacity-40 transition-opacity" />
-              <div className="relative w-12 h-12 bg-accent rounded-2xl flex items-center justify-center shadow-lg shadow-accent/20 group-hover:scale-105 transition-transform duration-500">
-                <Rocket className="w-6 h-6 text-white group-hover:rotate-12 transition-transform" />
+              <div className="relative w-10 h-10 md:w-12 md:h-12 bg-accent rounded-xl md:rounded-2xl flex items-center justify-center shadow-lg shadow-accent/20 group-hover:scale-105 transition-transform duration-500">
+                <Rocket className="w-5 h-5 md:w-6 md:h-6 text-white group-hover:rotate-12 transition-transform" />
               </div>
             </div>
             <div className="hidden sm:block">
-              <h1 className="text-xl font-black text-white tracking-tighter uppercase leading-none mb-1">AutoDeploy</h1>
+              <h1 className="text-lg md:text-xl font-black text-white tracking-tighter uppercase leading-none mb-1">AutoDeploy</h1>
               <div className="flex items-center gap-2">
                  <div className="flex items-center gap-1.5 px-2 py-0.5 bg-white/5 rounded-md border border-white/5">
                     <div className={`w-1.5 h-1.5 rounded-full ${apiError ? 'bg-red-500 animate-pulse' : 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]'}`} />
-                    <span className="text-[9px] font-black text-gray-500 uppercase tracking-widest">{apiError ? 'Offline' : 'API Operational'}</span>
+                    <span className="text-[9px] font-black text-gray-500 uppercase tracking-widest hidden md:inline">{apiError ? 'Offline' : 'API Operational'}</span>
                  </div>
-                 <div className="flex items-center gap-1.5 px-2 py-0.5 bg-white/5 rounded-md border border-white/5">
+                 <div className="hidden lg:flex items-center gap-1.5 px-2 py-0.5 bg-white/5 rounded-md border border-white/5">
                     <div className={`w-1.5 h-1.5 rounded-full ${workerCount === 0 ? 'bg-red-500 animate-pulse' : 'bg-accent shadow-[0_0_8px_rgba(59,130,246,0.4)]'}`} />
                     <span className={`text-[9px] font-black uppercase tracking-widest ${workerCount === 0 ? 'text-red-500' : 'text-gray-400'}`}>{workerCount} Nodes Active</span>
                  </div>
@@ -178,14 +178,14 @@ export default function Header({
           </Link>
 
           {/* Search & Command Bar */}
-          <div className="flex-1 max-w-xl mx-8 lg:mx-12">
+          <div className="flex-1 max-w-xl mx-4 lg:mx-12">
              <div 
                onClick={() => setShowCommandPalette(true)}
-               className="group relative flex items-center bg-white/5 hover:bg-white/10 border border-white/5 hover:border-accent/20 rounded-2xl px-5 py-3 cursor-pointer transition-all duration-300"
+               className="group relative flex items-center bg-white/5 hover:bg-white/10 border border-white/5 hover:border-accent/20 rounded-xl md:rounded-2xl px-3 md:px-5 py-2 md:py-3 cursor-pointer transition-all duration-300"
              >
                 <Search className="w-4 h-4 text-gray-500 group-hover:text-accent transition-colors" />
-                <span className="ml-4 text-sm font-medium text-gray-600 group-hover:text-gray-400 transition-colors hidden md:inline">Search or run commands...</span>
-                <span className="ml-4 text-sm font-medium text-gray-600 md:hidden">Search...</span>
+                <span className="ml-3 md:ml-4 text-sm font-medium text-gray-600 group-hover:text-gray-400 transition-colors hidden md:inline">Search or run commands...</span>
+                <span className="ml-3 text-xs md:hidden font-medium text-gray-600">Search...</span>
                 <div className="ml-auto hidden md:flex items-center gap-1.5">
                    <span className="px-1.5 py-0.5 bg-white/5 rounded text-[10px] font-black text-gray-600 border border-white/5 uppercase tracking-tighter">Ctrl</span>
                    <span className="px-1.5 py-0.5 bg-white/5 rounded text-[10px] font-black text-gray-600 border border-white/5 uppercase tracking-tighter">K</span>
@@ -194,29 +194,29 @@ export default function Header({
           </div>
 
           {/* Actions */}
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 md:gap-4">
              <button 
                onClick={() => setShowNotifications(!showNotifications)}
-               className="relative p-3 bg-white/5 hover:bg-accent hover:text-white text-gray-400 rounded-2xl transition-all border border-white/5 group"
+               className="relative p-2 md:p-3 bg-white/5 hover:bg-accent hover:text-white text-gray-400 rounded-xl md:rounded-2xl transition-all border border-white/5 group"
              >
-                <Bell className="w-5 h-5 group-hover:scale-110 transition-transform" />
+                <Bell className="w-4 h-4 md:w-5 md:h-5 group-hover:scale-110 transition-transform" />
                 {hasUnread && (
-                  <span className="absolute top-2.5 right-2.5 w-2.5 h-2.5 bg-accent border-2 border-background rounded-full animate-in zoom-in duration-300" />
+                  <span className="absolute top-2 right-2 md:top-2.5 md:right-2.5 w-2 md:w-2.5 h-2 md:h-2.5 bg-accent border-2 border-background rounded-full animate-in zoom-in duration-300" />
                 )}
              </button>
 
-             <div className="h-10 w-px bg-white/5 mx-2 hidden sm:block" />
+             <div className="h-8 md:h-10 w-px bg-white/5 mx-1 md:mx-2 hidden sm:block" />
 
              {/* User Profile Dropdown */}
              <div className="relative" id="profile-menu-container">
                 <button 
                   onClick={() => setShowProfileMenu(!showProfileMenu)}
-                  className={`flex items-center gap-3 p-1.5 pr-4 rounded-2xl transition-all border group relative z-20 ${showProfileMenu ? 'bg-accent border-accent text-white' : 'bg-white/5 border-white/5 text-gray-400 hover:border-white/10'}`}
+                  className={`flex items-center gap-3 p-1 md:p-1.5 md:pr-4 rounded-xl md:rounded-2xl transition-all border group relative z-20 ${showProfileMenu ? 'bg-accent border-accent text-white' : 'bg-white/5 border-white/5 text-gray-400 hover:border-white/10'}`}
                 >
                    {avatarUrl ? (
-                     <img src={avatarUrl} alt={fullName} className="w-9 h-9 rounded-xl border border-white/10" />
+                     <img src={avatarUrl} alt={fullName} className="w-8 h-8 md:w-9 md:h-9 rounded-lg md:rounded-xl border border-white/10" />
                    ) : (
-                     <div className="w-9 h-9 bg-accent/20 rounded-xl flex items-center justify-center text-[10px] font-black text-accent group-hover:bg-white/10 transition-all">
+                     <div className="w-8 h-8 md:w-9 md:h-9 bg-accent/20 rounded-lg md:rounded-xl flex items-center justify-center text-[10px] font-black text-accent group-hover:bg-white/10 transition-all">
                         {userInitials}
                      </div>
                    )}

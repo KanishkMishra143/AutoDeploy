@@ -260,12 +260,12 @@ export default function CanvasPage() {
             </div>
         </div>
 
-        <div className="bg-card border border-card-border rounded-[28px] overflow-hidden hover:border-accent/40 transition-all cursor-pointer relative z-10 shadow-xl">
-          <div className="p-8">
-            <div className="flex justify-between items-start mb-8">
+        <div className="bg-card border border-card-border rounded-[22px] md:rounded-[28px] overflow-hidden hover:border-accent/40 transition-all cursor-pointer relative z-10 shadow-xl">
+          <div className="p-6 md:p-8">
+            <div className="flex justify-between items-start mb-6 md:mb-8">
                <div className="flex flex-col gap-3">
-                 <div className="p-4 bg-accent/5 rounded-2xl border border-accent/10 group-hover:bg-accent/10 transition-colors text-accent group-hover:scale-110 duration-300 w-fit">
-                    <Box className="w-7 h-7" />
+                 <div className="p-3 md:p-4 bg-accent/5 rounded-xl md:rounded-2xl border border-accent/10 group-hover:bg-accent/10 transition-colors text-accent group-hover:scale-110 duration-300 w-fit">
+                    <Box className="w-6 h-6 md:w-7 md:h-7" />
                  </div>
                  {app.role && app.role !== 'OWNER' && (
                    <span className="px-2 py-0.5 bg-blue-500/10 text-blue-500 text-[8px] font-black rounded uppercase tracking-widest border border-blue-500/20 w-fit animate-in fade-in zoom-in-95">
@@ -286,13 +286,13 @@ export default function CanvasPage() {
                )}
             </div>
             
-            <h4 className="text-2xl font-black mb-1 text-white uppercase tracking-tighter">{app.name}</h4>
-            <div className="space-y-1.5 mb-8">
-              <p className="text-xs text-gray-500 font-mono flex items-center gap-1.5 truncate opacity-60">
-                <Globe className="w-3.5 h-3.5" /> {app.repo_url}
+            <h4 className="text-xl md:text-2xl font-black mb-1 text-white uppercase tracking-tighter">{app.name}</h4>
+            <div className="space-y-1 md:space-y-1.5 mb-6 md:mb-8">
+              <p className="text-[10px] md:text-xs text-gray-500 font-mono flex items-center gap-1.5 truncate opacity-60">
+                <Globe className="w-3 md:w-3.5 h-3 md:h-3.5" /> {app.repo_url}
               </p>
-              <p className="text-[10px] text-accent/70 font-bold flex items-center gap-1.5 uppercase tracking-widest">
-                <GitBranch className="w-3.5 h-3.5" /> {app.branch || 'main'}
+              <p className="text-[9px] md:text-[10px] text-accent/70 font-bold flex items-center gap-1.5 uppercase tracking-widest">
+                <GitBranch className="w-3 md:w-3.5 h-3 md:h-3.5" /> {app.branch || 'main'}
               </p>
             </div>
 
@@ -357,7 +357,7 @@ export default function CanvasPage() {
         isModalOpen={showDeployModal || !!selectedApp || confirmConfig.isOpen || !!selectedJobId || isHeaderOverlayOpen}
         onOverlayToggle={setIsHeaderOverlayOpen}
       />
-      <main className="pt-48 pb-20 px-8">
+      <main className="pt-28 md:pt-48 pb-10 md:pb-20 px-4 md:px-8">
         {selectedJobId && (
           <LogViewer jobId={selectedJobId} onClose={() => setSelectedJobId(null)} />
         )}
@@ -395,18 +395,18 @@ export default function CanvasPage() {
 
         <div className="max-w-7xl mx-auto">
           {/* Hero Section */}
-          <div className="flex justify-between items-end mb-16">
+          <div className="flex flex-col md:flex-row md:justify-between md:items-end gap-6 mb-12 md:mb-16">
             <div>
               <div className="flex items-center gap-2 mb-3">
                 <span className="px-2 py-0.5 bg-accent/10 text-accent text-[9px] font-black rounded uppercase tracking-widest border border-accent/20">v0.5 ALPHA</span>
               </div>
-              <h2 className="text-4xl font-black tracking-tighter text-white uppercase mb-2">Workspace</h2>
-              <p className="text-gray-500 text-sm max-w-md font-medium">Manage your distributed application cluster from a single pane of glass.</p>
+              <h2 className="text-3xl md:text-4xl font-black tracking-tighter text-white uppercase mb-2">Workspace</h2>
+              <p className="text-gray-500 text-xs md:text-sm max-w-md font-medium">Manage your distributed application cluster from a single pane of glass.</p>
             </div>
             
             <button 
               onClick={() => setShowDeployModal(true)}
-              className="bg-accent hover:bg-accent/90 text-white px-6 py-3.5 rounded-2xl flex items-center gap-3 text-sm font-black transition-all shadow-xl shadow-accent/20 active:scale-95 uppercase tracking-widest border border-accent/20"
+              className="bg-accent hover:bg-accent/90 text-white px-6 py-3 md:py-3.5 rounded-xl md:rounded-2xl flex items-center justify-center gap-3 text-sm font-black transition-all shadow-xl shadow-accent/20 active:scale-95 uppercase tracking-widest border border-accent/20 w-full md:w-auto"
             >
               <Plus className="w-5 h-5" />
               New Application

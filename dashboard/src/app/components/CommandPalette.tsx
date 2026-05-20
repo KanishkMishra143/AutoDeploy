@@ -80,21 +80,21 @@ export default function CommandPalette({ isOpen, onClose, apps, jobs, onViewJob,
   return (
     <div 
       id="command-palette-wrapper"
-      className="fixed inset-0 z-[200] flex items-start justify-center pt-[15vh] px-4 animate-in fade-in duration-200 pointer-events-none"
+      className="fixed inset-0 z-[200] flex items-start justify-center pt-0 md:pt-[15vh] px-0 md:px-4 animate-in fade-in duration-200 pointer-events-none"
     >
       <div 
         className="fixed inset-0 bg-black/60 backdrop-blur-md pointer-events-auto cursor-pointer" 
         onClick={onClose}
       />
       
-      <div className="relative w-full max-w-2xl bg-card border border-card-border rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-200 pointer-events-auto">
-        <div className="flex items-center px-6 py-4 border-b border-card-border bg-background/50">
-          <Search className="w-5 h-5 text-accent mr-4" />
+      <div className="relative w-full md:max-w-2xl bg-card border-b md:border border-card-border md:rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-200 pointer-events-auto max-h-[100dvh] md:max-h-none">
+        <div className="flex items-center px-4 md:px-6 py-3 md:py-4 border-b border-card-border bg-background/50">
+          <Search className="w-5 h-5 text-accent mr-3 md:mr-4" />
           <input 
             ref={inputRef}
             type="text" 
-            placeholder="Search applications, repositories, or branches..."
-            className="flex-1 bg-transparent border-none text-white text-lg font-medium outline-none placeholder:text-gray-600"
+            placeholder="Search applications..."
+            className="flex-1 bg-transparent border-none text-white text-base md:text-lg font-medium outline-none placeholder:text-gray-600"
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
@@ -107,7 +107,7 @@ export default function CommandPalette({ isOpen, onClose, apps, jobs, onViewJob,
           </div>
         </div>
 
-        <div className="flex-1 max-h-[50vh] overflow-y-auto p-2 custom-scrollbar">
+        <div className="flex-1 max-h-[60vh] md:max-h-[50vh] overflow-y-auto p-2 custom-scrollbar">
           {filteredApps.length === 0 ? (
              <div className="py-12 text-center">
                 <Box className="w-12 h-12 text-gray-800 mx-auto mb-4" />
@@ -124,26 +124,26 @@ export default function CommandPalette({ isOpen, onClose, apps, jobs, onViewJob,
                     onClose();
                   }}
                   onMouseEnter={() => setSelectedIndex(index)}
-                  className={`flex items-center justify-between p-4 rounded-2xl cursor-pointer transition-all ${isSelected ? 'bg-accent/10 border border-accent/20 translate-x-1' : 'border border-transparent hover:bg-white/5'}`}
+                  className={`flex items-center justify-between p-3 md:p-4 rounded-xl md:rounded-2xl cursor-pointer transition-all ${isSelected ? 'bg-accent/10 border border-accent/20 translate-x-1' : 'border border-transparent hover:bg-white/5'}`}
                 >
-                  <div className="flex items-center gap-4">
-                    <div className={`p-3 rounded-xl ${isSelected ? 'bg-accent text-white' : 'bg-white/5 text-gray-400'} transition-colors`}>
+                  <div className="flex items-center gap-3 md:gap-4">
+                    <div className={`p-2.5 md:p-3 rounded-lg md:rounded-xl ${isSelected ? 'bg-accent text-white' : 'bg-white/5 text-gray-400'} transition-colors shrink-0`}>
                        <Box className="w-5 h-5" />
                     </div>
-                    <div>
-                      <h4 className={`text-sm font-black uppercase tracking-tight ${isSelected ? 'text-white' : 'text-gray-300'}`}>{app.name}</h4>
+                    <div className="min-w-0">
+                      <h4 className={`text-sm font-black uppercase tracking-tight truncate ${isSelected ? 'text-white' : 'text-gray-300'}`}>{app.name}</h4>
                       <div className="flex items-center gap-3 mt-0.5">
-                        <p className="text-[10px] text-gray-500 font-mono flex items-center gap-1">
+                        <p className="text-[10px] text-gray-500 font-mono flex items-center gap-1 truncate max-w-[120px] md:max-w-none">
                           <Globe className="w-3 h-3" /> {app.repo_url.split('/').pop()}
                         </p>
-                        <p className="text-[10px] text-accent/60 font-bold flex items-center gap-1 uppercase tracking-widest">
+                        <p className="text-[10px] text-accent/60 font-bold flex items-center gap-1 uppercase tracking-widest shrink-0">
                           <GitBranch className="w-3 h-3" /> {app.branch || 'main'}
                         </p>
                       </div>
                     </div>
                   </div>
                   
-                  <div className={`flex items-center gap-2 transition-opacity ${isSelected ? 'opacity-100' : 'opacity-0'}`}>
+                  <div className={`hidden md:flex items-center gap-2 transition-opacity ${isSelected ? 'opacity-100' : 'opacity-0'}`}>
                      <span className="text-[9px] font-black text-accent uppercase tracking-widest">Open Application</span>
                      <ChevronRight className="w-4 h-4 text-accent" />
                   </div>
@@ -153,16 +153,16 @@ export default function CommandPalette({ isOpen, onClose, apps, jobs, onViewJob,
           )}
         </div>
 
-        <div className="p-4 bg-background/80 border-t border-card-border flex items-center gap-6 justify-center">
-           <div className="flex items-center gap-2">
+        <div className="p-4 bg-background/80 border-t border-card-border flex items-center gap-4 md:gap-6 justify-between md:justify-center overflow-x-auto">
+           <div className="flex items-center gap-2 shrink-0">
               <span className="px-1.5 py-0.5 bg-white/5 border border-card-border rounded text-[9px] text-gray-500 font-black">↑↓</span>
               <span className="text-[9px] text-gray-600 font-bold uppercase tracking-widest">Navigate</span>
            </div>
-           <div className="flex items-center gap-2">
+           <div className="flex items-center gap-2 shrink-0">
               <span className="px-1.5 py-0.5 bg-white/5 border border-card-border rounded text-[9px] text-gray-500 font-black">ENTER</span>
               <span className="text-[9px] text-gray-600 font-bold uppercase tracking-widest">Select</span>
            </div>
-           <div className="flex items-center gap-2">
+           <div className="flex items-center gap-2 shrink-0">
               <span className="px-1.5 py-0.5 bg-white/5 border border-card-border rounded text-[9px] text-gray-500 font-black">ESC</span>
               <span className="text-[9px] text-gray-600 font-bold uppercase tracking-widest">Close</span>
            </div>

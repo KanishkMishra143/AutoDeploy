@@ -15,6 +15,8 @@ services:
       - db
       - redis
       - vault
+    networks:
+      - autodeploy-net
 
   worker:
     build: 
@@ -25,13 +27,28 @@ services:
     env_file:
       - ./asynctasks/.env
     volumes:
-      # We mount the host's Docker socket into the worker container. 
-      # This allows the Worker's Docker CLI to spawn user apps on the host machine!
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       - db
       - redis
       - api
+    networks:
+      - autodeploy-net
+
+  beat:
+    build: 
+      context: ./asynctasks
+      dockerfile: Dockerfile.worker
+    container_name: autodeploy-beat
+    restart: unless-stopped
+    command: celery -A worker.celery_app beat --loglevel=info
+    env_file:
+      - ./asynctasks/.env
+    depends_on:
+      - redis
+      - api
+    networks:
+      - autodeploy-net
 
   # --- Infrastructure ---
   db:
@@ -46,6 +63,8 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      - autodeploy-net
   
   redis:
     image: redis:7-alpine
@@ -53,6 +72,8 @@ services:
     restart: unless-stopped
     ports:
       - "6379:6379"
+    networks:
+      - autodeploy-net
 
   vault:
     image: hashicorp/vault:1.15
@@ -67,14 +88,13 @@ services:
       - ./vault_data:/vault/file
     cap_add:
       - IPC_LOCK
+    networks:
+      - autodeploy-net
 
   traefik:
     image: traefik:v2.11
     container_name: autodeploy-traefik
     restart: unless-stopped
-    # Running as non-root (unprivileged) for production security. 
-    # Note: On some systems, you may need to 'sudo chmod 666 /var/run/docker.sock' 
-    # or add the container user to the 'docker' group to allow socket access.
     command:
       - "--api.insecure=true"
       - "--providers.docker=true"
@@ -86,6 +106,8 @@ services:
       - "8080:8080"
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    networks:
+      - autodeploy-net
 
   # --- Server Management ---
   portainer:
@@ -97,6 +119,12 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - portainer_data:/data
+    networks:
+      - autodeploy-net
+
+networks:
+  autodeploy-net:
+    name: autodeploy-net
 
 volumes:
   postgres_data:

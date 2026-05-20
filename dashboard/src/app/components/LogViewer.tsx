@@ -207,16 +207,16 @@ export default function LogViewer({ jobId, onClose }: { jobId: string; onClose: 
     <div 
       id="log-viewer-wrapper"
       onClick={(e) => e.target === e.currentTarget && onClose()}
-      className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-in fade-in duration-300"
+      className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/90 backdrop-blur-md p-0 md:p-4 animate-in fade-in duration-300"
     >
-      <div className="w-full max-w-5xl bg-card border border-card-border rounded-2xl shadow-2xl overflow-hidden flex flex-col h-[85vh] animate-in zoom-in-95 duration-300">
+      <div className="w-full h-full md:h-[85vh] md:max-w-5xl bg-card border-y md:border border-card-border md:rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-300">
 
         {/* Terminal Title Bar */}
-        <div className="bg-[#111] px-6 py-4 border-b border-card-border flex justify-between items-center select-none">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-3">
+        <div className="bg-[#111] px-4 md:px-6 py-3 md:py-4 border-b border-card-border flex justify-between items-center select-none">
+          <div className="flex items-center gap-3 md:gap-4">
+            <div className="flex items-center gap-2 md:gap-3">
                 <Terminal className="w-4 h-4 text-accent" />
-                <span className="text-[10px] font-black font-mono text-gray-400 uppercase tracking-widest">
+                <span className="text-[9px] md:text-[10px] font-black font-mono text-gray-400 uppercase tracking-widest">
                   Live Stream ~ {job?.build_number ? `BUILD #${job.build_number}` : jobId.split('-')[0]}
                 </span>
             </div>
@@ -229,23 +229,23 @@ export default function LogViewer({ jobId, onClose }: { jobId: string; onClose: 
         <div className="relative flex-1 overflow-hidden flex flex-col">
           {/* Diagnostic Overlay */}
           {job?.result?.diagnosis && (
-            <div className="bg-accent/10 border-b border-accent/20 p-5 shrink-0 flex items-start gap-4 animate-in slide-in-from-top-2">
-              <div className="bg-accent/20 p-2.5 rounded-xl border border-accent/20">
-                <AlertCircle className="w-5 h-5 text-accent" />
+            <div className="bg-accent/10 border-b border-accent/20 p-4 md:p-5 shrink-0 flex items-start gap-3 md:gap-4 animate-in slide-in-from-top-2">
+              <div className="bg-accent/20 p-2 md:p-2.5 rounded-lg md:rounded-xl border border-accent/20 shrink-0">
+                <AlertCircle className="w-4 h-4 md:w-5 md:h-5 text-accent" />
               </div>
               <div>
-                <h4 className="text-accent font-black text-[10px] tracking-[0.2em] uppercase mb-1">
+                <h4 className="text-accent font-black text-[9px] md:text-[10px] tracking-[0.2em] uppercase mb-1">
                   Orchestrator Diagnosis
                 </h4>
-                <p className="text-white text-sm font-bold">{job.result.diagnosis.title}</p>
-                <p className="text-gray-400 text-xs mt-1 font-medium">{job.result.diagnosis.suggestion}</p>
+                <p className="text-white text-xs md:text-sm font-bold">{job.result.diagnosis.title}</p>
+                <p className="text-gray-400 text-[10px] md:text-xs mt-1 font-medium leading-tight">{job.result.diagnosis.suggestion}</p>
               </div>
             </div>
           )}
 
           {/* Log List */}
           <div 
-            className="flex-1 bg-[#050505] p-6 font-mono text-sm overflow-y-auto custom-scrollbar selection:bg-accent/30" 
+            className="flex-1 bg-[#050505] p-4 md:p-6 font-mono text-[11px] md:text-sm overflow-y-auto custom-scrollbar selection:bg-accent/30" 
             ref={scrollRef}
             onScroll={handleScroll}
           >
