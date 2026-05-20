@@ -119,7 +119,7 @@ export function useJobs() {
     const fetchProfile = async () => {
         try {
             const headers = await getAuthHeaders();
-            const response = await fetch("${API_BASE_URL}/auth/profile", { headers });
+            const response = await fetch(`${API_BASE_URL}/auth/profile`, { headers });
             if (response.ok) {
                 const data = await response.json();
                 setProfile(data);
@@ -132,7 +132,7 @@ export function useJobs() {
     const fetchSettings = async () => {
         try {
             const headers = await getAuthHeaders();
-            const response = await fetch("${API_BASE_URL}/auth/settings", { headers });
+            const response = await fetch(`${API_BASE_URL}/auth/settings`, { headers });
             if (response.ok) {
                 const data = await response.json();
                 setSettings(data);
@@ -145,7 +145,7 @@ export function useJobs() {
     const updateSettings = async (newSettings: UserSettings) => {
         try {
             const headers = await getAuthHeaders();
-            const response = await fetch("${API_BASE_URL}/auth/settings", {
+            const response = await fetch(`${API_BASE_URL}/auth/settings`, {
                 method: "PATCH",
                 headers,
                 body: JSON.stringify(newSettings)
@@ -164,7 +164,7 @@ export function useJobs() {
     const fetchApiKeys = async () => {
         try {
             const headers = await getAuthHeaders();
-            const response = await fetch("${API_BASE_URL}/auth/keys", { headers });
+            const response = await fetch(`${API_BASE_URL}/auth/keys`, { headers });
             if (response.ok) {
                 const data = await response.json();
                 setApiKeys(data);
@@ -177,7 +177,7 @@ export function useJobs() {
     const createApiKey = async (name: string, validityDays: number = 7) => {
         try {
             const headers = await getAuthHeaders();
-            const response = await fetch("${API_BASE_URL}/auth/keys", {
+            const response = await fetch(`${API_BASE_URL}/auth/keys`, {
                 method: "POST",
                 headers,
                 body: JSON.stringify({ name, validity_days: validityDays })
@@ -211,7 +211,7 @@ export function useJobs() {
     const fetchCredentials = async () => {
         try {
             const headers = await getAuthHeaders();
-            const response = await fetch("${API_BASE_URL}/auth/credentials", { headers });
+            const response = await fetch(`${API_BASE_URL}/auth/credentials`, { headers });
             if (response.ok) {
                 const data = await response.json();
                 setCredentials(data);
@@ -224,7 +224,7 @@ export function useJobs() {
     const createCredential = async (name: string, type: string, value: string) => {
         try {
             const headers = await getAuthHeaders();
-            const response = await fetch("${API_BASE_URL}/auth/credentials", {
+            const response = await fetch(`${API_BASE_URL}/auth/credentials`, {
                 method: "POST",
                 headers,
                 body: JSON.stringify({ name, type, value })
@@ -258,7 +258,7 @@ export function useJobs() {
     const fetchWorkers = async () => {
         try {
             const headers = await getAuthHeaders();
-            const response = await fetch("${API_BASE_URL}/workers", { headers });
+            const response = await fetch(`${API_BASE_URL}/workers`, { headers });
             if (!response.ok) throw new Error();
             const data = await response.json();
             setWorkerCount(data.count);
@@ -270,7 +270,7 @@ export function useJobs() {
     const fetchApps = async () => {
         try {
             const headers = await getAuthHeaders();
-            const response = await fetch("${API_BASE_URL}/apps", { headers });
+            const response = await fetch(`${API_BASE_URL}/apps`, { headers });
             if (response.ok) {
                 const data = await response.json();
                 setApps(data.apps || []);
@@ -283,7 +283,7 @@ export function useJobs() {
     const fetchJobs = async () => {
       try {
         const headers = await getAuthHeaders();
-        const response = await fetch("${API_BASE_URL}/jobs?limit=50", { headers });
+        const response = await fetch(`${API_BASE_URL}/jobs?limit=50`, { headers });
         if (!response.ok) throw new Error("API Unreachable");
         const data = await response.json();
         setJobs(data.jobs || []);
