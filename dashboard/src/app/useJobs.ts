@@ -18,6 +18,7 @@ export interface Application {
     branch?: string;
     stack: string;
     internal_port: number;
+    owner_id: string;
     pre_build_steps: string[];
     post_build_steps: string[];
     env_vars: Record<string, string>;
@@ -30,6 +31,7 @@ export interface Application {
     role?: "OWNER" | "ADMIN" | "VIEWER";
     owner_profile?: Profile;
     access_list?: AppAccess[];
+    [key: string]: any; // Safety net for dynamic API fields
 }
 
 export interface Job {
@@ -45,6 +47,8 @@ export interface Job {
         message?: string;
         progress_msg?: string;
         progress_pct?: number;
+        status?: string;
+        started_at?: string;
         diagnosis?: {
             title: string;
             suggestion: string;
@@ -58,6 +62,7 @@ export interface Job {
             port: string;
             url: string;
         };
+        [key: string]: any; // Safety net for dynamic API fields
     };
     created_at: string;
     updated_at: string;
