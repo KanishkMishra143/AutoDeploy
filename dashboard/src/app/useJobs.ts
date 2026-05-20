@@ -21,6 +21,10 @@ export interface Application {
     pre_build_steps: string[];
     post_build_steps: string[];
     env_vars: Record<string, string>;
+    root_dir?: string;
+    retention_limit?: number;
+    retention_days?: number;
+    volumes?: string[];
     created_at: string;
     updated_at: string;
     role?: "OWNER" | "ADMIN" | "VIEWER";
