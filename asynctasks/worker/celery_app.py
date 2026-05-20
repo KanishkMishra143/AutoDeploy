@@ -1,10 +1,11 @@
+import os
 from celery import Celery
-from core.redis import redis_client
+from core.redis import REDIS_URL
 
 app = Celery(
     "worker",
-    broker="redis://localhost:6379/0",
-    backend="redis://localhost:6379/1",
+    broker=f"{REDIS_URL}/0",
+    backend=f"{REDIS_URL}/1",
     include=["worker.tasks"]
 )
 

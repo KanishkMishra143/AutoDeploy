@@ -13,7 +13,11 @@ Base.metadata.create_all(bind=engine)
 app = FastAPI(title="AsyncTasks API")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://auto-deploy.tech",
+        "https://www.auto-deploy.tech",
+        "http://localhost:3000"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
