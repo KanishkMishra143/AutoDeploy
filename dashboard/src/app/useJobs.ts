@@ -45,6 +45,19 @@ export interface Job {
         message?: string;
         progress_msg?: string;
         progress_pct?: number;
+        diagnosis?: {
+            title: string;
+            suggestion: string;
+            category: string;
+            detected_at: string;
+        };
+        container?: {
+            container_id: string;
+            container_name: string;
+            hostname: string;
+            port: string;
+            url: string;
+        };
     };
     created_at: string;
     updated_at: string;
