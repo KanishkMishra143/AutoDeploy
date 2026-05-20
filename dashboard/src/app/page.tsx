@@ -19,7 +19,7 @@ import Header from "./components/Header";
 import { supabase } from "../lib/supabase";
 
 export default function CanvasPage() {
-  const { jobs, apps, profile, loading, error, workerCount } = useJobs();
+  const { jobs, apps, profile, credentials, loading, error, workerCount } = useJobs();
   const searchParams = useSearchParams();
   const router = useRouter();
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
@@ -379,6 +379,7 @@ export default function CanvasPage() {
             onViewLogs={(id) => setSelectedJobId(id)}
             allJobs={jobs}
             allApps={apps}
+            credentials={credentials}
           />
         )}
 

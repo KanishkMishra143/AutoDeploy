@@ -96,6 +96,7 @@ def get_app_with_access(app_id: UUID, user_id: str, db: Session, required_role: 
 def get_repo_branches(repo_url: str, credential_id: Optional[UUID] = None, pat: Optional[str] = None, db: Session = Depends(get_db)):
     """Fetches all branches from a remote repository, supporting private repos with credentials or PAT."""
     env = os.environ.copy()
+    ssh_key_path = None
     
     # 1. Handle PAT or Credential for authentication
     if pat:
@@ -112,9 +113,15 @@ def get_repo_branches(repo_url: str, credential_id: Optional[UUID] = None, pat: 
                 proto, rest = repo_url.split("://", 1)
                 repo_url = f"{proto}://{pat_val}@{rest}"
         elif cred and cred.type == "SSH":
-            # For branch fetching via SSH, we would need a temp key similar to clone_repository.
-            # For now, we'll focus on HTTPS + PAT which is most common for branch listing.
-            pass
+            cred_value = decrypt_string(cred.encrypted_value)
+            # Create a temporary SSH key file
+            fd, ssh_key_path = tempfile.mkstemp(prefix="ad_fetch_ssh_")
+            with os.fdopen(fd, 'w') as f:
+                f.write(cred_value)
+            os.chmod(ssh_key_path, 0o600)
+            
+            # Use GIT_SSH_COMMAND to point to our temp key
+            env["GIT_SSH_COMMAND"] = f"ssh -i {ssh_key_path} -o StrictHostKeyChecking=no"
 
     try:
         result = subprocess.run(
@@ -140,6 +147,9 @@ def get_repo_branches(repo_url: str, credential_id: Optional[UUID] = None, pat: 
         err_str = str(e)
         if pat: err_str = err_str.replace(pat, "********")
         raise HTTPException(status_code=400, detail=f"Failed to fetch branches: {err_str}")
+    finally:
+        if ssh_key_path and os.path.exists(ssh_key_path):
+            os.remove(ssh_key_path)
 
 @router.post("", response_model=AppResponse)
 def create_app(app_data: AppCreate, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):

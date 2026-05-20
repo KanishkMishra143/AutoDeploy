@@ -4,6 +4,10 @@ FROM python:3.11-slim
 # Set our working directory inside the container
 WORKDIR /app
 
+# Crucial step: Install the Docker CLI and Git inside the container. 
+# We don't install the Docker Daemon (Engine), just the CLI tools. It will talk to the host's Daemon.
+RUN apt-get update && apt-get install -y docker.io git && rm -rf /var/lib/apt/lists/*
+
 # Copy the Astral 'uv' binary directly from their official image. This is a brilliant 
 # optimization for lightning-fast dependency installation.
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/

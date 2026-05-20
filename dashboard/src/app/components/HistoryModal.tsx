@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import { X, Clock, RotateCcw, AlertCircle, Box, ExternalLink, Globe, Activity, History as HistoryIcon, Layers, Terminal, Trash2, Settings, Plus, Save, Upload, User, Loader2, Shield, GitBranch } from "lucide-react";
 import toast from "react-hot-toast";
-import { Job, Application } from "../useJobs";
+import { Job, Application, Credential } from "../useJobs";
 import TopologyMap from "./TopologyMap";
 import ConfirmationModal from "./ConfirmationModal";
 import PortCollisionModal from "./PortCollisionModal";
@@ -15,9 +15,10 @@ interface AppDetailModalProps {
   onViewLogs: (jobId: string) => void;
   allJobs: Job[];
   allApps: Application[];
+  credentials: Credential[];
 }
 
-export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, allJobs, allApps }: AppDetailModalProps) {
+export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, allJobs, allApps, credentials }: AppDetailModalProps) {
   const [liveApp, setLiveApp] = useState<Application>(initialApp);
   const app = liveApp; // Alias for JSX compatibility
   const [historyJobs, setHistoryJobs] = useState<Job[]>([]);
@@ -107,6 +108,7 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
   const [localVolumes, setLocalVolumes] = useState<string[]>(initialApp.volumes || []);
   const [localPreSteps, setLocalPreSteps] = useState<string[]>(initialApp.pre_build_steps || []);
   const [localPostSteps, setLocalPostSteps] = useState<string[]>(initialApp.post_build_steps || []);
+  const [localCredentialId, setLocalCredentialId] = useState<string | null>(initialApp.credential_id || null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Confirmation Modal State
@@ -360,7 +362,8 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
           retention_days: localRetentionDays,
           volumes: localVolumes.filter(v => v.trim()),
           pre_build_steps: localPreSteps,
-          post_build_steps: localPostSteps
+          post_build_steps: localPostSteps,
+          credential_id: localCredentialId
         })
       });
 
@@ -847,6 +850,29 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
                     </div>
                   </div>
                 </div>
+              </div>
+
+              <div className="mb-8">
+                <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Repository Authentication</h4>
+                <div className="flex items-center gap-4 bg-background border border-card-border rounded-2xl px-6 py-4 focus-within:border-accent transition-all group">
+                  <Shield className="w-4 h-4 text-gray-600 group-focus-within:text-accent" />
+                  <div className="flex-1">
+                    <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest mb-1">Access Credential (PAT/SSH)</p>
+                    <select 
+                        className="w-full bg-transparent text-sm font-bold text-white outline-none cursor-pointer"
+                        value={localCredentialId || ""}
+                        onChange={(e) => setLocalCredentialId(e.target.value || null)}
+                    >
+                        <option value="" className="bg-card text-white">Public / No PAT</option>
+                        {credentials.map(cred => (
+                          <option key={cred.id} value={cred.id} className="bg-card text-white">{cred.name} ({cred.type})</option>
+                        ))}
+                    </select>
+                  </div>
+                </div>
+                <p className="mt-3 text-[9px] text-gray-600 font-bold uppercase tracking-widest leading-relaxed">
+                  Required for private repositories. Manage global credentials in System Settings.
+                </p>
               </div>
 
               <div className="mb-8">
