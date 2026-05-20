@@ -46,6 +46,9 @@ db/
 .DS_Store
 Thumbs.db
 
+# Vault Data (Contains sensitive encrypted secrets)
+vault_data/
+
 # IDEs and editors
 .vscode/
 .idea/
