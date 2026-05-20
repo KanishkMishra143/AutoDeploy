@@ -15,6 +15,7 @@ class AppCreate(BaseModel):
     pre_build_steps: Optional[List[str]] = []
     post_build_steps: Optional[List[str]] = []
     env_vars: Optional[Dict[str, str]] = {}
+    credential_id: Optional[UUID] = None
 
 
 class AppUpdate(BaseModel):
@@ -27,6 +28,25 @@ class AppUpdate(BaseModel):
     pre_build_steps: Optional[List[str]] = None
     post_build_steps: Optional[List[str]] = None
     env_vars: Optional[Dict[str, str]] = None
+    credential_id: Optional[UUID] = None
+    retention_limit: Optional[int] = None
+    retention_days: Optional[int] = None
+
+
+class CredentialCreate(BaseModel):
+    name: str
+    type: str # "SSH" or "PAT"
+    value: str # Raw private key or PAT token
+
+
+class CredentialResponse(BaseModel):
+    id: UUID
+    name: str
+    type: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
 
 
 class AppAccessBase(BaseModel):
@@ -43,6 +63,9 @@ class ProfileResponse(BaseModel):
     username: str
     full_name: Optional[str] = None
     avatar_url: Optional[str] = None
+    cpu_limit: float = 0.5
+    memory_limit_mb: int = 512
+    pids_limit: int = 100
 
     class Config:
         from_attributes = True
@@ -60,13 +83,16 @@ class UserSettingsResponse(UserSettingsBase):
 
 class APIKeyCreate(BaseModel):
     name: str
+    validity_days: Optional[int] = 7 # 1, 2, 3, 7
 
 
 class APIKeyResponse(BaseModel):
     id: UUID
     name: str
     key_prefix: str
+    secret_key: Optional[str] = None
     created_at: datetime
+    expires_at: Optional[datetime] = None
     last_used_at: Optional[datetime] = None
 
     class Config:
@@ -74,7 +100,7 @@ class APIKeyResponse(BaseModel):
 
 
 class APIKeyFullResponse(APIKeyResponse):
-    secret_key: str # Only returned once upon creation
+    pass
 
 
 class AppAccessCreate(AppAccessBase):
@@ -108,6 +134,10 @@ class AppResponse(BaseModel):
     role: Optional[str] = "OWNER" # Computed field for the current user
     owner_profile: Optional[ProfileResponse] = None
     access_list: Optional[List[AppAccessResponse]] = []
+    credential_id: Optional[UUID] = None
+    
+    retention_limit: int = 10
+    retention_days: int = 30
 
     class Config:
         from_attributes = True

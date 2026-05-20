@@ -32,22 +32,34 @@
     1. **Phase 10 Day 3:** Role-Based Access Control (RBAC) - Admin vs. Viewer roles.
     2. **Ownership Logic:** Ensure users only see and manage their own applications.
 
-### 📅 Monday, May 18, 2026
-- **Status:** Loopholes Task 3 (Persistent Volumes) & Task 7 (Monorepo Support) COMPLETE.
+### 📅 Tuesday, May 19, 2026
+- **Status:** Private Repo Access & Scheduled Maintenance COMPLETE.
 - **Milestones:**
-    - **Infrastructure Persistence (Volumes):** Implemented full end-to-end support for Docker Volumes.
-        - **Worker Engine:** Updated `run_container` to support `-v` flags. Implemented a smart volume mapping logic that handles both absolute and relative host paths, storing persistent data in `~/.autodeploy/volumes/{app_name}/`.
-        - **Config Autodiscovery:** Refactored `discover_port` into `discover_config` in the worker. It now automatically extracts both `internal_port` and `volumes` from `autodeploy.yml` during the build phase.
-        - **API Layer:** Updated `Application` model, Pydantic schemas, and FastAPI routes to persist and transmit volume configurations.
-        - **CLI V1.1:** Enhanced the `ad` CLI to be "volume-aware," automatically syncing volume mappings from local `autodeploy.yml` to the remote cluster.
-        - **Dashboard UI:** Added interactive "Persistent Volumes" management to both the `DeployModal` (for new apps) and `HistoryModal` (for existing app settings).
-    - **Monorepo Support (Sub-directories):** Resolved the "open Dockerfile: no such file or directory" error by implementing Task 7.
-        - **Automatic Path Detection:** The CLI now calculates the `root_dir` (relative path from Git root to CWD) and sends it to the API.
-        - **Effective Workspace Logic:** The worker now uses `root_dir` to set the correct build context and find the `Dockerfile` in monorepo structures.
-    - **Dependency Management:** Integrated `PyYAML` into the core worker dependencies to ensure robust configuration parsing.
+    - **Private Repository Access (Task 5 Fix):** Enabled deployment from private GitHub/GitLab repositories.
+        - **Credential Management Engine:** Implemented a new `Credential` model and secure API endpoints to store SSH Private Keys and Personal Access Tokens (PATs).
+        - **End-to-End Security:** Secrets are encrypted using `Fernet` before storage and are only decrypted in the worker's memory during the clone phase. Raw secrets never leave the server.
+        - **Hybrid Clone Logic:** The worker now supports both `PAT` injection (HTTPS) and `SSH` key mounting (GIT_SSH_COMMAND) with automatic cleanup of temporary key files.
+    - **Scheduled Maintenance Engine (Task 4 Fix):** Resolved the "Zombie Image" leakage for long-running servers.
+        - **Global Maintenance Task:** Implemented `maintenance_sweep` in the worker, scanning all applications to enforce retention policies.
+        - **Proactive Pruning:** Configured Celery Beat to run a global sweep every 24 hours.
+    - **Dashboard Branding Sync:** Updated versioning to `v0.5 ALPHA` across the entire UI.
+### 📅 Wednesday, May 20, 2026
+- **Status:** Core Hardening & Concurrency Protection COMPLETE.
+- **Milestones:**
+    - **Container Security (Task 7 Fix):** Implemented short-term "Defense in Depth" for user containers.
+        - **Resource Quotas:** Applied strict CPU (0.5), Memory (512MB), and Process (100 pids) limits to prevent DoS and resource exhaustion.
+        - **Privilege Lockdown:** Enforced `--security-opt no-new-privileges` and `--cap-drop ALL` to prevent container escapes and host takeover.
+        - **Process Control:** Added ulimits for file handles and disabled swap to ensure predictable performance and security.
+    - **Concurrency & Race Protection (Task 8 Fix):** Resolved the "Double-Click Panic" at both UI and API layers.
+        - **Pessimistic Locking:** Implemented `with_for_update()` in SQLAlchemy for all state-changing endpoints (Create, Deploy, Delete).
+        - **Frontend Interlocks:** Standardized a "Visual Interlock" pattern across the dashboard. Every button now disables immediately and shows a loading spinner to prevent rapid-fire requests.
+        - **Idempotency Guards:** The API now detects overlapping deployments and returns `409 Conflict` instead of spawning duplicate builds.
+    - **Refined Credential Management:**
+        - Added an "Add Credential" form to the Integrations tab for proactive infrastructure setup.
+        - Implemented SSH Key format validation to guide users toward providing Private Keys instead of Public Keys.
 - **Next Task:**
-    1. **Loopholes Task 4:** Zombie Image Storage Leak (Pruning Policy).
-    2. **Loopholes Task 5:** Private Repository Access (SSH/PAT integration).
+    1. **Task 6:** SSL/TLS Termination via Cloudflare Tunnels.
+    2. **Public Launch:** Transitioning from `.localhost` to `*.auto-deploy.tech`.
 
 ## Mentor Memory (Architectural Notes)
 - **Data Ownership Architecture:** Ownership is enforced at the **API Layer**. Every protected route uses the `get_current_user` dependency. All SQLAlchemy queries MUST include `.filter(Model.owner_id == current_user["sub"])` OR check the `AppAccess` table for shared permissions.

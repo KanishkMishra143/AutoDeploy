@@ -1,10 +1,10 @@
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session, joinedload
-from typing import List
+from typing import List, Optional
 from pydantic import BaseModel
 from core.database import get_db
 from core.models import Application, Job, Log, AppAccess, Profile
-from core.schemas import AppCreate, AppResponse, AppListResponse, JobResponse, AppAccessCreate, AppAccessResponse
+from core.schemas import AppCreate, AppUpdate, AppResponse, AppListResponse, JobResponse, AppAccessCreate, AppAccessResponse
 from worker.tasks import process_job, cleanup_app, discover_port
 from uuid import UUID
 from core.auth import get_current_user
@@ -32,7 +32,16 @@ def detect_app_port(app_id: UUID, current_user: dict = Depends(get_current_user)
     temp_dir = tempfile.mkdtemp(prefix="port_detect_")
     try:
         from worker.tasks import clone_repository, discover_port
-        clone_repository(app.repo_url, temp_dir, branch=app.branch)
+        from core.crypto import decrypt_string
+        
+        credential_data = None
+        if app.credential:
+            credential_data = {
+                "type": app.credential.type,
+                "value": decrypt_string(app.credential.encrypted_value)
+            }
+
+        clone_repository(app.repo_url, temp_dir, branch=app.branch, credential=credential_data)
         
         # Handle monorepo root directory
         effective_path = os.path.join(temp_dir, app.root_dir.lstrip("/")) if app.root_dir else temp_dir
@@ -84,59 +93,121 @@ def get_app_with_access(app_id: UUID, user_id: str, db: Session, required_role: 
     return app
 
 @router.get("/branches")
-def get_repo_branches(repo_url: str):
-    """Fetches all branches from a remote repository without cloning."""
+def get_repo_branches(repo_url: str, credential_id: Optional[UUID] = None, pat: Optional[str] = None, db: Session = Depends(get_db)):
+    """Fetches all branches from a remote repository, supporting private repos with credentials or PAT."""
+    env = os.environ.copy()
+    
+    # 1. Handle PAT or Credential for authentication
+    if pat:
+        if "://" in repo_url:
+            proto, rest = repo_url.split("://", 1)
+            repo_url = f"{proto}://{pat}@{rest}"
+    elif credential_id:
+        from core.models import Credential
+        from core.crypto import decrypt_string
+        cred = db.query(Credential).filter(Credential.id == credential_id).first()
+        if cred and cred.type == "PAT":
+            pat_val = decrypt_string(cred.encrypted_value)
+            if "://" in repo_url:
+                proto, rest = repo_url.split("://", 1)
+                repo_url = f"{proto}://{pat_val}@{rest}"
+        elif cred and cred.type == "SSH":
+            # For branch fetching via SSH, we would need a temp key similar to clone_repository.
+            # For now, we'll focus on HTTPS + PAT which is most common for branch listing.
+            pass
+
     try:
         result = subprocess.run(
             ["git", "ls-remote", "--heads", repo_url],
             capture_output=True,
             text=True,
-            check=True
+            check=True,
+            env=env
         )
         # Parse the output: refs/heads/main -> main
         branches = []
         for line in result.stdout.strip().split("\n"):
             if line:
-                ref = line.split("\t")[1]
-                branch_name = ref.replace("refs/heads/", "")
-                branches.append(branch_name)
+                parts = line.split("\t")
+                if len(parts) > 1:
+                    ref = parts[1]
+                    branch_name = ref.replace("refs/heads/", "")
+                    branches.append(branch_name)
         
         return {"branches": branches}
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to fetch branches: {str(e)}")
+        # Scrub credentials from error message if possible
+        err_str = str(e)
+        if pat: err_str = err_str.replace(pat, "********")
+        raise HTTPException(status_code=400, detail=f"Failed to fetch branches: {err_str}")
 
 @router.post("", response_model=AppResponse)
-def create_app(app: AppCreate, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
-    """Creates a new application identity with encrypted secrets."""
-    existing = db.query(Application).filter(Application.name == app.name).first()
+def create_app(app_data: AppCreate, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    """Creates a new application identity with idempotency and row locking."""
+    # Use with_for_update on the uniqueness check to prevent double-insertions during rapid clicks
+    existing = db.query(Application).with_for_update().filter(Application.name == app_data.name).first()
     if existing:
         raise HTTPException(status_code=400, detail="Application name already exists")
-    
+
     # Encrypt env vars before storing
-    encrypted_env = encrypt_dict(app.env_vars) if app.env_vars else {}
+    encrypted_env = encrypt_dict(app_data.env_vars) if app_data.env_vars else {}
 
     new_app = Application(
         owner_id=current_user["sub"],
-        name=app.name,
-        repo_url=app.repo_url,
-        branch=app.branch,
-        stack=app.stack,
-        internal_port=app.internal_port,
-        volumes=app.volumes or [],
-        root_dir=app.root_dir or ".",
-        pre_build_steps=app.pre_build_steps or [],
-        post_build_steps=app.post_build_steps or [],
-        env_vars=encrypted_env
+        name=app_data.name,
+        repo_url=app_data.repo_url,
+        branch=app_data.branch,
+        stack=app_data.stack,
+        internal_port=app_data.internal_port,
+        volumes=app_data.volumes or [],
+        root_dir=app_data.root_dir or ".",
+        pre_build_steps=app_data.pre_build_steps or [],
+        post_build_steps=app_data.post_build_steps or [],
+        env_vars=encrypted_env,
+        credential_id=app_data.credential_id
     )
     db.add(new_app)
-    db.commit()
-    db.refresh(new_app)
-    
+    try:
+        db.commit()
+        db.refresh(new_app)
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="A concurrency error occurred. Please try again.")
+
     # Decrypt for the response
     new_app.env_vars = decrypt_dict(new_app.env_vars)
     new_app.role = "OWNER"
     return new_app
 
+@router.patch("/{app_id}", response_model=AppResponse)
+def update_app(app_id: UUID, app_data: AppUpdate, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    """Updates an application's configuration with row-level locking."""
+    # We use with_for_update() to lock the application row during the update
+    app = db.query(Application).with_for_update().filter(Application.id == app_id).first()
+    if not app:
+        raise HTTPException(status_code=404, detail="Application not found")
+        
+    get_app_with_access(app_id, current_user["sub"], db, required_role="ADMIN")
+
+    update_data = app_data.dict(exclude_unset=True)
+    
+    if "name" in update_data and update_data["name"] != app.name:
+        existing = db.query(Application).filter(Application.name == update_data["name"]).first()
+        if existing:
+            raise HTTPException(status_code=400, detail="Application name already exists")
+
+    if "env_vars" in update_data:
+        update_data["env_vars"] = encrypt_dict(update_data["env_vars"])
+
+    for key, value in update_data.items():
+        setattr(app, key, value)
+
+    db.commit()
+    db.refresh(app)
+
+    # Return with decrypted vars
+    app.env_vars = decrypt_dict(app.env_vars)
+    return app
 @router.get("", response_model=AppListResponse)
 def list_apps(db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     """Lists all managed applications for the current user (owned or shared)."""
@@ -190,9 +261,23 @@ def get_app(app_id: UUID, db: Session = Depends(get_db), current_user: dict = De
 
 @router.post("/{app_id}/deploy", response_model=JobResponse)
 def deploy_app(app_id: UUID, trigger_reason: str = "Manual", db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
-    """Triggers a manual deployment for an application."""
-    # Deploying requires at least ADMIN role if shared
-    app = get_app_with_access(app_id, current_user["sub"], db, required_role="ADMIN")
+    """Triggers a manual deployment with a concurrency lock to prevent 'double-click' build floods."""
+    # 1. Fetch app with a row-level lock
+    app = db.query(Application).with_for_update().filter(Application.id == app_id).first()
+    if not app:
+        raise HTTPException(status_code=404, detail="Application not found")
+        
+    get_app_with_access(app_id, current_user["sub"], db, required_role="ADMIN")
+
+    # 2. Check for active 'running' jobs for this app to prevent overlapping deployments
+    # This is a critical idempotency check
+    active_job = db.query(Job).filter(
+        Job.app_id == app_id, 
+        Job.status.in_(["queued", "running"])
+    ).first()
+    
+    if active_job:
+        raise HTTPException(status_code=409, detail="A deployment is already in progress for this application.")
     
     new_job = Job(
         app_id=app.id,
@@ -210,7 +295,8 @@ def deploy_app(app_id: UUID, trigger_reason: str = "Manual", db: Session = Depen
             "volumes": app.volumes,
             "root_dir": app.root_dir,
             "pre_build_steps": app.pre_build_steps,
-            "post_build_steps": app.post_build_steps
+            "post_build_steps": app.post_build_steps,
+            "credential_id": str(app.credential_id) if app.credential_id else None
         }
     )
     db.add(new_job)
@@ -355,37 +441,4 @@ def delete_app(app_id: UUID, db: Session = Depends(get_db), current_user: dict =
     db.commit()
     
     return {"message": f"Application '{app_name}' and all associated history successfully deleted."}
-
-@router.patch("/{app_id}", response_model=AppResponse)
-def update_app(app_id: UUID, payload: dict, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
-    """Updates application settings with encryption for env vars."""
-    # Updating requires at least ADMIN role
-    app = get_app_with_access(app_id, current_user["sub"], db, required_role="ADMIN")
-
-    if "name" in payload:
-        # Check for collision if name is changing
-        if payload["name"] != app.name:
-            existing = db.query(Application).filter(Application.name == payload["name"]).first()
-            if existing:
-                raise HTTPException(status_code=400, detail="App name already taken.")
-        app.name = payload["name"]
-    if "env_vars" in payload:
-        app.env_vars = encrypt_dict(payload["env_vars"])
-    if "pre_build_steps" in payload:
-        app.pre_build_steps = payload["pre_build_steps"]
-    if "post_build_steps" in payload:
-        app.post_build_steps = payload["post_build_steps"]
-    if "branch" in payload:
-        app.branch = payload["branch"]
-    if "internal_port" in payload:
-        app.internal_port = payload["internal_port"]
-    if "volumes" in payload:
-        app.volumes = payload["volumes"]
-    if "root_dir" in payload:
-        app.root_dir = payload["root_dir"]
-    
-    db.commit()
-    db.refresh(app)
-    app.env_vars = decrypt_dict(app.env_vars)
-    return app
 

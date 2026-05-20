@@ -55,7 +55,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
                 AutoDeploy
             </h1>
             <p className="text-xs font-bold text-gray-500 uppercase tracking-[0.3em] mb-12 animate-in slide-in-from-bottom-4 duration-700">
-                Enterprise Orchestration Plane
+                v0.5 ALPHA Orchestration Plane
             </p>
 
             <button 

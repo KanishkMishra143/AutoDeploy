@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, JSON, DateTime, ForeignKey, Text, Integer
+from sqlalchemy import Column, String, JSON, DateTime, ForeignKey, Text, Integer, Float
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
@@ -18,6 +18,7 @@ class Application(Base):
     volumes = Column(JSON, nullable=True, default=[]) # List of "host_path:container_path" or relative "path:container_path"
     root_dir = Column(String, nullable=False, default=".") # Relative path from git root
     retention_limit = Column(Integer, nullable=False, default=10) # Max builds to keep
+    retention_days = Column(Integer, nullable=False, default=30) # Max age in days
     pre_build_steps = Column(JSON, nullable=True, default=[])
     post_build_steps = Column(JSON, nullable=True, default=[])
     env_vars = Column(JSON, nullable=True, default={})
@@ -27,6 +28,9 @@ class Application(Base):
     jobs = relationship("Job", back_populates="application", order_by="desc(Job.created_at)", cascade="all, delete-orphan")
     access_list = relationship("AppAccess", back_populates="application", cascade="all, delete-orphan")
     owner_profile = relationship("Profile", foreign_keys=[owner_id], primaryjoin="Application.owner_id == Profile.user_id", viewonly=True)
+    
+    credential_id = Column(UUID(as_uuid=True), ForeignKey("credentials.id"), nullable=True)
+    credential = relationship("Credential")
 
 
 class AppAccess(Base):
@@ -88,6 +92,11 @@ class Profile(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
+    # --- USER-LEVEL RESOURCE QUOTAS (Task 7) ---
+    cpu_limit = Column(Float, nullable=False, default=0.5)
+    memory_limit_mb = Column(Integer, nullable=False, default=512)
+    pids_limit = Column(Integer, nullable=False, default=100)
+
     settings = relationship("UserSettings", back_populates="profile", uselist=False, cascade="all, delete-orphan")
     api_keys = relationship("APIKey", back_populates="profile", cascade="all, delete-orphan")
 
@@ -112,8 +121,22 @@ class APIKey(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("profiles.user_id"), nullable=False, index=True)
     name = Column(String, nullable=False)
     key_prefix = Column(String(12), nullable=False) # First 12 chars for display: "ad_live_xxxx"
-    key_hash = Column(String, nullable=False, unique=True) # Hashed secret
+    key_hash = Column(String, nullable=False, unique=True) # Hashed secret for fast lookup
+    secret_key = Column(String, nullable=True) # Raw key for 'visible always' access (Warning: Plaintext storage)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    expires_at = Column(DateTime(timezone=True), nullable=True)
     last_used_at = Column(DateTime(timezone=True), nullable=True)
 
     profile = relationship("Profile", back_populates="api_keys")
+
+class Credential(Base):
+    __tablename__ = "credentials"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("profiles.user_id"), nullable=False, index=True)
+    name = Column(String, nullable=False) # e.g. "Github Main PAT"
+    type = Column(String, nullable=False) # "SSH" or "PAT"
+    # encrypted_value: contains either the private SSH key or the PAT token.
+    encrypted_value = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    profile = relationship("Profile")

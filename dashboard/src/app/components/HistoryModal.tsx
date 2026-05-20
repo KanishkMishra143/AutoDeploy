@@ -25,7 +25,10 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
   const [activeTab, setActiveTab] = useState<"topology" | "history" | "settings" | "pipeline" | "sharing">("topology");
   const [isDeleting, setIsDeleting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeploying, setIsDeploying] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
+  const [revokingUsers, setRevokingUsers] = useState<Record<string, boolean>>({});
+  const [rollingBackJobs, setRollingBackJobs] = useState<Record<string, boolean>>({});
   const [shareUserId, setShareUserId] = useState("");
   const [shareRole, setShareRole] = useState<"ADMIN" | "VIEWER">("VIEWER");
   const [userSuggestions, setUserSuggestions] = useState<any[]>([]);
@@ -98,6 +101,8 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
   const [localPort, setLocalPort] = useState(initialApp.internal_port || 8000);
   const [localBranch, setLocalBranch] = useState(initialApp.branch || "main");
   const [localRootDir, setLocalRootDir] = useState(initialApp.root_dir || ".");
+  const [localRetention, setLocalRetention] = useState(initialApp.retention_limit || 10);
+  const [localRetentionDays, setLocalRetentionDays] = useState(initialApp.retention_days || 30);
   const [localVolumes, setLocalVolumes] = useState<string[]>(initialApp.volumes || []);
   const [localPreSteps, setLocalPreSteps] = useState<string[]>(initialApp.pre_build_steps || []);
   const [localPostSteps, setLocalPostSteps] = useState<string[]>(initialApp.post_build_steps || []);
@@ -111,13 +116,15 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
     confirmLabel: string;
     confirmVariant: "danger" | "accent";
     onConfirm: () => void;
+    isLoading?: boolean;
   }>({
     isOpen: false,
     title: "",
     message: "",
     confirmLabel: "",
     confirmVariant: "accent",
-    onConfirm: () => {}
+    onConfirm: () => {},
+    isLoading: false
   });
 
   // Port Collision State
@@ -178,6 +185,7 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
   };
 
   const handleRevoke = async (userId: string) => {
+    setRevokingUsers(prev => ({ ...prev, [userId]: true }));
     const tId = toast.loading("Revoking access...");
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -195,6 +203,8 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
       }
     } catch (err) {
       toast.error("Network error", { id: tId });
+    } finally {
+      setRevokingUsers(prev => ({ ...prev, [userId]: false }));
     }
   };
 
@@ -230,6 +240,8 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
       confirmLabel: "Trigger Rollback",
       confirmVariant: "accent",
       onConfirm: async () => {
+        setConfirmConfig(prev => ({ ...prev, isLoading: true }));
+        setRollingBackJobs(prev => ({ ...prev, [jobId]: true }));
         const tId = toast.loading("Triggering rollback...");
         try {
           const { data: { session } } = await supabase.auth.getSession();
@@ -250,6 +262,9 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
         } catch (err) {
           console.error(err);
           toast.error("Network error", { id: tId });
+        } finally {
+          setConfirmConfig(prev => ({ ...prev, isLoading: false }));
+          setRollingBackJobs(prev => ({ ...prev, [jobId]: false }));
         }
       }
     });
@@ -257,6 +272,7 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
 
   const handleDeploy = async (overridePort?: number) => {
     const isOverride = typeof overridePort === 'number';
+    setIsDeploying(true);
     const tId = toast.loading(isOverride ? "Applying port & redeploying..." : "Checking configuration...");
     try {
         const { data: { session } } = await supabase.auth.getSession();
@@ -271,6 +287,7 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
             if (detected_port && detected_port !== app.internal_port) {
               toast.dismiss(tId);
               setPortCollision({ isOpen: true, detectedPort: detected_port, source: source });
+              setIsDeploying(false);
               return;
             }
           }
@@ -302,12 +319,16 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
             toast.success("Deployment started!", { id: tId });
             onViewLogs(data.id);
             fetchHistory(); // Refresh the list
+        } else if (res.status === 409) {
+            toast.error("Deployment already in progress", { id: tId });
         } else {
             toast.error("Deployment failed to trigger", { id: tId });
         }
     } catch (err) {
         console.error(err);
         toast.error("Connection error", { id: tId });
+    } finally {
+        setIsDeploying(false);
     }
   };
 
@@ -334,6 +355,8 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
           internal_port: localPort,
           branch: localBranch,
           root_dir: localRootDir,
+          retention_limit: localRetention,
+          retention_days: localRetentionDays,
           volumes: localVolumes.filter(v => v.trim()),
           pre_build_steps: localPreSteps,
           post_build_steps: localPostSteps
@@ -467,6 +490,7 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
           confirmVariant={confirmConfig.confirmVariant}
           onConfirm={confirmConfig.onConfirm}
           onCancel={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))}
+          isLoading={confirmConfig.isLoading || isDeleting}
         />
 
         <PortCollisionModal 
@@ -607,10 +631,9 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
 
                             <div className="flex items-center gap-6">
                               <div className="text-right">
-                                <p className="text-[11px] text-white font-medium">{new Date(job.created_at).toLocaleDateString()}</p>
+                                <p className="text-[11px] text-white font-medium">{new Date(job.created_at).toLocaleDateString('en-GB')}</p>
                                 <p className="text-[10px] text-gray-500">{new Date(job.created_at).toLocaleTimeString()}</p>
                               </div>
-                              
                               <div className="flex gap-2">
                                 <button 
                                   onClick={() => onViewLogs(job.id)}
@@ -622,11 +645,11 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
                                 {job.status === 'success' && !isLatest && (
                                   <button 
                                     onClick={() => handleRollback(job.id)}
-                                    disabled={app.role === 'VIEWER'}
+                                    disabled={app.role === 'VIEWER' || rollingBackJobs[job.id]}
                                     title={app.role === 'VIEWER' ? "Only owners and admins can rollback" : "Restore this version"}
-                                    className="px-4 py-2 bg-accent/10 hover:bg-accent text-accent hover:text-white text-[10px] font-black rounded-xl transition-all uppercase tracking-widest border border-accent/20 disabled:opacity-20 disabled:cursor-not-allowed"
+                                    className="px-4 py-2 bg-accent/10 hover:bg-accent text-accent hover:text-white text-[10px] font-black rounded-xl transition-all uppercase tracking-widest border border-accent/20 disabled:opacity-20 disabled:cursor-not-allowed min-w-[80px] flex items-center justify-center"
                                   >
-                                    Restore
+                                    {rollingBackJobs[job.id] ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Restore"}
                                   </button>
                                 )}
                               </div>
@@ -655,11 +678,11 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
               <div className="absolute bottom-8 right-8 animate-in slide-in-from-bottom-4 duration-500">
                 <button 
                   onClick={() => handleDeploy()}
-                  disabled={app.role === 'VIEWER'}
+                  disabled={app.role === 'VIEWER' || isDeploying}
                   className="px-8 py-4 bg-accent hover:bg-accent/90 text-white text-xs font-black rounded-2xl transition-all shadow-2xl shadow-accent/40 flex items-center gap-3 uppercase tracking-widest border border-accent/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <RotateCcw className="w-4 h-4" />
-                  Redeploy Application
+                  {isDeploying ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
+                  {isDeploying ? "Initializing..." : "Redeploy Application"}
                 </button>
               </div>
             </div>
@@ -844,6 +867,46 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
               </div>
 
               <div className="mb-8">
+                <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Build Retention Policy</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="flex items-center gap-4 bg-background border border-card-border rounded-2xl px-6 py-4 focus-within:border-accent transition-all group">
+                    <HistoryIcon className="w-4 h-4 text-gray-600 group-focus-within:text-accent" />
+                    <div className="flex-1">
+                      <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest mb-1">Max Build Images to Keep</p>
+                      <select 
+                          className="w-full bg-transparent text-sm font-bold text-white outline-none cursor-pointer"
+                          value={localRetention}
+                          onChange={(e) => setLocalRetention(parseInt(e.target.value))}
+                      >
+                          {[5, 10, 20, 30, 50].map(val => (
+                            <option key={val} value={val} className="bg-card text-white">{val} Builds</option>
+                          ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-4 bg-background border border-card-border rounded-2xl px-6 py-4 focus-within:border-accent transition-all group">
+                    <Clock className="w-4 h-4 text-gray-600 group-focus-within:text-accent" />
+                    <div className="flex-1">
+                      <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest mb-1">Retention Expiration</p>
+                      <select 
+                          className="w-full bg-transparent text-sm font-bold text-white outline-none cursor-pointer"
+                          value={localRetentionDays}
+                          onChange={(e) => setLocalRetentionDays(parseInt(e.target.value))}
+                      >
+                          {[1, 3, 7, 14, 30, 90].map(val => (
+                            <option key={val} value={val} className="bg-card text-white">{val} Days</option>
+                          ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+                <p className="mt-3 text-[9px] text-gray-600 font-bold uppercase tracking-widest leading-relaxed">
+                  Controls how many builds and for how long they are stored for rollbacks. Images past either limit are automatically pruned.
+                </p>
+              </div>
+
+              <div className="mb-8">
                 <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Persistent Volumes</h4>
                 <p className="text-[10px] text-gray-500 mb-3 uppercase tracking-tight">Map host storage to container paths. Relative host paths are stored in <code className="bg-white/10 px-1 py-0.5 rounded text-accent">~/.autodeploy/volumes/</code>.</p>
                 <div className="space-y-3">
@@ -996,10 +1059,11 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
                             {!isMe && (
                               <button 
                                 onClick={() => handleRevoke(access.user_id)}
-                                className="p-3 text-gray-600 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-all opacity-0 group-hover:opacity-100"
+                                disabled={revokingUsers[access.user_id]}
+                                className="p-3 text-gray-600 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-all opacity-0 group-hover:opacity-100 disabled:opacity-50 disabled:cursor-not-allowed"
                                 title="Revoke Access"
                               >
-                                <Trash2 className="w-4 h-4" />
+                                {revokingUsers[access.user_id] ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                               </button>
                             )}
                         </div>

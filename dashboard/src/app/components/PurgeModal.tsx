@@ -1,14 +1,15 @@
 "use client";
 import { useState, useEffect } from "react";
-import { X, AlertTriangle, Loader2 } from "lucide-react";
+import { X, AlertTriangle, Loader2, Box } from "lucide-react";
 
 interface PurgeModalProps {
   isOpen: boolean;
   onClose: () => void;
   onConfirm: () => void;
+  apps: any[];
 }
 
-export default function PurgeModal({ isOpen, onClose, onConfirm }: PurgeModalProps) {
+export default function PurgeModal({ isOpen, onClose, onConfirm, apps }: PurgeModalProps) {
   const [step, setStep] = useState(1);
   const [confirmText, setConfirmText] = useState("");
   const [loading, setLoading] = useState(false);
@@ -53,6 +54,25 @@ export default function PurgeModal({ isOpen, onClose, onConfirm }: PurgeModalPro
     onClose();
   };
 
+  const AppList = () => (
+    <div className="bg-black/20 border border-white/5 rounded-2xl p-4 my-6 text-left">
+       <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+          <Box className="w-3 h-3" /> Target Applications ({apps.length})
+       </p>
+       <div className="max-h-32 overflow-y-auto pr-2 space-y-1 custom-scrollbar">
+          {apps.map(app => (
+            <div key={app.id} className="flex items-center gap-2 text-[11px] font-mono text-gray-300">
+               <span className="w-1 h-1 bg-red-500 rounded-full" />
+               {app.name}
+            </div>
+          ))}
+          {apps.length === 0 && (
+            <p className="text-[10px] text-gray-600 italic">No applications found in cluster.</p>
+          )}
+       </div>
+    </div>
+  );
+
   return (
     <div 
       id="purge-modal-wrapper"
@@ -69,7 +89,10 @@ export default function PurgeModal({ isOpen, onClose, onConfirm }: PurgeModalPro
            {step === 1 ? (
              <div className="text-center animate-in fade-in slide-in-from-bottom-2">
                 <h3 className="text-xl font-black text-white uppercase tracking-tight mb-2">Initial Warning</h3>
-                <p className="text-sm text-gray-500 mb-8">You are about to purge the entire cluster. This will delete all applications and stop all running containers. Continue?</p>
+                <p className="text-sm text-gray-500">You are about to purge the entire cluster. This will delete all applications listed below and stop all running containers. Continue?</p>
+                
+                <AppList />
+
                 <div className="flex gap-3">
                    <button 
                      onClick={onClose}
@@ -88,8 +111,10 @@ export default function PurgeModal({ isOpen, onClose, onConfirm }: PurgeModalPro
            ) : (
              <div className="text-center animate-in fade-in slide-in-from-bottom-2">
                 <h3 className="text-xl font-black text-red-500 uppercase tracking-tight mb-2">Final Confirmation</h3>
-                <p className="text-sm text-gray-500 mb-6">This action is 100% irreversible. To proceed, please type <span className="text-white font-mono font-bold bg-white/10 px-2 py-0.5 rounded">PURGE</span> below.</p>
+                <p className="text-sm text-gray-500">This action is 100% irreversible. To proceed, please type <span className="text-white font-mono font-bold bg-white/10 px-2 py-0.5 rounded">PURGE</span> below to delete all the listed apps.</p>
                 
+                <AppList />
+
                 <input 
                   type="text"
                   placeholder="Type PURGE to confirm"
@@ -111,7 +136,7 @@ export default function PurgeModal({ isOpen, onClose, onConfirm }: PurgeModalPro
                      disabled={confirmText !== "PURGE" || loading}
                      className="flex-1 px-6 py-3 bg-red-500 text-white text-xs font-black rounded-xl transition-all uppercase tracking-widest shadow-lg shadow-red-500/20 disabled:opacity-20 disabled:grayscale"
                    >
-                     {loading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : "PURGE ALL"}
+                     {loading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : "PURGE CLUSTER"}
                    </button>
                 </div>
              </div>

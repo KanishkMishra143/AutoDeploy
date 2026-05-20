@@ -38,3 +38,20 @@ def decrypt_dict(data: dict) -> dict:
         # If decryption fails, we return an empty dict to prevent crashes, 
         # but in production, you'd log a security alert.
         return {}
+
+def encrypt_string(value: str) -> str:
+    """Encrypts a single string value."""
+    if not value:
+        return ""
+    f = get_fernet()
+    return f.encrypt(value.encode()).decode()
+
+def decrypt_string(encrypted_value: str) -> str:
+    """Decrypts a single encrypted string value."""
+    if not encrypted_value:
+        return ""
+    f = get_fernet()
+    try:
+        return f.decrypt(encrypted_value.encode()).decode()
+    except Exception:
+        return ""

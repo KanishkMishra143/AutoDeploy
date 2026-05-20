@@ -102,13 +102,15 @@ export default function CanvasPage() {
     confirmLabel: string;
     confirmVariant: "danger" | "accent";
     onConfirm: () => void;
+    isLoading?: boolean;
   }>({
     isOpen: false,
     title: "",
     message: "",
     confirmLabel: "",
     confirmVariant: "accent",
-    onConfirm: () => {}
+    onConfirm: () => {},
+    isLoading: false
   });
 
   // Prevent background scroll when any modal is open
@@ -134,6 +136,7 @@ export default function CanvasPage() {
       confirmLabel: "Stop Container",
       confirmVariant: "danger",
       onConfirm: async () => {
+        setConfirmConfig(prev => ({ ...prev, isLoading: true }));
         try {
           const { data: { session } } = await supabase.auth.getSession();
           const res = await fetch(`http://127.0.0.1:8000/jobs/${jobId}`, {
@@ -151,13 +154,22 @@ export default function CanvasPage() {
         } catch (err) {
           console.error(err);
           toast.error("Network error while stopping service");
+        } finally {
+          setConfirmConfig(prev => ({ ...prev, isLoading: false }));
         }
       }
     });
   };
 
+  // Track deploy loading state per appId to debounce clicks
+  const [deployingApps, setDeployingApps] = useState<Record<string, boolean>>({});
+
   const deployApp = async (appId: string) => {
+    if (deployingApps[appId]) return; // Debounce if already in-flight
+    
+    setDeployingApps(prev => ({ ...prev, [appId]: true }));
     const tId = toast.loading("Triggering deployment...");
+    
     try {
         const { data: { session } } = await supabase.auth.getSession();
         const res = await fetch(`http://127.0.0.1:8000/apps/${appId}/deploy?trigger_reason=Manual:Canvas`, { 
@@ -166,16 +178,21 @@ export default function CanvasPage() {
             "Authorization": `Bearer ${session?.access_token}`,
           }
         });
+        
         if (res.ok) {
             const data = await res.json();
             setSelectedJobId(data.id);
             toast.success("Deployment started!", { id: tId });
+        } else if (res.status === 409) {
+            toast.error("Deployment already in progress", { id: tId });
         } else {
             toast.error("Deployment failed to trigger", { id: tId });
         }
     } catch (err) {
         console.error(err);
         toast.error("Connection error", { id: tId });
+    } finally {
+        setDeployingApps(prev => ({ ...prev, [appId]: false }));
     }
   };
 
@@ -291,12 +308,12 @@ export default function CanvasPage() {
 
               <button 
                 onClick={() => deployApp(app.id)}
-                disabled={app.role === 'VIEWER'}
+                disabled={app.role === 'VIEWER' || deployingApps[app.id]}
                 title={app.role === 'VIEWER' ? "Only owners and admins can redeploy" : "Redeploy"}
                 className="flex-1 bg-accent/10 hover:bg-accent/20 text-accent py-3 rounded-xl text-[11px] font-black transition-all flex items-center justify-center gap-2 uppercase tracking-widest border border-accent/10 disabled:opacity-20 disabled:cursor-not-allowed"
               >
-                <RotateCcw className="w-3.5 h-3.5" />
-                Redeploy
+                {deployingApps[app.id] ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                {deployingApps[app.id] ? "Starting..." : "Redeploy"}
               </button>
               
               {latestJob?.status === "success" && latestJob.result?.url && (
@@ -372,6 +389,7 @@ export default function CanvasPage() {
           confirmVariant={confirmConfig.confirmVariant}
           onConfirm={confirmConfig.onConfirm}
           onCancel={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))}
+          isLoading={confirmConfig.isLoading}
         />
 
         <div className="max-w-7xl mx-auto">
@@ -379,7 +397,7 @@ export default function CanvasPage() {
           <div className="flex justify-between items-end mb-16">
             <div>
               <div className="flex items-center gap-2 mb-3">
-                <span className="px-2 py-0.5 bg-accent/10 text-accent text-[9px] font-black rounded uppercase tracking-widest border border-accent/20">v1.5 Enterprise</span>
+                <span className="px-2 py-0.5 bg-accent/10 text-accent text-[9px] font-black rounded uppercase tracking-widest border border-accent/20">v0.5 ALPHA</span>
               </div>
               <h2 className="text-4xl font-black tracking-tighter text-white uppercase mb-2">Workspace</h2>
               <p className="text-gray-500 text-sm max-w-md font-medium">Manage your distributed application cluster from a single pane of glass.</p>

@@ -1,13 +1,15 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
-import { X, Plus, Trash2, Rocket, Globe, Tag, GitBranch, Layers, Terminal, Settings2, Upload } from "lucide-react";
+import { X, Plus, Trash2, Rocket, Globe, Tag, GitBranch, Layers, Terminal, Settings2, Upload, Lock, ShieldCheck, Key } from "lucide-react";
 import toast from "react-hot-toast";
 import { supabase } from "../../lib/supabase";
+import { useJobs } from "../useJobs";
 import PortCollisionModal from "./PortCollisionModal";
 
 type TabType = "general" | "env" | "pipeline";
 
 export default function DeployModal({ onClose }: { onClose: (jobId?: string) => void }) {
+  const { credentials, createCredential } = useJobs();
   const [activeTab, setActiveTab] = useState<TabType>("general");
   const [name, setName] = useState("");
   const [repo, setRepo] = useState("");
@@ -17,6 +19,12 @@ export default function DeployModal({ onClose }: { onClose: (jobId?: string) => 
   const [internalPort, setInternalPort] = useState(8000);
   const [availableBranches, setAvailableBranches] = useState<string[]>([]);
   const [fetchingBranches, setFetchingBranches] = useState(false);
+  
+  // Private Repo State
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [selectedCredentialId, setSelectedCredentialId] = useState<string>("");
+  const [inlinePat, setInlinePat] = useState("");
+
   const [envVars, setEnvVars] = useState<{ key: string; value: string }[]>([
     { key: "", value: "" }
   ]);
@@ -36,7 +44,14 @@ export default function DeployModal({ onClose }: { onClose: (jobId?: string) => 
         setFetchingBranches(true);
         try {
           const { data: { session } } = await supabase.auth.getSession();
-          const res = await fetch(`http://127.0.0.1:8000/apps/branches?repo_url=${repo}`, {
+          // Include credential if available to fetch branches from private repos
+          let url = `http://127.0.0.1:8000/apps/branches?repo_url=${repo}`;
+          if (isPrivate) {
+            if (selectedCredentialId) url += `&credential_id=${selectedCredentialId}`;
+            else if (inlinePat) url += `&pat=${inlinePat}`;
+          }
+          
+          const res = await fetch(url, {
             headers: {
               "Authorization": `Bearer ${session?.access_token}`,
             }
@@ -57,7 +72,7 @@ export default function DeployModal({ onClose }: { onClose: (jobId?: string) => 
       const timer = setTimeout(fetchBranches, 1000);
       return () => clearTimeout(timer);
     }
-  }, [repo]);
+  }, [repo, isPrivate, selectedCredentialId, inlinePat]);
 
   const addEnvVar = () => setEnvVars([...envVars, { key: "", value: "" }]);
   const removeEnvVar = (index: number) => setEnvVars(envVars.filter((_, i) => i !== index));
@@ -141,6 +156,21 @@ export default function DeployModal({ onClose }: { onClose: (jobId?: string) => 
       const { data: { session } } = await supabase.auth.getSession();
       
       let appId = createdAppId;
+      let finalCredentialId = selectedCredentialId || null;
+
+      // 0. Handle Inline PAT (Create Credential first if needed)
+      if (isPrivate && !selectedCredentialId && inlinePat) {
+        toast.loading("Securing repository access...", { id: "cred-gen" });
+        try {
+          const newCred = await createCredential(`${name} Deployment Key`, "PAT", inlinePat);
+          finalCredentialId = newCred.id;
+          toast.success("Access token secured.", { id: "cred-gen" });
+        } catch (err) {
+          toast.error("Failed to secure access token.", { id: "cred-gen" });
+          setLoading(false);
+          return;
+        }
+      }
 
       // 1. Create app if it doesn't exist yet
       if (!appId) {
@@ -160,7 +190,8 @@ export default function DeployModal({ onClose }: { onClose: (jobId?: string) => 
             volumes: volumes.filter(v => v.trim()),
             env_vars: envObj,
             pre_build_steps: preBuildSteps.filter(s => s.trim()),
-            post_build_steps: postBuildSteps.filter(s => s.trim())
+            post_build_steps: postBuildSteps.filter(s => s.trim()),
+            credential_id: finalCredentialId
           }),
         });
 
@@ -319,7 +350,16 @@ export default function DeployModal({ onClose }: { onClose: (jobId?: string) => 
                </div>
 
                <div>
-                 <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-3">Git Repository Source</label>
+                 <div className="flex justify-between items-center mb-3">
+                    <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest">Git Repository Source</label>
+                    <button 
+                        onClick={() => setIsPrivate(!isPrivate)}
+                        className={`flex items-center gap-2 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest transition-all ${isPrivate ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20' : 'bg-green-500/10 text-green-500 border border-green-500/20'}`}
+                    >
+                        {isPrivate ? <Lock className="w-3 h-3" /> : <ShieldCheck className="w-3 h-3" />}
+                        {isPrivate ? 'Private Repository' : 'Public Repository'}
+                    </button>
+                 </div>
                  <div className="relative group">
                    <Globe className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600 group-focus-within:text-accent transition-colors" />
                    <input 
@@ -331,6 +371,42 @@ export default function DeployModal({ onClose }: { onClose: (jobId?: string) => 
                    />
                  </div>
                </div>
+
+               {isPrivate && (
+                 <div className="grid grid-cols-2 gap-6 animate-in slide-in-from-top-2 duration-300">
+                    <div>
+                        <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-3">Access Credential</label>
+                        <div className="relative">
+                            <Key className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600 pointer-events-none" />
+                            <select 
+                                className="w-full bg-background border border-card-border rounded-2xl py-4 pl-12 pr-6 text-sm focus:border-accent outline-none transition-all text-white appearance-none font-bold"
+                                value={selectedCredentialId}
+                                onChange={(e) => setSelectedCredentialId(e.target.value)}
+                            >
+                                <option value="">NEW PERSONAL ACCESS TOKEN (PAT)</option>
+                                {credentials.map(c => (
+                                    <option key={c.id} value={c.id}>{c.name.toUpperCase()} ({c.type})</option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
+                    {!selectedCredentialId && (
+                        <div>
+                            <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-3">PAT Value</label>
+                            <div className="relative group">
+                                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600 group-focus-within:text-accent transition-colors" />
+                                <input 
+                                    type="password" 
+                                    placeholder="GHP_XXXXXXXXXXXXXXXXXXXX"
+                                    className="w-full bg-background border border-card-border rounded-2xl py-4 pl-12 pr-6 text-sm focus:border-accent outline-none transition-all text-white placeholder:text-gray-700 font-bold"
+                                    value={inlinePat}
+                                    onChange={(e) => setInlinePat(e.target.value)}
+                                />
+                            </div>
+                        </div>
+                    )}
+                 </div>
+               )}
 
                <div className="grid grid-cols-2 gap-6">
                  <div>
@@ -518,6 +594,40 @@ export default function DeployModal({ onClose }: { onClose: (jobId?: string) => 
 
                <div className="h-px bg-card-border" />
 
+               {/* Post-Build Section */}
+               <div className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <div>
+                       <h4 className="text-sm font-bold text-white uppercase tracking-tight">Post-Build Steps</h4>
+                       <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Executed in container after startup</p>
+                    </div>
+                    <button onClick={() => addStep("post")} className="px-4 py-2 bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 border border-white/5">
+                      <Plus className="w-3.5 h-3.5" /> Add Step
+                    </button>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    {postBuildSteps.map((step, i) => (
+                      <div key={i} className="flex gap-2">
+                        <div className="flex-1 bg-background/50 border border-card-border rounded-xl px-4 py-3 flex items-center group focus-within:border-accent transition-all">
+                           <Terminal className="w-3.5 h-3.5 text-gray-600 mr-3" />
+                           <input 
+                             placeholder="e.g. ./migrate.sh"
+                             className="w-full bg-transparent text-xs font-mono outline-none text-white placeholder:text-gray-800"
+                             value={step}
+                             onChange={(e) => updateStep("post", i, e.target.value)}
+                           />
+                        </div>
+                        <button onClick={() => removeStep("post", i)} className="p-3 text-gray-600 hover:text-red-500 transition-all">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+               </div>
+
+               <div className="h-px bg-card-border" />
+
                {/* Volumes Section */}
                <div className="space-y-4">
                   <div className="flex justify-between items-center">
@@ -575,7 +685,8 @@ export default function DeployModal({ onClose }: { onClose: (jobId?: string) => 
                 <Rocket className="w-5 h-5 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
               </>}
            </button>
-           <p className="text-[9px] text-gray-600 font-bold uppercase tracking-[0.3em] text-center">AutoDeploy Distributed Orchestrator v1.5</p>
+           <p className="text-[9px] text-gray-600 font-bold uppercase tracking-[0.3em] text-center">AutoDeploy Distributed Orchestrator v0.5 ALPHA</p>
+
         </div>
       </div>
       <PortCollisionModal

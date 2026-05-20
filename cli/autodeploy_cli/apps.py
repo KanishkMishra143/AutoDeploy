@@ -3,6 +3,7 @@ import requests
 import json
 from rich.console import Console
 from rich.table import Table
+from rich.panel import Panel
 from typing import Optional
 from . import config, context, logs
 from uuid import UUID
@@ -60,6 +61,13 @@ def list_apps():
                 )
             
             console.print(table)
+        elif response.status_code == 401:
+            detail = response.json().get("detail", "")
+            if "expired" in detail.lower():
+                console.print("[red]Error:[/red] Your API Key has expired. Please re-generate a new key from the dashboard and run 'ad login' again.")
+            else:
+                console.print("[red]Error:[/red] Unauthorized access. Please login again.")
+            return
         else:
             console.print(f"[red]Error fetching apps:[/red] {response.json().get('detail', 'Unknown error')}")
     except Exception as e:
@@ -167,6 +175,98 @@ def deploy(
 
     except Exception as e:
         console.print(f"[red]Unexpected Error:[/red] {str(e)}")
+
+@app.command("purge")
+def purge_cluster():
+    """Wipes the entire cluster: Deletes ALL applications and stops all containers."""
+    import os
+    import subprocess
+    
+    key = config.get_api_key()
+    if not key:
+        console.print("[red]Error:[/red] Not logged in. Run 'ad login' first.")
+        return
+
+    api_base = config.get_api_base()
+    headers = {"Authorization": f"Bearer {key}"}
+
+    # Helper to fetch apps
+    def fetch_apps_list():
+        try:
+            res = requests.get(f"{api_base}/apps", headers=headers)
+            if res.ok:
+                return res.json().get("apps", [])
+            return []
+        except:
+            return []
+
+    # Helper to display target apps
+    def display_targets(apps_list):
+        if not apps_list:
+            console.print("[yellow]No applications found in cluster to purge.[/yellow]")
+            return
+        
+        table = Table(title=f"🚨 TARGET APPLICATIONS FOR DELETION ({len(apps_list)})", border_style="red")
+        table.add_column("Application Name", style="bold red")
+        table.add_column("ID", style="dim")
+        for a in apps_list:
+            table.add_row(a["name"], str(a["id"])[:8] + "...")
+        console.print(table)
+
+    apps = fetch_apps_list()
+
+    # Step 1: Initial Warning
+    console.print(Panel(
+        "[bold red]WARNING: INITIAL CLUSTER PURGE REQUEST[/bold red]\n\n"
+        "This command will delete [bold]EVERY[/bold] application in your account.\n"
+        "All Docker containers will be stopped and removed. All deployment history will be lost.",
+        title="[bold]CRITICAL ACTION",
+        border_style="red"
+    ))
+    
+    display_targets(apps)
+    
+    if not typer.confirm("\nAre you absolutely sure you want to proceed to final confirmation?"):
+        console.print("[yellow]Purge aborted.[/yellow]")
+        return
+
+    # Step 2: Final Confirmation with text input
+    console.print("\n[bold red]FINAL CONFIRMATION REQUIRED[/bold red]")
+    console.print("This action is [underline]irreversible[/underline].")
+    
+    # Re-fetch just in case
+    apps = fetch_apps_list()
+    display_targets(apps)
+    
+    confirm_text = typer.prompt("Please type 'PURGE' to confirm deletion")
+    if confirm_text != "PURGE":
+        console.print("[yellow]Invalid confirmation. Purge aborted.[/yellow]")
+        return
+
+    # Step 3: Sudo Requirement
+    console.print("\n[bold red]SYSTEM ESCALATION REQUIRED[/bold red]")
+    console.print("This command requires administrative verification to ensure physical human presence.")
+    
+    display_targets(apps)
+    
+    try:
+        # Check sudo access (this will prompt for password if not cached)
+        subprocess.check_call(["sudo", "-v"])
+    except subprocess.CalledProcessError:
+        console.print("[red]Sudo verification failed. Purge aborted.[/red]")
+        return
+
+    # Execute Purge
+    with console.status("[bold red]Purging entire cluster..."):
+        try:
+            res = requests.delete(f"{api_base}/apps/purge", headers=headers)
+            if res.ok:
+                console.print("\n[bold green]✔ Cluster has been successfully purged.[/bold green]")
+                console.print("All applications and containers have been removed.")
+            else:
+                console.print(f"\n[red]Error during purge:[/red] {res.json().get('detail', 'Unknown error')}")
+        except Exception as e:
+            console.print(f"\n[red]Connection Error:[/red] {str(e)}")
 
 @app.command("delete")
 def delete_app(app_id: str):

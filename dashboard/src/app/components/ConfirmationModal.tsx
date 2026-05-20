@@ -1,5 +1,5 @@
 "use client";
-import { X, AlertCircle } from "lucide-react";
+import { X, AlertCircle, Loader2 } from "lucide-react";
 import { useEffect } from "react";
 
 interface ConfirmationModalProps {
@@ -10,6 +10,7 @@ interface ConfirmationModalProps {
   confirmVariant?: "danger" | "accent";
   onConfirm: () => void;
   onCancel: () => void;
+  isLoading?: boolean;
 }
 
 export default function ConfirmationModal({ 
@@ -19,7 +20,8 @@ export default function ConfirmationModal({
   confirmLabel, 
   confirmVariant = "accent",
   onConfirm, 
-  onCancel 
+  onCancel,
+  isLoading = false
 }: ConfirmationModalProps) {
   useEffect(() => {
     if (!isOpen) return;
@@ -49,7 +51,7 @@ export default function ConfirmationModal({
     <div 
       id="confirmation-modal-wrapper"
       onClick={(e) => e.target === e.currentTarget && onCancel()}
-      className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+      className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 animate-in fade-in duration-200 pointer-events-auto"
     >
       <div className="bg-card border border-card-border w-full max-w-sm rounded-[24px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
         <div className="p-6">
@@ -67,19 +69,22 @@ export default function ConfirmationModal({
           <div className="flex gap-3">
             <button 
               onClick={onCancel}
-              className="flex-1 px-4 py-2.5 bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white rounded-xl text-xs font-bold transition-all uppercase tracking-widest"
+              disabled={isLoading}
+              className="flex-1 px-4 py-2.5 bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white rounded-xl text-xs font-bold transition-all uppercase tracking-widest disabled:opacity-50"
             >
               Cancel
             </button>
             <button 
               onClick={onConfirm}
-              className={`flex-1 px-4 py-2.5 rounded-xl text-xs font-black text-white transition-all uppercase tracking-widest shadow-lg ${
+              disabled={isLoading}
+              className={`flex-1 px-4 py-2.5 rounded-xl text-xs font-black text-white transition-all uppercase tracking-widest shadow-lg flex items-center justify-center gap-2 ${
                 confirmVariant === 'danger' 
                 ? 'bg-red-500 hover:bg-red-600 shadow-red-500/20' 
                 : 'bg-accent hover:bg-accent/90 shadow-accent/20'
-              }`}
+              } disabled:opacity-50`}
             >
-              {confirmLabel}
+              {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+              {isLoading ? "Wait..." : confirmLabel}
             </button>
           </div>
         </div>

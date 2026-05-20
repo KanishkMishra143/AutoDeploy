@@ -1,9 +1,14 @@
 import os
+import jwt
+import base64
+import hashlib
+from datetime import datetime, timezone
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-import jwt
+from sqlalchemy.orm import Session
 from dotenv import load_dotenv
-import base64
+from core.database import get_db
+from core.models import APIKey
 
 load_dotenv()
 
@@ -14,7 +19,6 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 security = HTTPBearer()
 
 # For Asymmetric tokens (ES256), we fetch the public keys from Supabase
-# This client handles caching automatically
 jwks_client = None
 if SUPABASE_URL:
     jwks_url = f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json"
@@ -26,15 +30,12 @@ if SUPABASE_URL:
 
 def verify_token(token: str):
     """Verifies a JWT token and returns the payload. Supports ES256, RS256, and HS256."""
-    # 🔍 Identify what algorithm we are dealing with
     try:
         header = jwt.get_unverified_header(token)
         alg = header.get("alg", "HS256")
-    except Exception as e:
-        print(f"DEBUG: Could not read token header: {e}")
+    except Exception:
         return None
 
-    # --- CASE 1: Asymmetric (ES256, RS256) ---
     if alg.startswith("ES") or alg.startswith("RS"):
         if jwks_client:
             try:
@@ -46,14 +47,12 @@ def verify_token(token: str):
                     options={"verify_aud": False}
                 )
                 return payload
-            except Exception as e:
-                print(f"DEBUG: Asymmetric verification failed: {e}")
+            except Exception:
+                pass
 
-    # --- CASE 2: Symmetric (HS256) ---
     if not SUPABASE_JWT_SECRET:
         return None
 
-    # Try both raw and base64-decoded secret
     secrets_to_try = [SUPABASE_JWT_SECRET]
     try:
         decoded = base64.b64decode(SUPABASE_JWT_SECRET)
@@ -75,42 +74,47 @@ def verify_token(token: str):
 
     return None
 
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-import jwt
-from dotenv import load_dotenv
-import base64
-import hashlib
-from sqlalchemy.orm import Session
-from core.database import get_db
-from core.models import APIKey
-
-load_dotenv()
-...
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security), db: Session = Depends(get_db)):
+    """
+    Unified dependency to fetch the current user from either a JWT (Dashboard) 
+    or an API Key (CLI/Automated Access).
+    """
     token = credentials.credentials
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing credentials")
     
     # --- Check for API Key (CLI/Automated Access) ---
     if token.startswith("ad_live_"):
-        key_hash = hashlib.sha256(token.encode()).hexdigest()
-        api_key = db.query(APIKey).filter(APIKey.key_hash == key_hash).first()
+        clean_token = token.strip()
+        key_hash = hashlib.sha256(clean_token.encode()).hexdigest()
         
-        if api_key:
-            # Mimic the JWT payload for compatibility
-            # REST of the app expects 'sub' to be the user_id (string)
-            return {"sub": str(api_key.user_id), "role": "api_key"}
+        try:
+            # We query the DB for the key
+            api_key = db.query(APIKey).filter(APIKey.key_hash == key_hash).first()
+            
+            if api_key:
+                if api_key.expires_at and api_key.expires_at < datetime.now(timezone.utc):
+                    raise HTTPException(status_code=401, detail="API Key has expired")
+                
+                return {"sub": str(api_key.user_id), "role": "api_key"}
+        except HTTPException:
+            # Re-raise FastAPIs own HTTP exceptions (like expired key)
+            raise
+        except Exception as e:
+            import traceback
+            print(f"DEBUG: CRITICAL AUTH ERROR")
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail=f"Internal database error: {str(e)}")
         
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, 
-            detail="Invalid API Key"
-        )
+        raise HTTPException(status_code=401, detail="Invalid API Key")
 
     # --- Standard JWT flow (Dashboard Access) ---
-    payload = verify_token(token)
-    
+    try:
+        payload = verify_token(token)
+    except Exception as e:
+        print(f"DEBUG: Token verification crashed: {e}")
+        payload = None
+
     if not payload:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, 
-            detail="Invalid or expired token"
-        )
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
     return payload

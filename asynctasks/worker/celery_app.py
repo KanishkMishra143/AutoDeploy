@@ -19,5 +19,9 @@ app.conf.update(
             "task": "worker.heartbeat",
             "schedule": 2.0,
         },
+        "global-maintenance-sweep-daily": {
+            "task": "worker.tasks.maintenance_sweep",
+            "schedule": 86400.0, # Every 24 hours
+        },
     }
 )

@@ -60,7 +60,7 @@ This document tracks critical architectural vulnerabilities and edge cases ident
 
 ---
 
-- [ ] 4. Zombie Image Storage Leak
+- [x] 4. Zombie Image Storage Leak
 **Problem:** Every build creates a new Docker image. Without a cleanup policy, the production server will run out of disk space, crashing the entire platform.
 
 ### 🛠️ Solution
@@ -79,7 +79,7 @@ This document tracks critical architectural vulnerabilities and edge cases ident
 
 ---
 
-- [ ] 5. Private Repository Access
+- [x] 5. Private Repository Access
 **Problem:** `git clone` fails for private repositories. Most professional users will not use public repos for their source code.
 
 ### 🛠️ Solution
@@ -100,40 +100,25 @@ This document tracks critical architectural vulnerabilities and edge cases ident
 - [ ] 6. SSL/TLS Termination
 **Problem:** Traefik is currently configured for HTTP (`:80`). Public users expect HTTPS (`:443`).
 
-### 🛠️ Solution
-- Configure Traefik to use the **ACME (Let's Encrypt)** resolver.
-- Automate certificate provisioning for all dynamic subdomains.
-- Force HTTP to HTTPS redirection.
+### 🛠️ Solution (Cloudflare Strategy)
+- Leverage **Cloudflare Tunnels** (`cloudflared`) to create a secure outbound connection from the home desktop.
+- Cloudflare provides **Automatic SSL/TLS** at the edge for the `auto-deploy.tech` domain and all wildcard subdomains (`*.auto-deploy.tech`).
+- Traefik remains behind the tunnel, handling internal HTTP routing without needing complex ACME/Let's Encrypt configuration.
+- Force "Always Use HTTPS" in the Cloudflare Dashboard.
 
 ### 📦 Deliverables
-- Updated `docker-compose.yml` for Traefik with ACME config.
-- Dynamic labels for certificate resolver in `tasks.py`.
+- Setup `cloudflared` daemon on the host machine.
+- Configure Wildcard CNAME in Cloudflare pointing to the tunnel.
+- Update `docker-compose.yml` to ensure Traefik is reachable by the tunnel.
 
 ### ✅ Validation
-- Access a deployed app via `https://`.
-- Verify a valid SSL certificate is issued and active.
+- Access a deployed app via `https://{app}-{user}.auto-deploy.tech`.
+- Verify the connection is secure and uses the Cloudflare Universal SSL certificate.
 
 ---
 
-- [x] 7. Sub-directory (Monorepo) Support
-**Problem:** Auto-detection fails if `package.json` or the `Dockerfile` is not in the repository root.
 
-### 🛠️ Solution
-- Add a `root_dir` field to the application config.
-- CLI: Auto-detect relative path from Git root to CWD.
-- Worker: `cd` into the `root_dir` before running build commands.
-
-### 📦 Deliverables
-- `root_dir` support in API and Worker.
-- Context-aware CLI detection.
-
-### ✅ Validation
-- Run `ad deploy` from a sub-folder of a large monorepo.
-- Verify the worker builds only that sub-folder.
-
----
-
-- [ ] 8. Security: The Docker Socket Risk
+- [x] 7. Security: The Docker Socket Risk
 **Problem:** Giving the worker access to `/var/run/docker.sock` allows a malicious user to potentially escape their container and take over the host.
 
 ### 🛠️ Solution
@@ -150,7 +135,7 @@ This document tracks critical architectural vulnerabilities and edge cases ident
 
 ---
 
-- [ ] 9. API Race Conditions (The Double-Click Panics)
+- [x] 8. API Race Conditions (The Double-Click Panics)
 **Problem:** High-frequency repeated requests (double-clicks) on state-changing buttons cause database deadlocks, unique constraint violations, or 500 errors.
 
 ### 🛠️ Solution
@@ -165,3 +150,21 @@ This document tracks critical architectural vulnerabilities and edge cases ident
 ### ✅ Validation
 - Double-click the "Delete" button rapidly. Verify one succeeds and the second returns a clean 404/409 instead of a crash.
 - Trigger "Deploy" 5 times in 1 second. Verify only 1 build sequence is initiated.
+
+---
+
+- [x] 9. Sub-directory (Monorepo) Support
+**Problem:** Auto-detection fails if `package.json` or the `Dockerfile` is not in the repository root.
+
+### 🛠️ Solution
+- Add a `root_dir` field to the application config.
+- CLI: Auto-detect relative path from Git root to CWD.
+- Worker: `cd` into the `root_dir` before running build commands.
+
+### 📦 Deliverables
+- `root_dir` support in API and Worker.
+- Context-aware CLI detection.
+
+### ✅ Validation
+- Run `ad deploy` from a sub-folder of a large monorepo.
+- Verify the worker builds only that sub-folder.

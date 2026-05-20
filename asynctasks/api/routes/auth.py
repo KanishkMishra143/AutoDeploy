@@ -2,9 +2,10 @@ from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 from typing import List
 from core.database import get_db
-from core.models import Profile, UserSettings, APIKey
-from core.schemas import ProfileCreate, ProfileResponse, UserSettingsResponse, UserSettingsBase, APIKeyCreate, APIKeyResponse, APIKeyFullResponse
+from core.models import Profile, UserSettings, APIKey, Credential
+from core.schemas import ProfileCreate, ProfileResponse, UserSettingsResponse, UserSettingsBase, APIKeyCreate, APIKeyResponse, APIKeyFullResponse, CredentialCreate, CredentialResponse
 from core.auth import get_current_user
+from core.crypto import encrypt_string
 import re
 import secrets
 import hashlib
@@ -22,7 +23,8 @@ def get_profile(db: Session = Depends(get_db), current_user: dict = Depends(get_
         # Auto-provision profile from Supabase metadata if available
         meta = current_user.get("user_metadata", {})
         # Fallback to email prefix if no username/name
-        raw_username = meta.get("user_name") or meta.get("full_name") or current_user.get("email", "").split("@")[0]
+        email = current_user.get("email") or ""
+        raw_username = meta.get("user_name") or meta.get("full_name") or email.split("@")[0] or "user"
         # Sanitize: alphanumeric and underscores only
         clean_username = re.sub(r'[^a-zA-Z0-9_]', '', raw_username).lower()
         
@@ -98,8 +100,7 @@ def update_settings(data: UserSettingsBase, db: Session = Depends(get_db), curre
     user_uuid = UUID(current_user["sub"])
     settings = db.query(UserSettings).filter(UserSettings.user_id == user_uuid).first()
     if not settings:
-        settings = UserSettings(user_id=user_uuid)
-        db.add(settings)
+        raise HTTPException(status_code=404, detail="Settings not found")
 
     settings.notifications_enabled = data.notifications_enabled
     settings.appearance_mode = data.appearance_mode
@@ -115,30 +116,29 @@ def list_api_keys(db: Session = Depends(get_db), current_user: dict = Depends(ge
 
 @router.post("/keys", response_model=APIKeyFullResponse)
 def create_api_key(data: APIKeyCreate, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
-    """Generates a new API key. The secret portion is only shown ONCE."""
+    """Generates a new API key with a selectable expiration period."""
+    from datetime import datetime, timedelta, timezone
+
     user_uuid = UUID(current_user["sub"])
     raw_key = f"ad_live_{secrets.token_urlsafe(32)}"
     key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
-    
+
+    # Calculate expiration using timezone-aware UTC
+    expires_at = datetime.now(timezone.utc) + timedelta(days=data.validity_days)
+
     new_key = APIKey(
         user_id=user_uuid,
         name=data.name,
         key_prefix=raw_key[:12], # ad_live_xxxx
-        key_hash=key_hash
+        key_hash=key_hash,
+        secret_key=raw_key, # Stored for 'visible always' access
+        expires_at=expires_at
     )
     db.add(new_key)
     db.commit()
     db.refresh(new_key)
-    
-    # Construct response dictionary for FastAPI to validate against response_model
-    return {
-        "id": new_key.id,
-        "name": new_key.name,
-        "key_prefix": new_key.key_prefix,
-        "created_at": new_key.created_at,
-        "last_used_at": new_key.last_used_at,
-        "secret_key": raw_key
-    }
+
+    return new_key
 
 @router.delete("/keys/{key_id}")
 def delete_api_key(key_id: UUID, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
@@ -151,6 +151,44 @@ def delete_api_key(key_id: UUID, db: Session = Depends(get_db), current_user: di
     db.delete(key)
     db.commit()
     return {"message": "API key revoked"}
+
+@router.get("/credentials", response_model=List[CredentialResponse])
+def list_credentials(db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    """Lists all stored credentials for the current user."""
+    user_id = UUID(current_user["sub"])
+    return db.query(Credential).filter(Credential.user_id == user_id).all()
+
+@router.post("/credentials", response_model=CredentialResponse)
+def create_credential(data: CredentialCreate, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    """Securely stores a new private credential (SSH or PAT)."""
+    user_id = UUID(current_user["sub"])
+    
+    # Encrypt the raw value before storage
+    encrypted_val = encrypt_string(data.value)
+    
+    new_cred = Credential(
+        user_id=user_id,
+        name=data.name,
+        type=data.type,
+        encrypted_value=encrypted_val
+    )
+    db.add(new_cred)
+    db.commit()
+    db.refresh(new_cred)
+    return new_cred
+
+@router.delete("/credentials/{credential_id}")
+def delete_credential(credential_id: UUID, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    """Removes a stored credential with row-level locking."""
+    user_id = UUID(current_user["sub"])
+    # Lock the row before deletion to prevent concurrent deletion errors
+    cred = db.query(Credential).with_for_update().filter(Credential.id == credential_id, Credential.user_id == user_id).first()
+    if not cred:
+        raise HTTPException(status_code=404, detail="Credential not found")
+    
+    db.delete(cred)
+    db.commit()
+    return {"status": "deleted"}
 
 @router.get("/lookup/{username}", response_model=ProfileResponse)
 def lookup_user(username: str, db: Session = Depends(get_db)):

@@ -352,7 +352,7 @@ export default function LogViewer({ jobId, onClose }: { jobId: string; onClose: 
                 </div>
             </div>
             <div className="flex items-center gap-2">
-                <span>ORCHESTRATOR: v1.5.2</span>
+                <span>ORCHESTRATOR: v0.5 ALPHA</span>
             </div>
         </div>
       </div>
@@ -365,6 +365,7 @@ export default function LogViewer({ jobId, onClose }: { jobId: string; onClose: 
         confirmVariant="danger"
         onConfirm={handleCancel}
         onCancel={() => setIsConfirmCancelOpen(false)}
+        isLoading={isCancelling}
       />
     </div>
   );

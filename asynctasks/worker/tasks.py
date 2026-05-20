@@ -221,7 +221,7 @@ def run_command(db, job_id, command, cwd=None, owner_id=None):
     if return_code != 0:
         raise subprocess.CalledProcessError(return_code, command)
 
-def run_container(db, job_id, image_tag, env_vars=None, app_name=None, internal_port=8000, owner_id=None, volumes=None):
+def run_container(db, job_id, image_tag, env_vars=None, app_name=None, internal_port=8000, owner_id=None, volumes=None, cpu_limit=0.5, memory_limit_mb=512, pids_limit=100):
     """Starts a Docker container with Hardened Resource Quotas and Traefik labels."""
     from core.secrets_engine import resolver as secret_resolver
     
@@ -237,12 +237,29 @@ def run_container(db, job_id, image_tag, env_vars=None, app_name=None, internal_
         
     network_name = "autodeploy-net"
     
-    resource_flags = ["--memory", "512m", "--cpus", "0.5"]
+    # --- TASK 7 SECURITY HARDENING (DATABASE DRIVEN) ---
+    # Resource Quotas: Prevent resource exhaustion / DoS attacks
+    resource_flags = [
+        "--memory", f"{memory_limit_mb}m", 
+        "--memory-swap", f"{memory_limit_mb}m",   # Disable swap for predictable performance
+        "--cpus", str(cpu_limit),               # Dynamic CPU core limit
+        "--pids-limit", str(pids_limit),         # Prevent fork bombs
+        "--ulimit", "nofile=1024:1024"          # Limit open file handles
+    ]
     
+    # Security Profiles: Prevent container escape & host takeover
+    security_flags = [
+        "--security-opt", "no-new-privileges", # Prevent setuid/setgid privilege escalation
+        "--cap-drop", "ALL",                   # Drop all kernel capabilities
+        "--cap-add", "NET_BIND_SERVICE"        # Only allow binding to low ports (<1024) if needed
+    ]
+
     labels = [
         "--label", "traefik.enable=true",
         "--label", f"traefik.http.routers.{container_name}.rule=Host(`{hostname}`)",
         "--label", f"traefik.http.services.{container_name}.loadbalancer.server.port={internal_port}",
+        "--label", "autodeploy.managed=true",  # Identify for maintenance sweeps
+        "--label", f"autodeploy.owner_id={owner_id}"
     ]
 
     env_flags = []
@@ -289,7 +306,7 @@ def run_container(db, job_id, image_tag, env_vars=None, app_name=None, internal_
         "--name", container_name, 
         "--network", network_name,
         "--restart", "unless-stopped"
-    ] + resource_flags + labels + env_flags + volume_flags + ["-p", f"0:{internal_port}", image_tag]
+    ] + resource_flags + security_flags + labels + env_flags + volume_flags + ["-p", f"0:{internal_port}", image_tag]
 
     try:
         result = subprocess.run(command, capture_output=True, text=True, check=True)
@@ -315,16 +332,50 @@ def run_container(db, job_id, image_tag, env_vars=None, app_name=None, internal_
         "url": f"http://{hostname}"
     }
 
-def clone_repository(repo_url: str, dest_dir: str, branch: str = "main") -> None:
+def clone_repository(repo_url: str, dest_dir: str, branch: str = "main", credential: dict = None) -> None:
+    """Clones a repository, handling optional SSH or PAT credentials."""
+    env = os.environ.copy()
+    ssh_key_path = None
+
     try:
+        if credential:
+            cred_type = credential.get("type")
+            cred_value = credential.get("value")
+
+            if cred_type == "PAT":
+                # Inject PAT into the URL: https://<token>@github.com/user/repo.git
+                if "://" in repo_url:
+                    proto, rest = repo_url.split("://", 1)
+                    repo_url = f"{proto}://{cred_value}@{rest}"
+                else:
+                    repo_url = f"https://{cred_value}@{repo_url}"
+            
+            elif cred_type == "SSH":
+                # Create a temporary SSH key file
+                fd, ssh_key_path = tempfile.mkstemp(prefix="ad_ssh_")
+                with os.fdopen(fd, 'w') as f:
+                    f.write(cred_value)
+                os.chmod(ssh_key_path, 0o600)
+                
+                # Use GIT_SSH_COMMAND to point to our temp key
+                env["GIT_SSH_COMMAND"] = f"ssh -i {ssh_key_path} -o StrictHostKeyChecking=no"
+
         subprocess.run(
             ["git", "clone", "-b", branch, repo_url, dest_dir],
             capture_output=True,
             text=True,
-            check=True
+            check=True,
+            env=env
         )
     except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"Git clone failed: {e.stderr}")
+        # Scrub credentials from error message
+        error_msg = e.stderr
+        if credential and credential.get("value"):
+            error_msg = error_msg.replace(credential["value"], "********")
+        raise RuntimeError(f"Git clone failed: {error_msg}")
+    finally:
+        if ssh_key_path and os.path.exists(ssh_key_path):
+            os.remove(ssh_key_path)
 
 def update_job_progress(db, job_id, message, progress=None):
     job = db.query(Job).filter(Job.id == job_id).first()
@@ -492,17 +543,31 @@ def pipeline_initialize(job_id: str):
 def pipeline_clone(job_id: str):
     """Step: Clone the repository into a workspace."""
     with session_scope() as db:
+        from core.models import Credential
+        from core.crypto import decrypt_string
+        
         job = db.query(Job).filter(Job.id == job_id).first()
         repo_url = job.payload.get("repo")
         branch = job.payload.get("branch", "main")
         owner_id = job.owner_id
+        cred_id = job.payload.get("credential_id")
         
+        credential_data = None
+        if cred_id:
+            cred = db.query(Credential).filter(Credential.id == cred_id).first()
+            if cred:
+                credential_data = {
+                    "type": cred.type,
+                    "value": decrypt_string(cred.encrypted_value)
+                }
+                save_log(db, job_id, f"🔑 Using private credential: {cred.name} ({cred.type})", owner_id=owner_id)
+
         workspace_dir = tempfile.mkdtemp(prefix=f"build_{job_id}_")
         save_log(db, job_id, f"📂 Workspace created: {workspace_dir}", owner_id=owner_id)
         
         try:
             update_job_progress(db, job_id, "Cloning Repository", 20)
-            clone_repository(repo_url, workspace_dir, branch=branch)
+            clone_repository(repo_url, workspace_dir, branch=branch, credential=credential_data)
             save_log(db, job_id, "✅ Repository cloned successfully.", owner_id=owner_id)
             return {"job_id": job_id, "workspace_dir": workspace_dir, "owner_id": str(owner_id) if owner_id else None}
         except Exception as e:
@@ -511,23 +576,38 @@ def pipeline_clone(job_id: str):
             raise
 
 @app.task(name="worker.pipeline.custom_step")
-def pipeline_custom_step(prev_result: dict, step_name: str, command: str):
-    """Step: Execute a custom shell command in the workspace."""
+def pipeline_custom_step(prev_result: dict, step_name: str, command: str, in_container: bool = False):
+    """
+    Step: Execute a custom shell command.
+    If in_container=True, it runs via 'docker exec' in the deployed container.
+    Otherwise, it runs in the host workspace directory.
+    """
     job_id = prev_result["job_id"]
-    workspace_dir = prev_result["workspace_dir"]
+    workspace_dir = prev_result.get("workspace_dir")
     owner_id = prev_result.get("owner_id")
     
     with session_scope() as db:
         save_log(db, job_id, f"🛠️ Starting custom step: {step_name}...", owner_id=owner_id)
-        save_log(db, job_id, f"💻 Command: {command}", owner_id=owner_id)
         
-        # Report progress for custom step
-        update_job_progress(db, job_id, f"Running: {step_name}", 40) # Approximate progress
+        # Report progress
+        update_job_progress(db, job_id, f"Running: {step_name}", 40)
         
         try:
-            # shlex.split correctly handles quoted strings in commands
-            cmd_args = shlex.split(command)
-            run_command(db, job_id, cmd_args, cwd=workspace_dir, owner_id=owner_id)
+            if in_container:
+                container_id = prev_result.get("deploy_info", {}).get("container_id")
+                if not container_id:
+                    raise RuntimeError("Cannot run post-build step: Container ID not found.")
+                
+                save_log(db, job_id, f"📦 Executing inside container {container_id[:12]}...", owner_id=owner_id)
+                save_log(db, job_id, f"💻 Command: {command}", owner_id=owner_id)
+                
+                cmd_args = ["docker", "exec", container_id] + shlex.split(command)
+                run_command(db, job_id, cmd_args, owner_id=owner_id)
+            else:
+                save_log(db, job_id, f"💻 Command (Host): {command}", owner_id=owner_id)
+                cmd_args = shlex.split(command)
+                run_command(db, job_id, cmd_args, cwd=workspace_dir, owner_id=owner_id)
+                
             save_log(db, job_id, f"✅ Custom step '{step_name}' finished successfully.", owner_id=owner_id)
             return prev_result
         except Exception as e:
@@ -622,13 +702,14 @@ def pipeline_build(prev_result: dict):
 
 @app.task(name="worker.pipeline.deploy")
 def pipeline_deploy(prev_result: dict):
-    """Step: Run the container with decrypted environment variables."""
+    """Step: Run the container with decrypted environment variables and user-level resource quotas."""
     job_id = prev_result["job_id"]
     image_tag = prev_result["image_tag"]
     stack = prev_result["stack"]
     owner_id = prev_result.get("owner_id")
     
     with session_scope() as db:
+        from core.models import Job, Profile
         job = db.query(Job).filter(Job.id == job_id).first()
         
         # 🔓 Decrypt the environment variables right before they go into Docker
@@ -642,20 +723,98 @@ def pipeline_deploy(prev_result: dict):
             
         volumes = job.payload.get("volumes", [])
         
+        # --- TASK 7: USER-LEVEL RESOURCE QUOTAS ---
+        # Fetch the owner's profile to get their specific tier limits
+        profile = db.query(Profile).filter(Profile.user_id == owner_id).first() if owner_id else None
+        
+        cpu_limit = profile.cpu_limit if profile else 0.5
+        memory_limit = profile.memory_limit_mb if profile else 512
+        pids_limit = profile.pids_limit if profile else 100
+
         update_job_progress(db, job_id, "Deploying", 90)
         
-        # We pass decrypted_env and volumes here!
+        # We pass decrypted_env, volumes, and user quotas here!
         deploy_info = run_container(
             db, job_id, image_tag, 
             env_vars=decrypted_env, 
             app_name=app_name, 
             internal_port=internal_port,
             owner_id=owner_id,
-            volumes=volumes
+            volumes=volumes,
+            cpu_limit=cpu_limit,
+            memory_limit_mb=memory_limit,
+            pids_limit=pids_limit
         )
         
-        save_log(db, job_id, "✅ Deployment live with secure secrets.", owner_id=owner_id)
+        save_log(db, job_id, f"✅ Deployment live. Quota Applied: {memory_limit}MB RAM / {cpu_limit} CPU", owner_id=owner_id)
         return {**prev_result, "deploy_info": deploy_info}
+
+@app.task(name="worker.tasks.prune_old_images")
+def prune_old_images(app_id: str):
+    """
+    Enforces the application's retention_limit (count) and retention_days (time).
+    Keeps the 'N' most recent successful build images that are also within 'D' days.
+    """
+    from datetime import datetime, timedelta, timezone
+    
+    with session_scope() as db:
+        from core.models import Application, Job
+        app = db.query(Application).filter(Application.id == app_id).first()
+        if not app:
+            return "App not found"
+        
+        limit_count = app.retention_limit
+        limit_days = app.retention_days
+        
+        # 1. Fetch successful jobs, latest first
+        successful_jobs = db.query(Job).filter(
+            Job.app_id == app.id,
+            Job.status == "success"
+        ).order_by(Job.created_at.desc()).all()
+
+        if not successful_jobs:
+            return "No successful builds found. Skipping prune."
+
+        # 2. Identify jobs to prune
+        jobs_to_prune = []
+        now = datetime.now(timezone.utc)
+        time_threshold = now - timedelta(days=limit_days)
+
+        for i, job in enumerate(successful_jobs):
+            # Never prune the latest build (it's the active one)
+            if i == 0: continue
+            
+            # Prune if past count limit OR past time limit
+            is_past_count = i >= limit_count
+            # Ensure job.created_at is aware for comparison
+            created_at = job.created_at
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
+                
+            is_past_time = created_at < time_threshold
+            
+            if is_past_count or is_past_time:
+                jobs_to_prune.append(job)
+        
+        if not jobs_to_prune:
+            return f"Retention limits not reached. Keeping all {len(successful_jobs)} images."
+
+        pruned_count = 0
+        clean_app_name = "".join(e for e in app.name.lower() if e.isalnum() or e == "-")
+        
+        for job in jobs_to_prune:
+            # New Tagging Convention: ad-{clean_app_name}:{job_id_short}
+            image_tag = f"ad-{clean_app_name}:{str(job.id)[:8]}"
+            
+            try:
+                # Remove the image
+                res = subprocess.run(["docker", "rmi", image_tag], capture_output=True, text=True)
+                if res.returncode == 0:
+                    pruned_count += 1
+            except Exception:
+                continue
+        
+        return f"Pruned {pruned_count} old images for {app.name} based on count ({limit_count}) and time ({limit_days} days) policies."
 
 @app.task(name="worker.pipeline.finalize")
 def pipeline_finalize(prev_result: dict):
@@ -679,6 +838,12 @@ def pipeline_finalize(prev_result: dict):
         
         save_log(db, job_id, "🧹 Cleaning up workspace...", owner_id=owner_id)
         shutil.rmtree(workspace_dir, ignore_errors=True)
+        
+        # TRIGGER IMAGE PRUNING
+        if job.app_id:
+            save_log(db, job_id, "🧹 Triggering image retention policy cleanup...", owner_id=owner_id)
+            prune_old_images.delay(str(job.app_id))
+
         save_log(db, job_id, "🏁 Pipeline sequence finished successfully.", owner_id=owner_id)
     return "Success"
 
@@ -710,8 +875,32 @@ def pipeline_error_handler(request, exc, traceback, job_id):
 
 # --- MAIN ENTRY POINT ---
 
-@app.task(
-    name="worker.tasks.process_job",
+@app.task(name="worker.tasks.maintenance_sweep")
+def maintenance_sweep():
+    """
+    Global maintenance task that triggers image pruning for ALL applications.
+    Useful for Celery Beat (Scheduled) or Startup Hooks.
+    """
+    from core.models import Application
+    with session_scope() as db:
+        apps = db.query(Application).all()
+        app_ids = [str(app.id) for app in apps]
+
+    print(f"🧹 MAINTENANCE: Starting global sweep for {len(app_ids)} applications...")
+
+    results = []
+    for app_id in app_ids:
+        # We call it synchronously within the loop to avoid overwhelming the worker 
+        # with hundreds of simultaneous sub-tasks, or we could use .delay() 
+        # if we want parallel execution. For maintenance, sequential is safer.
+        result = prune_old_images(app_id)
+        results.append(result)
+
+    print(f"✅ MAINTENANCE: Global sweep complete. Summary: {len(results)} apps processed.")
+    return results
+
+@app.task(name="worker.tasks.process_job",
+
     bind=True,
     max_retries=3,
     default_retry_delay=5
@@ -744,13 +933,15 @@ def process_job(self, job_id: str):
                 # 2. Core Build
                 steps.append(pipeline_build.s())
 
-                # 3. Post-Build Custom Steps
+                # 3. Deploy
+                steps.append(pipeline_deploy.s())
+
+                # 4. Post-Build Custom Steps (Executed INSIDE the container)
                 post_steps = job.payload.get("post_build_steps", [])
                 for idx, cmd in enumerate(post_steps):
-                    steps.append(pipeline_custom_step.s(f"Post-Build {idx+1}", cmd))
+                    steps.append(pipeline_custom_step.s(f"Post-Build {idx+1}", cmd, in_container=True))
 
-                # 4. Deploy & Finalize
-                steps.append(pipeline_deploy.s())
+                # 5. Finalize
                 steps.append(pipeline_finalize.s())
 
                 # CONSTRUCT THE DAG (Chain)

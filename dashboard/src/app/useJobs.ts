@@ -62,8 +62,16 @@ export interface APIKey {
     name: string;
     key_prefix: string;
     created_at: string;
+    expires_at?: string;
     last_used_at?: string;
     secret_key?: string;
+}
+
+export interface Credential {
+    id: string;
+    name: string;
+    type: string;
+    created_at: string;
 }
 
 export function useJobs() {
@@ -72,6 +80,7 @@ export function useJobs() {
     const [profile, setProfile] = useState<Profile | null>(null);
     const [settings, setSettings] = useState<UserSettings | null>(null);
     const [apiKeys, setApiKeys] = useState<APIKey[]>([]);
+    const [credentials, setCredentials] = useState<Credential[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [workerCount, setWorkerCount] = useState(0);
@@ -142,13 +151,13 @@ export function useJobs() {
         }
     };
 
-    const createApiKey = async (name: string) => {
+    const createApiKey = async (name: string, validityDays: number = 7) => {
         try {
             const headers = await getAuthHeaders();
             const response = await fetch("http://127.0.0.1:8000/auth/keys", {
                 method: "POST",
                 headers,
-                body: JSON.stringify({ name })
+                body: JSON.stringify({ name, validity_days: validityDays })
             });
             if (response.ok) {
                 const data = await response.json();
@@ -173,6 +182,53 @@ export function useJobs() {
             }
         } catch (err) {
             console.error("Failed to revoke API key:", err);
+        }
+    };
+
+    const fetchCredentials = async () => {
+        try {
+            const headers = await getAuthHeaders();
+            const response = await fetch("http://127.0.0.1:8000/auth/credentials", { headers });
+            if (response.ok) {
+                const data = await response.json();
+                setCredentials(data);
+            }
+        } catch (err) {
+            console.error("Failed to fetch credentials:", err);
+        }
+    };
+
+    const createCredential = async (name: string, type: string, value: string) => {
+        try {
+            const headers = await getAuthHeaders();
+            const response = await fetch("http://127.0.0.1:8000/auth/credentials", {
+                method: "POST",
+                headers,
+                body: JSON.stringify({ name, type, value })
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setCredentials(prev => [...prev, data]);
+                return data;
+            }
+        } catch (err) {
+            console.error("Failed to create credential:", err);
+            throw err;
+        }
+    };
+
+    const deleteCredential = async (id: string) => {
+        try {
+            const headers = await getAuthHeaders();
+            const response = await fetch(`http://127.0.0.1:8000/auth/credentials/${id}`, {
+                method: "DELETE",
+                headers
+            });
+            if (response.ok) {
+                setCredentials(prev => prev.filter(c => c.id !== id));
+            }
+        } catch (err) {
+            console.error("Failed to delete credential:", err);
         }
     };
 
@@ -224,6 +280,7 @@ export function useJobs() {
         fetchProfile();
         fetchSettings();
         fetchApiKeys();
+        fetchCredentials();
     };
 
     useEffect(() => {
@@ -233,7 +290,7 @@ export function useJobs() {
     }, []);
 
     return { 
-        jobs, apps, profile, settings, apiKeys, loading, error, workerCount,
-        updateSettings, createApiKey, revokeApiKey
+        jobs, apps, profile, settings, apiKeys, credentials, loading, error, workerCount,
+        updateSettings, createApiKey, revokeApiKey, createCredential, deleteCredential
     };
 }

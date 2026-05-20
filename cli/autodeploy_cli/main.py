@@ -26,7 +26,10 @@ def logs(job_id: Optional[str] = typer.Argument(None, help="The ID of the job to
     asyncio.run(logs_mod.run_logs(job_id))
 
 @app.command()
-def login(key: Optional[str] = typer.Option(None, "--key", "-k", help="The API Key from your dashboard")):
+def login(
+    key: Optional[str] = typer.Option(None, "--key", "-k", help="The API Key from your dashboard"),
+    api_base: Optional[str] = typer.Option(None, "--base", "-b", help="The API Base URL (default: http://127.0.0.1:8000)")
+):
     """
     Authenticate the CLI with your AutoDeploy account.
     """
@@ -37,28 +40,39 @@ def login(key: Optional[str] = typer.Option(None, "--key", "-k", help="The API K
         console.print("[red]Error:[/red] Invalid key format. Keys should start with 'ad_live_'")
         raise typer.Exit(1)
 
+    # Resolve API Base: CLI Argument > Existing Config > Default
+    final_api_base = api_base or config.get_api_base()
+    
     # Verify the key
-    api_base = config.get_api_base()
     try:
-        with console.status("[bold blue]Verifying connection..."):
+        with console.status(f"[bold blue]Verifying connection to {final_api_base}..."):
             response = requests.get(
-                f"{api_base}/auth/profile",
-                headers={"Authorization": f"Bearer {key}"}
+                f"{final_api_base}/auth/profile",
+                headers={"Authorization": f"Bearer {key}"},
+                timeout=10
             )
         
         if response.ok:
             data = response.json()
-            config.save_config({"api_key": key, "api_base": api_base})
+            config.save_config({"api_key": key, "api_base": final_api_base})
             console.print(Panel(
                 f"Welcome, [bold green]{data['username']}[/bold green]!\n"
-                f"Successfully authenticated with {api_base}",
+                f"Successfully authenticated with {final_api_base}",
                 title="[bold]Authentication Successful",
                 border_style="green"
             ))
+        elif response.status_code == 401:
+            console.print("[red]Error:[/red] Invalid API Key. Please check the key in your dashboard and try again.")
         else:
-            console.print("[red]Error:[/red] Invalid API Key or server unreachable.")
+            try:
+                error_detail = response.json().get('detail', 'Unknown error')
+            except:
+                error_detail = response.text
+            console.print(f"[red]Error:[/red] Server returned an unexpected error ({response.status_code}): {error_detail}")
+    except requests.exceptions.ConnectionError:
+        console.print(f"[red]Error:[/red] Could not reach the server at {final_api_base}. Please ensure the AutoDeploy API is running.")
     except Exception as e:
-        console.print(f"[red]Error:[/red] Could not connect to the API: {e}")
+        console.print(f"[red]Error:[/red] An unexpected error occurred: {e}")
 
 @app.command()
 def whoami():
@@ -79,8 +93,14 @@ def whoami():
         if response.ok:
             data = response.json()
             console.print(f"Logged in as: [bold green]{data['username']}[/bold green] (@{data['user_id']})")
+        elif response.status_code == 401:
+            detail = response.json().get("detail", "")
+            if "expired" in detail.lower():
+                console.print("[red]Error:[/red] Your API Key has expired. Please re-generate a new key from the dashboard and run 'ad login' again.")
+            else:
+                console.print("[red]Error:[/red] Session invalid or unauthorized. Run 'ad login' again.")
         else:
-            console.print("[red]Error:[/red] Session expired or invalid key. Run 'ad login' again.")
+            console.print(f"[red]Error:[/red] Could not fetch profile (Status: {response.status_code})")
     except Exception as e:
         console.print(f"[red]Error:[/red] Could not connect to the API: {e}")
 

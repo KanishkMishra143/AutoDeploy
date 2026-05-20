@@ -38,13 +38,16 @@ def rerun_job(job_id: UUID, db: Session = Depends(get_db), current_user: dict = 
 
     # --- SMART ROLLBACK GUARD ---
     # Check if the Docker image for this build still exists
-    image_tag = f"autodeploy-app:{str(job_id)[:8]}"
+    app_name = old_job.payload.get("app_name", "unknown")
+    clean_app_name = "".join(e for e in app_name.lower() if e.isalnum() or e == "-")
+    image_tag = f"ad-{clean_app_name}:{str(job_id)[:8]}"
+    
     try:
         subprocess.run(["docker", "image", "inspect", image_tag], check=True, capture_output=True)
     except subprocess.CalledProcessError:
         raise HTTPException(
             status_code=400, 
-            detail="Rollback not possible. Build past the set backup history."
+            detail=f"Rollback failed: Build artifact (image {image_tag}) was pruned to save disk space."
         )
 
     # Calculate version number of the old job for better UX
