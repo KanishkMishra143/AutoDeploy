@@ -220,8 +220,20 @@ export default function LogViewer({ jobId, onClose }: { jobId: string; onClose: 
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-2 md:gap-3">
                 <Terminal className="w-4 h-4 text-accent" />
-                <span className="text-[9px] md:text-[10px] font-black font-mono text-gray-400 uppercase tracking-widest">
+                <span 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigator.clipboard.writeText(jobId);
+                    toast.success("FULL JOB ID COPIED TO CLIPBOARD", {
+                      style: { background: '#111', color: '#fff', border: '1px solid rgba(255,255,255,0.1)', fontSize: '10px', fontWeight: '900', letterSpacing: '0.1em' },
+                      icon: '📋'
+                    });
+                  }}
+                  className="text-[9px] md:text-[10px] font-black font-mono text-gray-400 uppercase tracking-widest cursor-pointer hover:text-accent transition-colors group/id"
+                  title="Click to copy full UUID"
+                >
                   {activeTab === "logs" ? "Live Stream" : "Resource Audit"} ~ {job?.build_number ? `BUILD #${job.build_number}` : jobId.split('-')[0]}
+                  <span className="ml-2 opacity-0 group-hover/id:opacity-100 transition-opacity text-[8px] font-black uppercase tracking-tighter text-accent/50 hidden md:inline">Click to copy</span>
                 </span>
             </div>
 

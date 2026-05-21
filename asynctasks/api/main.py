@@ -78,9 +78,16 @@ async def websocket_logs(websocket: WebSocket, job_id: str):
     
     # 1. INITIAL HISTORY: Send all existing logs from the database once
     with session_scope() as db:
+        # First, check if this is an Application ID by mistake
+        is_app = db.query(Application).filter(Application.id == job_id).first()
+        if is_app:
+            await websocket.send_json([{"message": "❌ ERROR: You provided an APPLICATION ID. This endpoint requires a JOB ID (Build ID).", "created_at": datetime.utcnow().isoformat()}])
+            await websocket.close()
+            return
+
         job = db.query(Job).filter(Job.id == job_id, Job.owner_id == user_id).first()
         if not job:
-            await websocket.send_json([{"message": "🚨 Access Denied: You do not own this job.", "created_at": datetime.utcnow().isoformat()}])
+            await websocket.send_json([{"message": "🚨 Access Denied: Job not found or you do not have permission.", "created_at": datetime.utcnow().isoformat()}])
             await websocket.close()
             return
 
