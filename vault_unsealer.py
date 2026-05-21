@@ -85,13 +85,25 @@ def unseal_vault():
             if status_res.status_code == 200:
                 status = status_res.json()
                 is_sealed = status.get("sealed", True)
+                initialized = status.get("initialized", False)
+                
+                print(f"   - Vault Status: sealed={is_sealed}, initialized={initialized}")
+                
+                if not initialized:
+                    print("❌ Error: Vault is not initialized. Please initialize Vault first.")
+                    return
+                
                 if not is_sealed:
                     print("✅ Vault is already unsealed. Bridge exiting.")
                     return
+                
+                # If we are here, it's sealed and initialized. Ready to unseal.
                 break
+            else:
+                print(f"⚠️ Attempt {i+1}: Received status {status_res.status_code}. Retrying...")
         except Exception as e:
             print(f"⚠️ Attempt {i+1}: Could not check status ({e}). Retrying...")
-            time.sleep(2)
+        time.sleep(2)
 
     # 6. Execute Unseal
     print(f"🔓 Vault is sealed. Applying {len(unseal_keys)} keys (decrypted in memory)...")
@@ -99,9 +111,15 @@ def unseal_vault():
         try:
             # Explicitly use JSON for the POST body
             res = requests.post(f"{VAULT_ADDR}/v1/sys/unseal", json={"key": key.strip()}, timeout=5)
-            # Log progress if threshold not met yet
-            progress = res.json().get("progress", 0)
-            print(f"   - Key applied. Progress: {progress}/3")
+            data = res.json()
+            is_sealed = data.get("sealed", True)
+            progress = data.get("progress", 0)
+            t = data.get("t", 0)
+            print(f"   - Key applied. Progress: {progress}/{t} (Sealed: {is_sealed})")
+            
+            if not is_sealed:
+                print("✨ Vault unsealed during sequence!")
+                break
         except Exception as e:
             print(f"⚠️ Failed to apply a key: {e}")
     
