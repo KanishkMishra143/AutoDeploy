@@ -100,7 +100,7 @@ services:
         WORKDIR /app
         CMD ["python", "unsealer.py"]
     container_name: autodeploy-vault-unsealer
-    restart: on-failure
+    restart: unless-stopped
     depends_on:
       - vault
     env_file:
