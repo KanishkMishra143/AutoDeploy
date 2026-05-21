@@ -44,6 +44,17 @@ class VaultClient:
         if not self.client:
             return {}
         
+        # Check if Vault is sealed before attempting read
+        try:
+            if self.client.sys.is_sealed():
+                print(f"🚨 Vault: Cannot read env for {app_id} because Vault is SEALED.")
+                raise RuntimeError("Vault is sealed. Ensure the unsealer has run.")
+        except Exception as e:
+            # hvac raises internal errors when sealed too
+            if "Vault is sealed" in str(e) or isinstance(e, RuntimeError):
+                raise RuntimeError("Vault is sealed. Ensure the unsealer has run.") from e
+            print(f"⚠️ Vault: Status check failed: {e}")
+        
         path = self._get_app_path(app_id)
         try:
             response = self.client.secrets.kv.v2.read_secret_version(
@@ -54,6 +65,8 @@ class VaultClient:
         except hvac.exceptions.InvalidPath:
             return {}
         except Exception as e:
+            if "Vault is sealed" in str(e):
+                 raise RuntimeError("Vault is sealed. Ensure the unsealer has run.") from e
             print(f"❌ Vault: Failed to get env for {app_id}: {e}")
             return {}
 

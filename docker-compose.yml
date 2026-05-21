@@ -95,11 +95,12 @@ services:
       context: .
       dockerfile_inline: |
         FROM python:3.11-slim
-        RUN pip install supabase requests cryptography
+        RUN pip install supabase requests cryptography python-dotenv
         COPY vault_unsealer.py /app/unsealer.py
         WORKDIR /app
         CMD ["python", "unsealer.py"]
     container_name: autodeploy-vault-unsealer
+    restart: on-failure
     depends_on:
       - vault
     env_file:
