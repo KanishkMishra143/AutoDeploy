@@ -261,9 +261,10 @@ export default function LogViewer({ jobId, onClose }: { jobId: string; onClose: 
                 </h4>
                 <p className="text-white text-xs md:text-sm font-bold">This application was terminated due to resource abuse.</p>
                 <p className="text-gray-400 text-[10px] md:text-xs mt-1 font-medium leading-tight">
-                  Violation Type: <span className="text-red-400 uppercase">{job.result.violation_type}</span> | 
-                  Peak Memory: <span className="text-red-400">{job.result.peak_mem?.toFixed(1)} MiB</span>
+                  Violation Type: <span className="text-red-400 uppercase">{job.result?.violation_type}</span> | 
+                  Peak Memory: <span className="text-red-400">{job.result?.peak_mem?.toFixed(1)} MiB</span>
                 </p>
+
               </div>
             </div>
           )}
