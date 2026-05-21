@@ -826,9 +826,9 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
                 <div>
                   <div className="flex items-center gap-2 mb-2">
                     <h3 className="text-lg font-bold text-white">Environment Variables</h3>
-                    <span className="px-2 py-0.5 bg-accent/10 text-accent text-[8px] font-black rounded uppercase tracking-widest border border-accent/20">Advanced Secrets Supported</span>
+                    <span className="px-2 py-0.5 bg-accent/10 text-accent text-[8px] font-black rounded uppercase tracking-widest border border-accent/20">Write-Only Secrets</span>
                   </div>
-                  <p className="text-sm text-gray-500">Variables defined here are encrypted at rest. To use HashiCorp Vault, prefix your value with <code className="bg-white/10 px-1 py-0.5 rounded text-accent">vault://path/to/key</code>.</p>
+                  <p className="text-sm text-gray-500">Sensitive variables are stored in HashiCorp Vault and never revealed. To change a value, simply type over the mask.</p>
                 </div>
 
                 <div className="flex gap-2">
@@ -1018,6 +1018,7 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
                         placeholder="VALUE"
                         className="w-2/3 bg-transparent text-xs font-mono outline-none text-white placeholder:text-gray-800"
                         value={v.value}
+                        type="password"
                         onChange={(e) => {
                           const updated = [...localEnv];
                           updated[i].value = e.target.value;

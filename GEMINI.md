@@ -43,21 +43,24 @@
         - **Global Maintenance Task:** Implemented `maintenance_sweep` in the worker, scanning all applications to enforce retention policies.
         - **Proactive Pruning:** Configured Celery Beat to run a global sweep every 24 hours.
     - **Dashboard Branding Sync:** Updated versioning to `v0.5 ALPHA` across the entire UI.
-### 📅 Thursday, May 21, 2026
-- **Status:** Phase 11 (AutoDeploy CLI) & Multi-Resource Sentinel COMPLETE.
+### 📅 Friday, May 22, 2026
+- **Status:** Phase 11 (CLI Power-User) & Phase 10 (Secret Hardening) COMPLETE.
 - **Milestones:**
-    - **Diagnostic Audit Engine:** Implemented high-fidelity "Black Box" recording for container terminations. The worker now captures CPU, Memory, and PID snapshots every 0.5s during startup.
-    - **Resource Hardening:** Upgraded the Sentinel and Global Reaper to enforce triple-axis quotas (Memory, CPU, PIDs). Added a "Zombie Protection" layer to catch and kill containers that have crashed internally but remain "Up" in Docker.
-    - **Dashboard Diagnostic UI:** 
-        - Created a new "Audit Trail" tab in the LogViewer.
-        - Implemented animated "KILLED" status badges for policy violations.
-        - Added red-glow violation alerts to the Topology Map.
-    - **PyPI Publication:** Successfully packaged and published `autodeploy-cli` to the official Python Package Index (PyPI) at `v0.5.0a0`. 
-        - CLI is now globally installable via `pip install autodeploy-cli`.
-        - Defaulted CLI connectivity to `api.auto-deploy.tech` for production-ready out-of-the-box usage.
+    - **CLI Deployment Engine 2.0:**
+        - Refactored `ad apps deploy` to support comprehensive overrides (`--repo`, `--stack`, `--env`, `--port`, `--build-arg`).
+        - Implemented smart context gathering that handles monorepos, `autodeploy.yml` detection, and local `.env` parsing.
+        - Enabled private repository support via the `--credential` flag.
+    - **Unified Credential Management:**
+        - Added `ad auth credentials` and `ad auth keys` to the CLI for full lifecycle management of PATs, SSH keys, and API keys.
+        - CLI can now securely upload local SSH private keys to the central credential engine.
+    - **Zero-Reveal Security Policy:**
+        - Eliminated the "Reveal Secrets" mechanism to prevent sensitive data exposure in the dashboard.
+        - Refactored the API to implement "Masked-Update" logic: environment variables are now write-only.
+        - Implemented smart merging on the backend: `********` values received during updates signal the preservation of existing secrets in Vault, while other values trigger updates.
+        - Hardened the UI by forcing `type="password"` for all secret inputs and removing all raw-secret retrieval endpoints.
 - **Next Task:**
-    1. **Phase 12:** Enterprise-Grade Distribution & Multi-Node Support.
-    2. **Scaling:** Implementing Horizontal Pod Autoscaling (HPA) logic for user applications.
+    1. **Phase 12:** Multi-Node Distribution & Cluster Scaling.
+    2. **Monitoring:** Integrating Prometheus/Grafana for real-time resource telemetry.
 
 ## Mentor Memory (Architectural Notes)
 - **Data Ownership Architecture:** Ownership is enforced at the **API Layer**. Every protected route uses the `get_current_user` dependency. All SQLAlchemy queries MUST include `.filter(Model.owner_id == current_user["sub"])` OR check the `AppAccess` table for shared permissions.

@@ -9,6 +9,8 @@ from worker.tasks import process_job, cleanup_app, discover_port
 from uuid import UUID
 from core.auth import get_current_user
 from core.crypto import encrypt_dict, decrypt_dict
+from core.vault import vault
+from typing import Dict
 
 import subprocess
 import shutil
@@ -20,6 +22,12 @@ router = APIRouter(
     tags=["apps"],
     dependencies=[Depends(get_current_user)]
 )
+
+def mask_env(env_vars: Dict[str, str]) -> Dict[str, str]:
+    """Masks secret values for safe transport to the dashboard."""
+    if not env_vars:
+        return {}
+    return {k: "********" for k in env_vars.keys()}
 
 @router.get("/{app_id}/detect-port")
 def detect_app_port(app_id: UUID, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -159,9 +167,6 @@ def create_app(app_data: AppCreate, db: Session = Depends(get_db), current_user:
     if existing:
         raise HTTPException(status_code=400, detail="Application name already exists")
 
-    # Encrypt env vars before storing
-    encrypted_env = encrypt_dict(app_data.env_vars) if app_data.env_vars else {}
-
     new_app = Application(
         owner_id=current_user["sub"],
         name=app_data.name,
@@ -173,7 +178,7 @@ def create_app(app_data: AppCreate, db: Session = Depends(get_db), current_user:
         root_dir=app_data.root_dir or ".",
         pre_build_steps=app_data.pre_build_steps or [],
         post_build_steps=app_data.post_build_steps or [],
-        env_vars=encrypted_env,
+        env_vars={}, # We store env-vars in Vault now
         credential_id=app_data.credential_id,
         command=app_data.command,
         entrypoint=app_data.entrypoint,
@@ -186,12 +191,20 @@ def create_app(app_data: AppCreate, db: Session = Depends(get_db), current_user:
     try:
         db.commit()
         db.refresh(new_app)
-    except Exception:
+        
+        # Store in Vault using the newly generated UUID
+        if app_data.env_vars:
+            vault.store_env_vars(new_app.id, app_data.env_vars)
+            
+    except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=400, detail="A concurrency error occurred. Please try again.")
+        # Cleanup Vault if DB failed
+        if 'new_app' in locals() and new_app.id:
+            vault.delete_env_vars(new_app.id)
+        raise HTTPException(status_code=400, detail=f"A concurrency error occurred: {str(e)}")
 
-    # Decrypt for the response
-    new_app.env_vars = decrypt_dict(new_app.env_vars)
+    # Return with masked vars for the response
+    new_app.env_vars = mask_env(app_data.env_vars)
     new_app.role = "OWNER"
     return new_app
 
@@ -213,7 +226,26 @@ def update_app(app_id: UUID, app_data: AppUpdate, db: Session = Depends(get_db),
             raise HTTPException(status_code=400, detail="Application name already exists")
 
     if "env_vars" in update_data:
-        update_data["env_vars"] = encrypt_dict(update_data["env_vars"])
+        # Fetch current secrets from Vault to handle masking
+        current_secrets = vault.get_env_vars(app_id)
+        incoming_env = update_data["env_vars"]
+        
+        # Merge logic: if incoming value is "********", keep the old value.
+        # Otherwise, update with the new value.
+        # If a key is missing from incoming_env, it is deleted (implicitly by not being in final_env).
+        final_env = {}
+        for k, v in incoming_env.items():
+            if v == "********":
+                final_env[k] = current_secrets.get(k, "")
+            else:
+                final_env[k] = v
+        
+        # Update Vault with the merged/final set
+        vault.store_env_vars(app_id, final_env)
+        
+        # Ensure DB record remains empty of secrets
+        app.env_vars = {} 
+        del update_data["env_vars"]
 
     for key, value in update_data.items():
         setattr(app, key, value)
@@ -221,8 +253,8 @@ def update_app(app_id: UUID, app_data: AppUpdate, db: Session = Depends(get_db),
     db.commit()
     db.refresh(app)
 
-    # Return with decrypted vars
-    app.env_vars = decrypt_dict(app.env_vars)
+    # Return with masked vars
+    app.env_vars = mask_env(vault.get_env_vars(app_id))
     return app
 @router.get("", response_model=AppListResponse)
 def list_apps(db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
@@ -237,7 +269,8 @@ def list_apps(db: Session = Depends(get_db), current_user: dict = Depends(get_cu
     
     for app in owned_apps:
         app.role = "OWNER"
-        app.env_vars = decrypt_dict(app.env_vars)
+        # Mask env vars from Vault
+        app.env_vars = mask_env(vault.get_env_vars(app.id))
 
     # Shared apps
     shared_access = db.query(AppAccess).filter(AppAccess.user_id == user_uuid).all()
@@ -250,7 +283,7 @@ def list_apps(db: Session = Depends(get_db), current_user: dict = Depends(get_cu
         
         if app:
             app.role = access.role
-            app.env_vars = decrypt_dict(app.env_vars)
+            app.env_vars = mask_env(vault.get_env_vars(app.id))
             shared_apps.append(app)
     
     # Sort shared apps by updated_at DESC (latest first)
@@ -272,7 +305,8 @@ def get_app(app_id: UUID, db: Session = Depends(get_db), current_user: dict = De
         raise HTTPException(status_code=404, detail="Application not found")
 
     app_with_access = get_app_with_access(app_id, current_user["sub"], db)
-    app_with_access.env_vars = decrypt_dict(app_with_access.env_vars)
+    # Mask env vars from Vault
+    app_with_access.env_vars = mask_env(vault.get_env_vars(app_id))
     return app_with_access
 
 @router.post("/{app_id}/deploy", response_model=JobResponse)
@@ -295,6 +329,11 @@ def deploy_app(app_id: UUID, trigger_reason: str = "Manual", db: Session = Depen
     if active_job:
         raise HTTPException(status_code=409, detail="A deployment is already in progress for this application.")
     
+    # 3. Fetch real secrets from Vault for the deployment payload
+    real_env = vault.get_env_vars(app_id)
+    # Re-encrypt using our internal crypto for safe passage in Job payload
+    encrypted_env = encrypt_dict(real_env)
+
     new_job = Job(
         app_id=app.id,
         owner_id=current_user["sub"],
@@ -304,7 +343,7 @@ def deploy_app(app_id: UUID, trigger_reason: str = "Manual", db: Session = Depen
         payload={
             "repo": app.repo_url,
             "branch": app.branch,
-            "env": app.env_vars, # Keep encrypted in payload
+            "env": encrypted_env, # Encrypted for the payload
             "app_name": app.name,
             "stack": app.stack,
             "internal_port": app.internal_port,
@@ -461,6 +500,9 @@ def delete_app(app_id: UUID, db: Session = Depends(get_db), current_user: dict =
     # 4. Final App deletion (Bulk)
     db.query(Application).filter(Application.id == app_id).delete(synchronize_session=False)
     db.commit()
+
+    # 5. Cleanup Vault
+    vault.delete_env_vars(app_id)
     
     return {"message": f"Application '{app_name}' and all associated history successfully deleted."}
 

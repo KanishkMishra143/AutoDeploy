@@ -73,53 +73,74 @@ def load_env_vars(cwd: Path, root: Path) -> Dict[str, str]:
                 pass
     return vars
 
-def get_project_context() -> Dict[str, Any]:
-    """Gathers all local project metadata for deployment."""
+def get_project_context(
+    name: Optional[str] = None,
+    repo_url: Optional[str] = None,
+    branch: Optional[str] = None,
+    stack: Optional[str] = None,
+    internal_port: Optional[int] = None,
+    env_overrides: Optional[Dict[str, str]] = None,
+    build_args: Optional[Dict[str, str]] = None,
+    root_dir_override: Optional[str] = None
+) -> Dict[str, Any]:
+    """Gathers all local project metadata for deployment, with optional overrides."""
     cwd = Path.cwd()
     root = get_git_root()
-    if not root:
-        return {"error": "Not a git repository."}
+    
+    # If no git root but we have repo_url override, we can still proceed
+    if not root and not repo_url:
+        return {"error": "Not a git repository. Please run from within a repo or provide --repo."}
 
-    git_url = get_git_remote()
+    git_url = repo_url or get_git_remote()
     if not git_url:
-        return {"error": "No 'origin' remote found. Please run 'git remote add origin <url>'"}
+        return {"error": "No 'origin' remote found and no --repo provided."}
 
-    branch = get_git_branch()
-    yml_config = load_autodeploy_yml(cwd, root)
-    env_vars = load_env_vars(cwd, root)
+    local_branch = get_git_branch() if root else "main"
+    yml_config = load_autodeploy_yml(cwd, root) if root else {}
+    env_vars = load_env_vars(cwd, root) if root else {}
+    
+    # Apply CLI environment overrides
+    if env_overrides:
+        env_vars.update(env_overrides)
 
     # Calculate root_dir (relative path from git root to CWD)
-    try:
-        root_dir = str(cwd.relative_to(root))
-        if root_dir == ".":
-            root_dir = "."
-    except ValueError:
-        root_dir = "."
+    if root_dir_override:
+        final_root_dir = root_dir_override
+    else:
+        try:
+            if root:
+                final_root_dir = str(cwd.relative_to(root))
+                if final_root_dir == ".":
+                    final_root_dir = "."
+            else:
+                final_root_dir = "."
+        except ValueError:
+            final_root_dir = "."
 
     # Link file stores the app_id after the first deployment
-    # Check CWD first for the link
-    link_path = cwd / ".ad_project"
-    if not link_path.exists():
-        link_path = root / ".ad_project"
-
     app_id = None
-    if link_path.exists():
-        app_id = link_path.read_text().strip()
+    if root:
+        link_path = cwd / ".ad_project"
+        if not link_path.exists():
+            link_path = root / ".ad_project"
+        if link_path.exists():
+            app_id = link_path.read_text().strip()
 
     return {
         "root": root,
         "cwd": cwd,
         "app_id": app_id,
-        "name": yml_config.get("name", cwd.name if cwd != root else root.name),
+        "name": name or yml_config.get("name", cwd.name if root else "app"),
         "repo_url": git_url,
-        "branch": yml_config.get("branch", branch),
-        "stack": yml_config.get("stack", "dockerfile"),
-        "internal_port": yml_config.get("internal_port", 8000),
+        "branch": branch or yml_config.get("branch", local_branch),
+        "stack": stack or yml_config.get("stack", "dockerfile"),
+        "internal_port": internal_port or yml_config.get("internal_port", 8000),
         "volumes": yml_config.get("volumes", []),
-        "root_dir": root_dir,
+        "root_dir": final_root_dir,
         "pre_build_steps": yml_config.get("build", {}).get("pre", []),
         "post_build_steps": yml_config.get("build", {}).get("post", []),
-        "env_vars": env_vars
+        "env_vars": env_vars,
+        "build_args": build_args or yml_config.get("build", {}).get("args", {})
     }
 
 def save_project_link(root: Path, app_id: str):

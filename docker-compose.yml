@@ -79,15 +79,33 @@ services:
     image: hashicorp/vault:1.15
     container_name: autodeploy-vault-1
     restart: unless-stopped
-    environment:
-      VAULT_DEV_ROOT_TOKEN_ID: root
-      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
-    ports:
-      - "8200:8200"
+    command: vault server -config=/vault/config/vault.hcl
     volumes:
       - ./vault_data:/vault/file
+      - ./vault.hcl:/vault/config/vault.hcl:ro
+    ports:
+      - "8200:8200"
     cap_add:
       - IPC_LOCK
+    networks:
+      - autodeploy-net
+
+  vault-unsealer:
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM python:3.11-slim
+        RUN pip install supabase requests cryptography
+        COPY vault_unsealer.py /app/unsealer.py
+        WORKDIR /app
+        CMD ["python", "unsealer.py"]
+    container_name: autodeploy-vault-unsealer
+    depends_on:
+      - vault
+    env_file:
+      - ./asynctasks/.env
+    environment:
+      VAULT_ADDR: http://vault:8200
     networks:
       - autodeploy-net
 

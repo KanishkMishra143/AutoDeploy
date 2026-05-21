@@ -4,9 +4,10 @@ import json
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
-from typing import Optional
+from typing import Optional, List, Dict
 from . import config, context, logs
 from uuid import UUID
+from pathlib import Path
 
 app = typer.Typer(help="Manage and deploy applications")
 console = Console()
@@ -20,6 +21,17 @@ def wait_for_finish(job_id: str):
     """Bridge to logs.wait_for_finish"""
     import asyncio
     asyncio.run(logs.wait_for_finish(job_id))
+
+def parse_kv_pairs(pairs: Optional[List[str]]) -> Dict[str, str]:
+    """Parses a list of KEY=VALUE strings into a dictionary."""
+    result = {}
+    if not pairs:
+        return result
+    for p in pairs:
+        if "=" in p:
+            k, v = p.split("=", 1)
+            result[k.strip()] = v.strip()
+    return result
 
 @app.command("list")
 def list_apps():
@@ -62,11 +74,7 @@ def list_apps():
             
             console.print(table)
         elif response.status_code == 401:
-            detail = response.json().get("detail", "")
-            if "expired" in detail.lower():
-                console.print("[red]Error:[/red] Your API Key has expired. Please re-generate a new key from the dashboard and run 'ad login' again.")
-            else:
-                console.print("[red]Error:[/red] Unauthorized access. Please login again.")
+            console.print("[red]Error:[/red] Unauthorized access. Please login again.")
             return
         else:
             console.print(f"[red]Error fetching apps:[/red] {response.json().get('detail', 'Unknown error')}")
@@ -76,81 +84,120 @@ def list_apps():
 @app.command("deploy")
 def deploy(
     name: Optional[str] = typer.Option(None, "--name", "-n", help="Application name override"),
+    repo: Optional[str] = typer.Option(None, "--repo", "-r", help="Repository URL override"),
+    branch: Optional[str] = typer.Option(None, "--branch", "-b", help="Branch override"),
+    stack: Optional[str] = typer.Option(None, "--stack", "-s", help="Stack override (dockerfile, nodejs, python, etc)"),
+    port: Optional[int] = typer.Option(None, "--port", "-p", help="Internal port override"),
+    env: Optional[List[str]] = typer.Option(None, "--env", "-e", help="Environment variables (KEY=VALUE)"),
+    build_arg: Optional[List[str]] = typer.Option(None, "--build-arg", help="Build arguments (KEY=VALUE)"),
+    credential: Optional[str] = typer.Option(None, "--credential", "-c", help="Credential Name or ID to use for private repos"),
+    root_dir: Optional[str] = typer.Option(None, "--root", help="Root directory override"),
     app_id: Optional[str] = typer.Option(None, "--app-id", "-id", help="Target App ID override"),
     stream: bool = typer.Option(True, "--stream/--no-stream", help="Stream logs immediately")
 ):
-    """Deploys the current project"""
+    """Deploys the project to AutoDeploy"""
     key = config.get_api_key()
     if not key:
         console.print("[red]Error:[/red] Not logged in. Run 'ad login' first.")
         return
 
     api_base = config.get_api_base()
-    ctx = context.get_project_context()
     
-    # 1. Resolve which App ID and Name to use
+    # 1. Parse KV Pairs
+    env_vars = parse_kv_pairs(env)
+    build_args = parse_kv_pairs(build_arg)
+
+    # 2. Gather Context
+    ctx = context.get_project_context(
+        name=name,
+        repo_url=repo,
+        branch=branch,
+        stack=stack,
+        internal_port=port,
+        env_overrides=env_vars,
+        build_args=build_args,
+        root_dir_override=root_dir
+    )
+    
+    if "error" in ctx:
+        console.print(f"[red]Error gathering context:[/red] {ctx['error']}")
+        return
+
+    # 3. Resolve App ID
     final_app_id = app_id or ctx.get("app_id")
-    final_name = name or ctx["name"]
+    final_name = ctx["name"]
     headers = {"Authorization": f"Bearer {key}"}
+
+    # 4. Resolve Credential ID if name provided
+    final_cred_id = None
+    if credential:
+        try:
+            # Check if it's already a UUID
+            UUID(credential)
+            final_cred_id = credential
+        except ValueError:
+            # Look up by name
+            res = requests.get(f"{api_base}/auth/credentials", headers=headers)
+            if res.ok:
+                creds = res.json()
+                match = next((c for c in creds if c["name"].lower() == credential.lower()), None)
+                if match:
+                    final_cred_id = match["id"]
+                else:
+                    console.print(f"[yellow]Warning:[/yellow] Credential '{credential}' not found. Proceeding without it.")
 
     try:
         if not final_app_id:
             # --- CREATE NEW APP ---
-            if "error" in ctx:
-                console.print(f"[red]Error:[/red] {ctx['error']}")
-                return
-
             console.print(f"[bold blue]Creating new application: [cyan]{final_name}[/cyan]...")
-            create_res = requests.post(
-                f"{api_base}/apps",
-                headers=headers,
-                json={
-                    "name": final_name,
-                    "repo_url": ctx["repo_url"],
-                    "branch": ctx["branch"],
-                    "stack": ctx["stack"],
-                    "internal_port": ctx["internal_port"],
-                    "volumes": ctx["volumes"],
-                    "root_dir": ctx["root_dir"],
-                    "pre_build_steps": ctx["pre_build_steps"],
-                    "post_build_steps": ctx["post_build_steps"],
-                    "env_vars": ctx["env_vars"]
-                }
-            )
+            payload = {
+                "name": final_name,
+                "repo_url": ctx["repo_url"],
+                "branch": ctx["branch"],
+                "stack": ctx["stack"],
+                "internal_port": ctx["internal_port"],
+                "volumes": ctx["volumes"],
+                "root_dir": ctx["root_dir"],
+                "pre_build_steps": ctx["pre_build_steps"],
+                "post_build_steps": ctx["post_build_steps"],
+                "env_vars": ctx["env_vars"],
+                "build_args": ctx["build_args"],
+                "credential_id": final_cred_id
+            }
             
+            create_res = requests.post(f"{api_base}/apps", headers=headers, json=payload)
             if not create_res.ok:
                 console.print(f"[red]Error creating app ({create_res.status_code}):[/red] {create_res.json().get('detail', 'Unknown error')}")
                 return
             
             app_data = create_res.json()
             final_app_id = app_data["id"]
-            context.save_project_link(ctx["root"], final_app_id)
+            if ctx.get("root"):
+                context.save_project_link(ctx["root"], final_app_id)
             console.print(f"[green]✔ App created and linked locally.[/green]")
         else:
-            # --- UPDATE EXISTING APP (Optional but recommended for consistency) ---
-            if "error" not in ctx:
-                console.print(f"[bold blue]Syncing configuration for [cyan]{final_name}[/cyan]...")
-                patch_res = requests.patch(
-                    f"{api_base}/apps/{final_app_id}",
-                    headers=headers,
-                    json={
-                        "name": final_name,
-                        "branch": ctx["branch"],
-                        "internal_port": ctx["internal_port"],
-                        "volumes": ctx["volumes"],
-                        "root_dir": ctx["root_dir"],
-                        "pre_build_steps": ctx["pre_build_steps"],
-                        "post_build_steps": ctx["post_build_steps"],
-                        "env_vars": ctx["env_vars"]
-                    }
-                )
-                if not patch_res.ok:
-                    console.print(f"[red]Error syncing app config ({patch_res.status_code}):[/red] {patch_res.json().get('detail', 'Unknown error')}")
-                    if patch_res.status_code == 404:
-                        console.print("[yellow]Hint:[/yellow] The linked App ID in .ad_project might be invalid. Try deleting .ad_project and deploying again.")
-                    return
+            # --- UPDATE EXISTING APP ---
+            console.print(f"[bold blue]Syncing configuration for [cyan]{final_name}[/cyan]...")
+            patch_payload = {
+                "name": final_name,
+                "branch": ctx["branch"],
+                "internal_port": ctx["internal_port"],
+                "volumes": ctx["volumes"],
+                "root_dir": ctx["root_dir"],
+                "pre_build_steps": ctx["pre_build_steps"],
+                "post_build_steps": ctx["post_build_steps"],
+                "env_vars": ctx["env_vars"],
+                "build_args": ctx["build_args"]
+            }
+            if final_cred_id:
+                patch_payload["credential_id"] = final_cred_id
 
-        # 2. TRIGGER DEPLOYMENT
+            patch_res = requests.patch(f"{api_base}/apps/{final_app_id}", headers=headers, json=patch_payload)
+            if not patch_res.ok:
+                console.print(f"[red]Error syncing app config ({patch_res.status_code}):[/red] {patch_res.json().get('detail', 'Unknown error')}")
+                return
+
+        # 5. TRIGGER DEPLOYMENT
         with console.status(f"[bold blue]Triggering deployment..."):
             response = requests.post(
                 f"{api_base}/apps/{final_app_id}/deploy?trigger_reason=Manual:CLI",
@@ -168,10 +215,7 @@ def deploy(
                 else:
                     wait_for_finish(job_data['id'])
         else:
-            error_detail = response.json().get('detail', 'Deployment failed')
-            console.print(f"[red]Error ({response.status_code}):[/red] {error_detail}")
-            if response.status_code == 404:
-                 console.print("[yellow]Hint:[/yellow] Application ID not found in the database. Your .ad_project file might be stale.")
+            console.print(f"[red]Error ({response.status_code}):[/red] {response.json().get('detail', 'Deployment failed')}")
 
     except Exception as e:
         console.print(f"[red]Unexpected Error:[/red] {str(e)}")
@@ -179,7 +223,6 @@ def deploy(
 @app.command("purge")
 def purge_cluster():
     """Wipes the entire cluster: Deletes ALL applications and stops all containers."""
-    import os
     import subprocess
     
     key = config.get_api_key()
@@ -214,6 +257,9 @@ def purge_cluster():
         console.print(table)
 
     apps = fetch_apps_list()
+    if not apps:
+        console.print("[yellow]No applications found to purge.[/yellow]")
+        return
 
     # Step 1: Initial Warning
     console.print(Panel(
@@ -230,30 +276,10 @@ def purge_cluster():
         console.print("[yellow]Purge aborted.[/yellow]")
         return
 
-    # Step 2: Final Confirmation with text input
-    console.print("\n[bold red]FINAL CONFIRMATION REQUIRED[/bold red]")
-    console.print("This action is [underline]irreversible[/underline].")
-    
-    # Re-fetch just in case
-    apps = fetch_apps_list()
-    display_targets(apps)
-    
+    # Step 2: Final Confirmation
     confirm_text = typer.prompt("Please type 'PURGE' to confirm deletion")
     if confirm_text != "PURGE":
         console.print("[yellow]Invalid confirmation. Purge aborted.[/yellow]")
-        return
-
-    # Step 3: Sudo Requirement
-    console.print("\n[bold red]SYSTEM ESCALATION REQUIRED[/bold red]")
-    console.print("This command requires administrative verification to ensure physical human presence.")
-    
-    display_targets(apps)
-    
-    try:
-        # Check sudo access (this will prompt for password if not cached)
-        subprocess.check_call(["sudo", "-v"])
-    except subprocess.CalledProcessError:
-        console.print("[red]Sudo verification failed. Purge aborted.[/red]")
         return
 
     # Execute Purge
@@ -262,7 +288,6 @@ def purge_cluster():
             res = requests.delete(f"{api_base}/apps/purge", headers=headers)
             if res.ok:
                 console.print("\n[bold green]✔ Cluster has been successfully purged.[/bold green]")
-                console.print("All applications and containers have been removed.")
             else:
                 console.print(f"\n[red]Error during purge:[/red] {res.json().get('detail', 'Unknown error')}")
         except Exception as e:
@@ -289,7 +314,6 @@ def get_logs(app_id: str):
     api_base = config.get_api_base()
     headers = {"Authorization": f"Bearer {key}"}
 
-    # 1. Get latest job
     res = requests.get(f"{api_base}/jobs?app_id={app_id}&limit=1", headers=headers)
     if res.ok:
         jobs = res.json().get("jobs", [])
@@ -298,7 +322,6 @@ def get_logs(app_id: str):
             return
         
         job_id = jobs[0]["id"]
-        # 2. Get logs
         logs_res = requests.get(f"{api_base}/jobs/{job_id}/logs", headers=headers)
         if logs_res.ok:
             data = logs_res.json().get("logs", [])
