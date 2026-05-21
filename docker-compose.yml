@@ -98,7 +98,7 @@ services:
         RUN pip install supabase requests cryptography python-dotenv
         COPY vault_unsealer.py /app/unsealer.py
         WORKDIR /app
-        CMD ["python", "unsealer.py"]
+        CMD ["python", "-u", "unsealer.py"]
     container_name: autodeploy-vault-unsealer
     restart: unless-stopped
     depends_on:

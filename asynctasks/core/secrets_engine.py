@@ -1,5 +1,6 @@
 import os
 import hvac
+from typing import Optional
 
 class SecretResolver:
     """
@@ -8,20 +9,25 @@ class SecretResolver:
     Otherwise, it treats it as a standard local secret.
     """
     def __init__(self):
-        self.vault_addr = os.getenv("VAULT_ADDR", "http://localhost:8200")
+        self.vault_addr = os.getenv("VAULT_ADDR", "http://vault:8200")
         self.vault_token = os.getenv("VAULT_TOKEN", "root")
-        self.client = None
+        self._client = None
         
-        try:
-            self.client = hvac.Client(url=self.vault_addr, token=self.vault_token)
-            if self.client.is_authenticated():
-                print(f"🔒 SecretResolver: Successfully connected to HashiCorp Vault at {self.vault_addr}")
-            else:
-                print("⚠️ SecretResolver: Connected to Vault, but not authenticated.")
-                self.client = None
-        except Exception as e:
-            print(f"⚠️ SecretResolver: Could not connect to Vault: {e}")
-            self.client = None
+    @property
+    def client(self) -> Optional[hvac.Client]:
+        """Lazy-loaded Vault client for secret resolution."""
+        if self._client is None:
+            try:
+                self._client = hvac.Client(url=self.vault_addr, token=self.vault_token)
+                if self._client.is_authenticated():
+                    print(f"🔒 SecretResolver: Successfully connected to HashiCorp Vault at {self.vault_addr}")
+                else:
+                    print("⚠️ SecretResolver: Connected to Vault, but not authenticated.")
+                    self._client = None
+            except Exception as e:
+                # print(f"⚠️ SecretResolver: Could not connect to Vault: {e}")
+                self._client = None
+        return self._client
 
     def resolve_secrets(self, env_vars: dict) -> dict:
         """
@@ -36,7 +42,8 @@ class SecretResolver:
             if isinstance(value, str) and value.startswith("vault://"):
                 # Format: vault://secret/data/production/stripe_key
                 try:
-                    if not self.client:
+                    client = self.client
+                    if not client:
                         raise RuntimeError("Vault client is not available")
 
                     # Extract path and the specific key to look up inside the JSON payload
