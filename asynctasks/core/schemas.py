@@ -16,6 +16,14 @@ class AppCreate(BaseModel):
     post_build_steps: Optional[List[str]] = []
     env_vars: Optional[Dict[str, str]] = {}
     credential_id: Optional[UUID] = None
+    
+    # Orchestration overrides
+    command: Optional[str] = None
+    entrypoint: Optional[List[str]] = None
+    healthcheck: Optional[Dict[str, Any]] = None
+    restart: Optional[str] = "unless-stopped"
+    labels: Optional[Dict[str, str]] = {}
+    build_args: Optional[Dict[str, str]] = {}
 
 
 class AppUpdate(BaseModel):
@@ -31,6 +39,13 @@ class AppUpdate(BaseModel):
     credential_id: Optional[UUID] = None
     retention_limit: Optional[int] = None
     retention_days: Optional[int] = None
+
+    command: Optional[str] = None
+    entrypoint: Optional[List[str]] = None
+    healthcheck: Optional[Dict[str, Any]] = None
+    restart: Optional[str] = None
+    labels: Optional[Dict[str, str]] = None
+    build_args: Optional[Dict[str, str]] = None
 
 
 class CredentialCreate(BaseModel):
@@ -138,6 +153,13 @@ class AppResponse(BaseModel):
     
     retention_limit: int = 10
     retention_days: int = 30
+
+    command: Optional[str] = None
+    entrypoint: Optional[List[str]] = None
+    healthcheck: Optional[Dict[str, Any]] = None
+    restart: str = "unless-stopped"
+    labels: Dict[str, str] = {}
+    build_args: Dict[str, str] = {}
 
     class Config:
         from_attributes = True

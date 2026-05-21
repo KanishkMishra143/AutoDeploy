@@ -602,6 +602,7 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
                     historyJobs.map((job, index) => {
                       const isLatest = index === 0;
                       const triggerIcon = job.trigger_reason === 'Webhook' ? '🔔' : job.trigger_reason === 'Rollback' ? '🔄' : '👤';
+                      const isKilled = job.status === 'failed' && job.result?.is_violation;
                       
                       return (
                         <div 
@@ -610,19 +611,21 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
                         >
                           <div className="flex items-center justify-between w-full">
                             <div className="flex items-center gap-5">
-                              <div className={`w-3 h-3 rounded-full ${job.status === 'success' ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]' : job.status === 'running' ? 'bg-blue-500 animate-pulse' : job.status === 'stopped' ? 'bg-gray-500' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]'}`} />
+                              <div className={`w-3 h-3 rounded-full 
+                                ${job.status === 'success' ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]' : 
+                                  job.status === 'running' ? 'bg-blue-500 animate-pulse' : 
+                                  job.status === 'stopped' ? 'bg-gray-500' : 
+                                  isKilled ? 'bg-red-500 shadow-[0_0_12px_rgba(239,68,68,0.6)] animate-pulse' :
+                                  'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]'}`} 
+                              />
                               <div>
                                 <div className="flex items-center gap-2">
                                   <span className="text-base font-bold text-white uppercase tracking-tight">Build #{job.build_number || (totalJobs - index)}</span>
                                   {isLatest && <span className="px-2 py-0.5 bg-accent text-[9px] font-black text-white rounded-lg uppercase tracking-tighter">Live</span>}
+                                  {isKilled && <span className="px-2 py-0.5 bg-red-500 text-[9px] font-black text-white rounded-lg uppercase tracking-tighter shadow-lg shadow-red-500/20">Killed</span>}
                                   <span className="text-[9px] px-2 py-0.5 bg-white/5 rounded text-gray-500 font-black uppercase tracking-widest flex items-center gap-1.5 border border-white/5">
                                     {triggerIcon} {job.trigger_reason}
                                   </span>
-                                  {job.trigger_reason === 'Rollback' && job.trigger_metadata?.from_version && (
-                                      <span className="text-[9px] px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded font-black uppercase tracking-widest border border-blue-500/20 animate-pulse">
-                                          From Build #{job.trigger_metadata.from_version}
-                                      </span>
-                                  )}
                                 </div>
                                 <div className="flex items-center gap-2 mt-1">
                                     <p className="text-[10px] text-gray-600 font-mono">Job: {job.id.split('-')[0]}</p>
@@ -641,8 +644,8 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
                               <div className="flex gap-2">
                                 <button 
                                   onClick={() => onViewLogs(job.id)}
-                                  className="p-2.5 bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white rounded-xl transition-all"
-                                  title="Terminal Logs"
+                                  className={`p-2.5 rounded-xl transition-all ${isKilled ? 'bg-red-500/20 text-red-500 hover:bg-red-500 hover:text-white' : 'bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white'}`}
+                                  title={isKilled ? "View Violation Audit" : "Terminal Logs"}
                                 >
                                   <Terminal className="w-4 h-4" />
                                 </button>
@@ -660,8 +663,21 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
                             </div>
                           </div>
 
+                          {/* Policy Violation Alert */}
+                          {isKilled && (
+                            <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl animate-in fade-in slide-in-from-top-2 duration-300">
+                               <div className="flex items-center gap-2 mb-2">
+                                  <AlertCircle className="w-4 h-4 text-red-500" />
+                                  <span className="text-[10px] font-black text-red-500 uppercase tracking-widest">Resource Policy Violation: {job.result?.violation_type}</span>
+                               </div>
+                               <p className="text-xs text-gray-400 leading-relaxed font-medium">
+                                  This build was terminated because it exceeded defined resource limits. Click the terminal icon to view the high-fidelity audit trail.
+                                </p>
+                            </div>
+                          )}
+
                           {/* Smart Diagnosis Section */}
-                          {job.result?.diagnosis && (
+                          {!isKilled && job.result?.diagnosis && (
                             <div className="p-4 bg-accent/5 border border-accent/10 rounded-xl animate-in fade-in slide-in-from-top-2 duration-300">
                                <div className="flex items-center gap-2 mb-2">
                                   <AlertCircle className="w-4 h-4 text-accent" />

@@ -15,7 +15,7 @@ from celery.utils.log import get_task_logger
 import socket
 from datetime import datetime
 from celery import chain, signature
-from core.crypto import decrypt_dict
+from core.crypto import decrypt_dict, encrypt_dict
 
 # --- AUTO-HEALING & ERROR DIAGNOSIS ---
 
@@ -221,7 +221,7 @@ def run_command(db, job_id, command, cwd=None, owner_id=None):
     if return_code != 0:
         raise subprocess.CalledProcessError(return_code, command)
 
-def run_container(db, job_id, image_tag, env_vars=None, app_name=None, internal_port=8000, owner_id=None, volumes=None, cpu_limit=0.5, memory_limit_mb=512, pids_limit=100):
+def run_container(db, job_id, image_tag, env_vars=None, app_name=None, internal_port=8000, owner_id=None, volumes=None, cpu_limit=0.5, memory_limit_mb=512, pids_limit=100, command=None, entrypoint=None, healthcheck=None, restart="unless-stopped", labels=None):
     """Starts a Docker container with Hardened Resource Quotas and Traefik labels."""
     from core.secrets_engine import resolver as secret_resolver
     import os
@@ -257,13 +257,18 @@ def run_container(db, job_id, image_tag, env_vars=None, app_name=None, internal_
         "--cap-add", "NET_BIND_SERVICE"        # Only allow binding to low ports (<1024) if needed
     ]
 
-    labels = [
+    base_labels = [
         "--label", "traefik.enable=true",
         "--label", f"traefik.http.routers.{container_name}.rule=Host(`{hostname}`)",
         "--label", f"traefik.http.services.{container_name}.loadbalancer.server.port={internal_port}",
         "--label", "autodeploy.managed=true",  # Identify for maintenance sweeps
         "--label", f"autodeploy.owner_id={owner_id}"
     ]
+    
+    # Add custom labels from autodeploy.yml
+    if labels:
+        for k, v in labels.items():
+            base_labels.extend(["--label", f"{k}={v}"])
 
     env_flags = []
     if env_vars:
@@ -300,31 +305,232 @@ def run_container(db, job_id, image_tag, env_vars=None, app_name=None, internal_
             volume_flags.extend(["-v", f"{host_path}:{container_path}"])
             save_log(db, job_id, f"📦 Mounted volume: {host_path} -> {container_path}", owner_id=owner_id)
 
+    # Healthcheck handling
+    health_flags = []
+    if healthcheck:
+        test = healthcheck.get("test")
+        if isinstance(test, list):
+            # ["CMD", "curl", "-f", "http://localhost:8000/health"] -> "CMD curl -f http://localhost:8000/health"
+            test_str = " ".join(test)
+            health_flags.extend(["--health-cmd", test_str])
+        elif isinstance(test, str):
+            health_flags.extend(["--health-cmd", test])
+            
+        if healthcheck.get("interval"): health_flags.extend(["--health-interval", healthcheck["interval"]])
+        if healthcheck.get("timeout"): health_flags.extend(["--health-timeout", healthcheck["timeout"]])
+        if healthcheck.get("retries"): health_flags.extend(["--health-retries", str(healthcheck["retries"])])
+        if healthcheck.get("start_period"): health_flags.extend(["--health-start-period", healthcheck["start_period"]])
+
+    # Entrypoint handling
+    entrypoint_flags = []
+    if entrypoint:
+        if isinstance(entrypoint, list):
+            entrypoint_flags = ["--entrypoint", entrypoint[0]]
+            # Note: Docker's --entrypoint only takes the binary. Arguments go after the image tag.
+            # But wait, if it's a list, the rest should be part of the command.
+            # This is tricky with `docker run`. 
+            # If entrypoint is ["/bin/sh", "-c"], we use --entrypoint /bin/sh and pass -c ... as command.
+        else:
+            entrypoint_flags = ["--entrypoint", entrypoint]
+
     # Pre-emptive cleanup of existing container with the same name
     save_log(db, job_id, f"🧹 Cleaning up any existing container named {container_name}...", owner_id=owner_id)
     subprocess.run(["docker", "rm", "-f", container_name], capture_output=True)
 
-    command = [
+    docker_run_cmd = [
         "docker", "run", "-d", 
         "--name", container_name, 
         "--network", network_name,
-        "--restart", "unless-stopped"
-    ] + resource_flags + security_flags + labels + env_flags + volume_flags + ["-p", f"0:{internal_port}", image_tag]
+        "--restart", restart
+    ] + resource_flags + security_flags + base_labels + env_flags + volume_flags + health_flags + entrypoint_flags + ["-p", f"0:{internal_port}", image_tag]
+
+    # If command is provided, append it. If entrypoint was a list, append the rest of it first.
+    if isinstance(entrypoint, list) and len(entrypoint) > 1:
+        # This is a bit of a hack to make list entrypoints work like Dockerfile ENTRYPOINT
+        # We append the rest of the entrypoint list as the start of the command
+        if command:
+            if isinstance(command, list):
+                docker_run_cmd.extend(entrypoint[1:] + command)
+            else:
+                docker_run_cmd.extend(entrypoint[1:] + shlex.split(command))
+        else:
+            docker_run_cmd.extend(entrypoint[1:])
+    elif command:
+        if isinstance(command, list):
+            docker_run_cmd.extend(command)
+        else:
+            docker_run_cmd.extend(shlex.split(command))
 
     try:
-        result = subprocess.run(command, capture_output=True, text=True, check=True)
+        result = subprocess.run(docker_run_cmd, capture_output=True, text=True, check=True)
         container_id = result.stdout.strip()
     except subprocess.CalledProcessError as e:
         save_log(db, job_id, f"❌ Docker run failed: {e.stderr}", owner_id=owner_id)
+        # Log the full command for debugging (safely masked)
+        masked_cmd = " ".join([c if "-e" not in docker_run_cmd[i-1:i] else "********" for i, c in enumerate(docker_run_cmd)])
+        print(f"DEBUG: Failed command: {masked_cmd}")
         raise
 
+    # --- DEPLOYMENT VERIFICATION (Smart Adaptive Sentinel) ---
+    save_log(db, job_id, "🛡️ Initializing Smart Adaptive Sentinel...", owner_id=owner_id)
+    save_log(db, job_id, f"🕒 Window: 30s | Grace Period: 5s | Target: {memory_limit_mb}MiB", owner_id=owner_id)
+    
+    max_mem_seen = 0
+    max_cpu_seen = 0
+    consecutive_danger_samples = 0
+    
+    # Trend Analysis & Audit Trail state
+    mem_history = []
+    audit_trail = []
+    stable_samples = 0
+    
+    # 30 seconds of monitoring, sampling every 0.5s = 60 samples
+    for i in range(60):
+        time.sleep(0.5)
+        
+        # 1. Check Status & OOM
+        inspect = subprocess.run(
+            ["docker", "inspect", "--format", "{{.State.Status}} {{.State.OOMKilled}}", container_name],
+            capture_output=True, text=True
+        )
+        if inspect.returncode != 0: break
+        
+        status_parts = inspect.stdout.strip().split()
+        if status_parts[0] != "running" or status_parts[1] == "true":
+            break
+            
+        # 2. Capture Real-time Stats
+        stats = subprocess.run(
+            ["docker", "stats", container_name, "--no-stream", "--format", "{{.CPUPerc}}||{{.MemUsage}}||{{.PIDs}}"],
+            capture_output=True, text=True
+        )
+        if stats.stdout:
+            try:
+                cpu_str, mem_str, pids_str = stats.stdout.strip().split("||")
+                cpu_val = float(cpu_str.replace("%", ""))
+                pids_val = int(pids_str)
+                
+                # Precise Memory Parsing
+                if "GiB" in mem_str:
+                    mem_val = float(mem_str.split("GiB")[0].strip()) * 1024
+                else:
+                    mem_val = float(mem_str.split("MiB")[0].strip())
+                
+                max_mem_seen = max(max_mem_seen, mem_val)
+                max_cpu_seen = max(max_cpu_seen, cpu_val)
+                mem_history.append(mem_val)
+                
+                # Add to Audit Trail for high-fidelity diagnostics
+                snapshot = {
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "cpu": cpu_val,
+                    "mem": mem_val,
+                    "pids": pids_val,
+                    "limit_mem": memory_limit_mb,
+                    "limit_cpu": cpu_limit,
+                    "limit_pids": pids_limit
+                }
+                audit_trail.append(snapshot)
+
+                # --- SMART TREND ANALYSIS ---
+                if len(mem_history) >= 10:
+                    recent_history = mem_history[-10:]
+                    growth = recent_history[-1] - recent_history[0]
+                    
+                    if abs(growth) < 1.0:
+                        stable_samples += 1
+                    else:
+                        stable_samples = 0
+                        
+                    if stable_samples >= 10:
+                        save_log(db, job_id, f"✨ App appears stable (Usage flat at {mem_val:.1f}MiB). Ending sentinel early.", owner_id=owner_id)
+                        break
+
+                # PREDICTIVE FAILURE (95% rule for MEM, CPU, PIDs)
+                cpu_max_pct = cpu_limit * 100
+                is_mem_danger = mem_val > (memory_limit_mb * 0.95)
+                is_cpu_danger = cpu_val > (cpu_max_pct * 0.95)
+                is_pids_danger = pids_val > (pids_limit * 0.95)
+
+                if is_mem_danger or is_cpu_danger or is_pids_danger:
+                    consecutive_danger_samples += 1
+                    danger_msgs = []
+                    if is_mem_danger: danger_msgs.append(f"MEM: {mem_val:.1f}MiB")
+                    if is_cpu_danger: danger_msgs.append(f"CPU: {cpu_val:.1f}%")
+                    if is_pids_danger: danger_msgs.append(f"PIDs: {pids_val}")
+                    save_log(db, job_id, f"⚠️ DANGER: {' | '.join(danger_msgs)}", owner_id=owner_id)
+                else:
+                    consecutive_danger_samples = 0
+                
+                if consecutive_danger_samples >= 3:
+                    v_type = "Predictive CPU" if is_cpu_danger else ("Predictive PIDs" if is_pids_danger else "Predictive Memory")
+                    save_log(db, job_id, f"🚨 PREDICTIVE FAILURE: Resource spike detected ({v_type}). Terminating.", owner_id=owner_id)
+                    subprocess.run(["docker", "rm", "-f", container_name], capture_output=True)
+                    
+                    # Store Audit Trail in Job Result
+                    job = db.query(Job).filter(Job.id == job_id).first()
+                    if job:
+                        current_result = job.result or {}
+                        job.result = {
+                            **current_result, 
+                            "is_violation": True, 
+                            "violation_type": v_type,
+                            "audit_trail": audit_trail,
+                            "peak_mem": max_mem_seen
+                        }
+                        db.commit()
+                    raise RuntimeError(f"Predictive OOM/Resource Limit: Application exceeded 95% quota")
+
+                if i % 4 == 0: # Log every 2 seconds
+                    trend_indicator = "↗️" if (len(mem_history) > 1 and mem_history[-1] > mem_history[-2]) else "➡️"
+                    save_log(db, job_id, f"📊 [Sentinel] CPU: {cpu_val:>5.1f}% | MEM: {mem_val:>6.1f}MiB {trend_indicator}", owner_id=owner_id)
+            except Exception:
+                continue
+
+    # Final Verification
+    inspect_status = subprocess.run(
+        ["docker", "inspect", "--format", "{{.State.Status}} {{.State.OOMKilled}} {{.State.ExitCode}}", container_name],
+        capture_output=True, text=True, check=True
+    )
+    status_parts = inspect_status.stdout.strip().split()
+    status = status_parts[0]
+    oom_killed = status_parts[1] == "true"
+    exit_code = int(status_parts[2])
+
+    if oom_killed:
+        save_log(db, job_id, f"🚨 FAILURE: Container KILLED by OOM. Peak: {max_mem_seen:.1f}MiB.", owner_id=owner_id)
+        
+        # Store Audit Trail in Job Result
+        job = db.query(Job).filter(Job.id == job_id).first()
+        if job:
+            current_result = job.result or {}
+            job.result = {
+                **current_result, 
+                "is_violation": True, 
+                "violation_type": "OOM Killer",
+                "audit_trail": audit_trail,
+                "peak_mem": max_mem_seen
+            }
+            db.commit()
+            
+        subprocess.run(["docker", "rm", "-f", container_name], capture_output=True)
+        raise RuntimeError("Container OOM Killed during sentinel monitoring")
+    
+    if status != "running":
+        save_log(db, job_id, f"🚨 FAILURE: Container crashed. Exit Code: {exit_code}", owner_id=owner_id)
+        subprocess.run(["docker", "rm", "-f", container_name], capture_output=True)
+        raise RuntimeError(f"Container exited with code {exit_code}")
+
+    save_log(db, job_id, f"✅ Verified stable. Startup Peak: CPU {max_cpu_seen:.1f}% | MEM {max_mem_seen:.1f}MiB", owner_id=owner_id)
+
+    # Port mapping extraction
     inspect_result = subprocess.run(
         ["docker", "inspect", "--format", f"{{{{(index (index .NetworkSettings.Ports \"{internal_port}/tcp\") 0).HostPort}}}}", container_name],
         capture_output=True, text=True, check=True
     )
     assigned_port = inspect_result.stdout.strip()
 
-    save_log(db, job_id, f"✅ Container hardened and started! ID: {container_id[:12]}", owner_id=owner_id)
+    save_log(db, job_id, f"✅ Container verified and running! ID: {container_id[:12]}", owner_id=owner_id)
     save_log(db, job_id, f"🌐 Dynamic URL: http://{hostname}", owner_id=owner_id)
 
     return {
@@ -464,12 +670,25 @@ def reconcile_port_in_yml(yml_path, port, db, job_id, owner_id):
 
 def discover_config(workspace_dir: str):
     """
-    Scans the repository for configuration (port, volumes, etc.).
+    Scans the repository for configuration (port, volumes, env, etc.).
     Priority: autodeploy.yml > Dockerfile > None
     """
     config = {
         "internal_port": None,
         "volumes": [],
+        "env_vars": {},
+        "build_args": {},
+        "command": None,
+        "entrypoint": None,
+        "healthcheck": None,
+        "restart": "unless-stopped",
+        "labels": {},
+        "pre_build_steps": [],
+        "post_build_steps": [],
+        "stack": None,
+        "root_dir": None,
+        "retention_limit": None,
+        "retention_days": None,
         "source": None,
         "warning": None
     }
@@ -485,12 +704,26 @@ def discover_config(workspace_dir: str):
             with open(yml_path, "r") as f:
                 yml_data = yaml.safe_load(f)
                 if yml_data:
+                    config["source"] = "autodeploy.yml"
                     yml_port = yml_data.get("internal_port")
                     config["volumes"] = yml_data.get("volumes", [])
+                    config["env_vars"] = yml_data.get("env_vars", {})
+                    config["build_args"] = yml_data.get("build_args", {})
+                    config["command"] = yml_data.get("command")
+                    config["entrypoint"] = yml_data.get("entrypoint")
+                    config["healthcheck"] = yml_data.get("healthcheck")
+                    config["restart"] = yml_data.get("restart", "unless-stopped")
+                    config["labels"] = yml_data.get("labels", {})
+                    config["pre_build_steps"] = yml_data.get("pre_build_steps", [])
+                    config["post_build_steps"] = yml_data.get("post_build_steps", [])
+                    config["stack"] = yml_data.get("stack")
+                    config["root_dir"] = yml_data.get("root_dir")
+                    config["retention_limit"] = yml_data.get("retention_limit")
+                    config["retention_days"] = yml_data.get("retention_days")
         except Exception as e:
             print(f"Error parsing autodeploy.yml: {e}")
 
-    # 2. Check Dockerfile (only for port)
+    # 2. Check Dockerfile (only for port if not found in YML)
     docker_path = os.path.join(workspace_dir, "Dockerfile")
     if os.path.exists(docker_path):
         try:
@@ -511,14 +744,12 @@ def discover_config(workspace_dir: str):
     # 3. Resolve Priority & detect mismatches
     if yml_port and docker_port and yml_port != docker_port:
         config["internal_port"] = yml_port
-        config["source"] = "autodeploy.yml (Override)"
         config["warning"] = f"⚠️ Port Conflict: autodeploy.yml specifies {yml_port} but Dockerfile indicates {docker_port}. Using autodeploy.yml."
     elif yml_port:
         config["internal_port"] = yml_port
-        config["source"] = "autodeploy.yml"
     elif docker_port:
         config["internal_port"] = docker_port
-        config["source"] = "Dockerfile"
+        if not config["source"]: config["source"] = "Dockerfile"
 
     return config
 
@@ -684,6 +915,20 @@ def pipeline_build(prev_result: dict):
         if config["volumes"]:
             save_log(db, job_id, f"📦 Found {len(config['volumes'])} volume mappings in autodeploy.yml.", owner_id=owner_id)
             payload_updates["volumes"] = config["volumes"]
+
+        # --- ENV VARS MERGING ---
+        if config["env_vars"]:
+            save_log(db, job_id, f"🔐 Found {len(config['env_vars'])} environment variables in autodeploy.yml.", owner_id=owner_id)
+            # Encrypt YML env vars
+            encrypted_yml_env = encrypt_dict(config["env_vars"])
+            # Merge: Dashboard (current payload) overrides YML
+            current_env = job.payload.get("env", {})
+            payload_updates["env"] = {**encrypted_yml_env, **current_env}
+
+        # --- OTHER ORCHESTRATOR CONFIGS ---
+        for field in ["command", "entrypoint", "healthcheck", "restart", "labels"]:
+            if config[field]:
+                payload_updates[field] = config[field]
             
         if payload_updates:
             job.payload = {**job.payload, **payload_updates}
@@ -691,12 +936,24 @@ def pipeline_build(prev_result: dict):
             app_id = job.app_id
             if app_id:
                 from core.models import Application
-                db.query(Application).filter(Application.id == app_id).update(payload_updates)
+                # Remap 'env' to 'env_vars' for the Application model update
+                app_updates = payload_updates.copy()
+                if "env" in app_updates:
+                    app_updates["env_vars"] = app_updates.pop("env")
+                
+                db.query(Application).filter(Application.id == app_id).update(app_updates)
             db.commit()
 
         try:
+            # Build command with build-args
+            build_cmd = ["docker", "build", "-t", image_tag]
+            for k, v in config.get("build_args", {}).items():
+                build_cmd.extend(["--build-arg", f"{k}={v}"])
+                save_log(db, job_id, f"🏗️ Build Arg: {k}=***", owner_id=owner_id)
+            build_cmd.append(".")
+            
             # Important: We build with context as effective_workspace
-            run_command(db, job_id, ["docker", "build", "-t", image_tag, "."], cwd=effective_workspace, owner_id=owner_id)
+            run_command(db, job_id, build_cmd, cwd=effective_workspace, owner_id=owner_id)
             save_log(db, job_id, "✅ Build successful.", owner_id=owner_id)
             return {**prev_result, "image_tag": image_tag, "stack": stack}
         except Exception as e:
@@ -736,6 +993,13 @@ def pipeline_deploy(prev_result: dict):
 
         update_job_progress(db, job_id, "Deploying", 90)
         
+        # Fetch other config from payload
+        container_command = job.payload.get("command")
+        entrypoint = job.payload.get("entrypoint")
+        healthcheck = job.payload.get("healthcheck")
+        restart_policy = job.payload.get("restart", "unless-stopped")
+        custom_labels = job.payload.get("labels", {})
+
         # We pass decrypted_env, volumes, and user quotas here!
         deploy_info = run_container(
             db, job_id, image_tag, 
@@ -746,7 +1010,12 @@ def pipeline_deploy(prev_result: dict):
             volumes=volumes,
             cpu_limit=cpu_limit,
             memory_limit_mb=memory_limit,
-            pids_limit=pids_limit
+            pids_limit=pids_limit,
+            command=container_command,
+            entrypoint=entrypoint,
+            healthcheck=healthcheck,
+            restart=restart_policy,
+            labels=custom_labels
         )
         
         save_log(db, job_id, f"✅ Deployment live. Quota Applied: {memory_limit}MB RAM / {cpu_limit} CPU", owner_id=owner_id)
@@ -1021,6 +1290,132 @@ def stop_job(job_id: str):
         job.status = "stopped"
         db.commit()
         return "Stopped"
+
+@app.task(name="worker.tasks.reconcile_container_statuses")
+def reconcile_container_statuses():
+    """
+    Global Runtime Reaper.
+    Periodically audits all running containers for policy violations (CPU/MEM/PIDS).
+    """
+    from core.models import Application, Job, Profile
+    import json
+
+    with session_scope() as db:
+        # 1. Get all AutoDeploy managed containers
+        result = subprocess.run([
+            "docker", "ps", "-a", 
+            "--filter", "label=autodeploy.managed=true",
+            "--format", "{{.Names}}||{{.Status}}||{{.Label \"autodeploy.owner_id\"}}"
+        ], capture_output=True, text=True)
+        
+        if not result.stdout: return "No managed containers found."
+
+        for line in result.stdout.strip().split("\n"):
+            if "||" not in line: continue
+            name, status_str, owner_id = line.split("||")
+            
+            # Find the App and Job for this container
+            app_name_part = name.replace("ad-", "").rsplit("-", 1)[0]
+            app = db.query(Application).filter(Application.owner_id == owner_id, Application.name.ilike(app_name_part)).first()
+            if not app: continue
+
+            latest_job = db.query(Job).filter(Job.app_id == app.id, Job.status == "success").order_by(Job.created_at.desc()).first()
+            if not latest_job: continue
+
+            # --- DEEP STATE INSPECTION ---
+            # We must check OOMKilled even for "running" containers as they might be degraded zombies
+            inspect = subprocess.run(["docker", "inspect", "--format", "{{.State.Status}} {{.State.OOMKilled}} {{.State.ExitCode}}", name], capture_output=True, text=True)
+            if inspect.returncode != 0: continue
+            
+            inspect_parts = inspect.stdout.strip().split()
+            if len(inspect_parts) < 2: continue
+            
+            status = inspect_parts[0]
+            oom_killed = inspect_parts[1] == "true"
+            exit_code = int(inspect_parts[2])
+
+            # --- CASE A: OOM KILL DETECTED (Fatal) ---
+            if oom_killed:
+                save_log(db, str(latest_job.id), f"🚨 REAPER: Termination triggered! Container was flagged for OOM Violation.", owner_id=owner_id)
+                subprocess.run(["docker", "rm", "-f", name], capture_output=True)
+                
+                current_result = latest_job.result or {}
+                latest_job.result = {
+                    **current_result, 
+                    "status": "crashed", 
+                    "is_violation": True,
+                    "violation_type": "Runtime OOM Reaper"
+                }
+                latest_job.status = "failed"
+                continue
+
+            # --- CASE B: Container is Dead (but not OOM) ---
+            if status != "running":
+                if latest_job.result.get("status") != "crashed":
+                    save_log(db, str(latest_job.id), f"🚨 REAPER: Container died unexpectedly (Exit Code: {exit_code}).", owner_id=owner_id)
+                    latest_job.result = {**latest_job.result, "status": "crashed", "exit_code": exit_code}
+                    latest_job.status = "failed"
+                continue
+
+            # --- CASE C: Container is Alive (Active Resource Audit) ---
+            stats_proc = subprocess.run([
+                "docker", "stats", name, "--no-stream", "--format", "{{.CPUPerc}}||{{.MemUsage}}||{{.PIDs}}"
+            ], capture_output=True, text=True)
+            
+            if stats_proc.stdout:
+                try:
+                    cpu_s, mem_s, pids_s = stats_proc.stdout.strip().split("||")
+                    cpu_v = float(cpu_s.replace("%", ""))
+                    pids_v = int(pids_s)
+                    
+                    if "GiB" in mem_s:
+                        mem_v = float(mem_s.split("GiB")[0].strip()) * 1024
+                    else:
+                        mem_v = float(mem_s.split("MiB")[0].strip())
+
+                    # Fetch limits from Profile
+                    profile = db.query(Profile).filter(Profile.user_id == owner_id).first()
+                    mem_limit = profile.memory_limit_mb if profile else 512
+                    cpu_limit = profile.cpu_limit if profile else 0.5
+                    pids_limit = profile.pids_limit if profile else 100
+
+                    cpu_max_pct = cpu_limit * 100
+                    
+                    is_mem_viol = mem_v > (mem_limit * 0.98)
+                    is_cpu_viol = cpu_v > (cpu_max_pct * 0.98)
+                    is_pids_viol = pids_v > (pids_limit * 0.98)
+
+                    # REAPER LOGIC: Hard-Stop (100%) on ANY resource
+                    # We use 100% here because the OS/Docker cgroup already provides a tiny buffer,
+                    # and we don't want to be 'too aggressive' (e.g. killing at 410MB for a 512MB limit).
+                    is_mem_viol = mem_v >= mem_limit
+                    is_cpu_viol = cpu_v >= cpu_max_pct
+                    is_pids_viol = pids_v >= pids_limit
+
+                    if is_mem_viol or is_cpu_viol or is_pids_viol:
+                        v_type = "Memory Limit" if is_mem_viol else ("CPU Limit" if is_cpu_viol else "PIDs Limit")
+                        v_msg = f"{mem_v:.1f}MiB/{mem_limit}MiB" if is_mem_viol else (f"{cpu_v:.1f}%/{cpu_max_pct}%" if is_cpu_viol else f"{pids_v}/{pids_limit}")
+                        
+                        save_log(db, str(latest_job.id), f"🚨 REAPER: Termination triggered! {v_type} abuse detected ({v_msg}).", owner_id=owner_id)
+                        print(f"DEBUG REAPER: Killing {name} for {v_type} violation. Value: {v_msg}")
+                        subprocess.run(["docker", "rm", "-f", name], capture_output=True)
+                        
+                        current_result = latest_job.result or {}
+                        latest_job.result = {
+                            **current_result, 
+                            "status": "crashed", 
+                            "is_violation": True,
+                            "violation_type": f"Runtime {v_type} Reaper",
+                            "peak_mem": mem_v
+                        }
+                        latest_job.status = "failed"
+                        continue
+                except Exception:
+                    continue
+        
+        db.commit()
+    return "Global Runtime Audit Complete."
+
 
 @app.task(name="worker.tasks.cleanup_app")
 def cleanup_app(app_name: str, image_tags: list, owner_id: str = None):

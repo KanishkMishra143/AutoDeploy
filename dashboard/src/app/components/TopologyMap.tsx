@@ -17,7 +17,7 @@ import {
 import '@xyflow/react/dist/style.css';
 import { 
   Box, Globe, Server, Activity, Database, Zap, Cloud, Cpu, 
-  Flame, CreditCard, MessageSquare, Mail, Brain, Shield, BarChart3
+  Flame, CreditCard, MessageSquare, Mail, Brain, Shield, BarChart3, AlertCircle
 } from 'lucide-react';
 import { Application, Job } from '../useJobs';
 
@@ -41,21 +41,41 @@ const GatewayNode = () => (
 const AppNode = ({ data }: NodeProps) => {
   const { app, latestJob } = data as { app: Application; latestJob?: Job };
   const isOnline = latestJob?.status === 'success';
+  const isKilled = latestJob?.status === 'failed' && latestJob?.result?.is_violation;
 
   return (
-    <div className={`px-5 py-4 shadow-xl rounded-2xl bg-card border-2 transition-all min-w-[220px] ${isOnline ? 'border-green-500/50 shadow-green-500/5' : 'border-card-border'}`}>
+    <div className={`px-5 py-4 shadow-xl rounded-2xl bg-card border-2 transition-all min-w-[220px] 
+      ${isOnline ? 'border-green-500/50 shadow-green-500/5' : 
+        isKilled ? 'border-red-500/50 shadow-red-500/5 animate-pulse' : 
+        'border-card-border'}`}
+    >
       <Handle type="target" position={Position.Left} className="w-2 h-2 bg-gray-500 border-none" />
       
       <div className="flex items-center gap-3">
-        <div className={`p-2 rounded-lg ${isOnline ? 'bg-green-500/10 text-green-500' : 'bg-gray-500/10 text-gray-500'}`}>
+        <div className={`p-2 rounded-lg 
+          ${isOnline ? 'bg-green-500/10 text-green-500' : 
+            isKilled ? 'bg-red-500/10 text-red-500' : 
+            'bg-gray-500/10 text-gray-500'}`}
+        >
           <Box className="w-5 h-5" />
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-bold text-white truncate">{app.name}</p>
           <p className="text-[9px] text-gray-500 font-mono truncate">{app.repo_url.split('/').pop()}</p>
         </div>
-        <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-green-500 animate-pulse' : 'bg-gray-600'}`} />
+        <div className={`w-2 h-2 rounded-full 
+          ${isOnline ? 'bg-green-500 animate-pulse' : 
+            isKilled ? 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]' : 
+            'bg-gray-600'}`} 
+        />
       </div>
+      
+      {isKilled && (
+        <div className="mt-2 pt-2 border-t border-red-500/10 flex items-center justify-between">
+          <span className="text-[8px] font-black text-red-500 uppercase tracking-widest">Policy Violation</span>
+          <AlertCircle className="w-3 h-3 text-red-500" />
+        </div>
+      )}
       
       <Handle type="source" position={Position.Right} className="w-2 h-2 bg-accent border-none" />
     </div>

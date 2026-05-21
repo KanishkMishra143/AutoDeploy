@@ -1,0 +1,13 @@
+# AutoDeploy Rogue App Configuration
+# Use this to test Phase 7 Resource Quotas
+name: rogue-app
+stack: dockerfile
+internal_port: 8000 # Dummy port since it's just a stresser
+
+# You can toggle these in the Dashboard Settings -> Environment Variables
+env_vars:
+  STRESS_CPU: "false"
+  STRESS_MEM: "false"
+  STRESS_PIDS: "false"
+  MEM_STEP_MB: "50"
+  MEM_SLEEP_SEC: "2"

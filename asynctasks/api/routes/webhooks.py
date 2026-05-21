@@ -56,10 +56,20 @@ async def github_webhook(
             "repo": app.repo_url, 
             "branch": app.branch,
             "stack": app.stack,
+            "internal_port": app.internal_port,
+            "volumes": app.volumes,
+            "root_dir": app.root_dir,
             "pre_build_steps": app.pre_build_steps,
             "post_build_steps": app.post_build_steps,
             "app_name": app.name,
-            "source": "github_webhook"
+            "source": "github_webhook",
+            "credential_id": str(app.credential_id) if app.credential_id else None,
+            "command": app.command,
+            "entrypoint": app.entrypoint,
+            "healthcheck": app.healthcheck,
+            "restart": app.restart,
+            "labels": app.labels,
+            "build_args": app.build_args
         }
         
         # Inject env vars

@@ -1,0 +1,29 @@
+# autodeploy.yml
+internal_port: 8000
+volumes:
+  - "data:/app/data"
+
+# These are encrypted before storage in the DB
+env_vars:
+  NODE_ENV: "production"
+  API_SECRET: "vault://prod/api-secret"
+
+# Passed to 'docker build --build-arg'
+build_args:
+  APP_VERSION: "v0.5-alpha"
+
+# Custom execution
+command: "npm run start:worker"
+restart: "always"
+
+# Docker Healthcheck
+healthcheck:
+  test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+  interval: "30s"
+  timeout: "5s"
+  retries: 3
+
+# Custom metadata
+labels:
+  com.autodeploy.tier: "production"
+  description: "Main API Gateway"

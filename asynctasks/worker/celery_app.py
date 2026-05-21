@@ -24,5 +24,9 @@ app.conf.update(
             "task": "worker.tasks.maintenance_sweep",
             "schedule": 86400.0, # Every 24 hours
         },
+        "reconcile-containers-every-10-seconds": {
+            "task": "worker.tasks.reconcile_container_statuses",
+            "schedule": 10.0, # Reality check every 10 seconds
+        },
     }
 )

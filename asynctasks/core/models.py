@@ -22,6 +22,15 @@ class Application(Base):
     pre_build_steps = Column(JSON, nullable=True, default=[])
     post_build_steps = Column(JSON, nullable=True, default=[])
     env_vars = Column(JSON, nullable=True, default={})
+    
+    # --- ORCHESTRATION CONFIG (Discovered from autodeploy.yml) ---
+    command = Column(Text, nullable=True)
+    entrypoint = Column(JSON, nullable=True) # List[str]
+    healthcheck = Column(JSON, nullable=True) # Dict
+    restart = Column(String, nullable=False, default="unless-stopped")
+    labels = Column(JSON, nullable=True, default={})
+    build_args = Column(JSON, nullable=True, default={})
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

@@ -75,9 +75,16 @@ export default function CanvasPage() {
             icon: '🚀'
           });
         } else if (job.status === 'failed') {
-          toast.error(`${appName} deployment failed.`, {
-            duration: 6000
-          });
+          if (job.result?.is_violation) {
+            toast.error(`${appName} TERMINATED: Policy Violation detected!`, {
+              duration: 8000,
+              icon: '🚨'
+            });
+          } else {
+            toast.error(`${appName} deployment failed.`, {
+              duration: 6000
+            });
+          }
         }
       }
     });
@@ -276,6 +283,7 @@ export default function CanvasPage() {
                {latestJob ? (
                  <StatusBadge 
                    status={latestJob.status} 
+                   isViolation={latestJob.result?.is_violation}
                    onClick={(e) => {
                      e.stopPropagation();
                      setSelectedJobId(latestJob.id);
@@ -296,7 +304,23 @@ export default function CanvasPage() {
               </p>
             </div>
 
-            {latestJob?.status === 'failed' && latestJob.result?.diagnosis && (
+            {latestJob?.status === 'failed' && latestJob.result?.is_violation && (
+              <div className="mb-6 p-3 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-2">
+                 <div className="bg-red-500/20 p-1.5 rounded-lg border border-red-500/20 animate-pulse">
+                    <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
+                 </div>
+                 <div className="flex-1 min-w-0">
+                    <p className="text-[10px] font-black text-red-500 uppercase tracking-widest leading-none mb-0.5">
+                       Policy Violation
+                    </p>
+                    <p className="text-[9px] font-bold text-gray-500 uppercase tracking-tight truncate">
+                       {latestJob.result.violation_type} Termination
+                    </p>
+                 </div>
+              </div>
+            )}
+
+            {latestJob?.status === 'failed' && !latestJob.result?.is_violation && latestJob.result?.diagnosis && (
               <div className="mb-6 p-3 bg-red-500/5 border border-red-500/10 rounded-xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-2">
                  <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
                  <p className="text-[10px] font-bold text-red-500/80 uppercase tracking-tight truncate">
@@ -542,9 +566,11 @@ export default function CanvasPage() {
                              <div className="text-right">
                                 <div className="flex items-center gap-2 justify-end">
                                    <span className="opacity-0 group-hover:opacity-100 transition-opacity text-[9px] font-black text-accent flex items-center gap-1">
-                                      <Terminal className="w-3 h-3" /> LOGS
+                                      <Terminal className="w-3 h-3" /> {job.result?.is_violation ? 'AUDIT' : 'LOGS'}
                                    </span>
-                                   <p className={`text-[10px] font-black uppercase tracking-widest ${job.status === 'failed' ? 'text-red-500' : job.status === 'running' ? 'text-blue-500' : job.status === 'success' ? 'text-green-500' : 'text-gray-400'}`}>{job.status}</p>
+                                   <p className={`text-[10px] font-black uppercase tracking-widest ${job.status === 'failed' ? 'text-red-500' : job.status === 'running' ? 'text-blue-500' : job.status === 'success' ? 'text-green-500' : 'text-gray-400'}`}>
+                                      {job.status === 'failed' && job.result?.is_violation ? 'KILLED' : job.status}
+                                   </p>
                                 </div>
                                 <p className="text-[10px] text-gray-500 font-medium">{new Date(job.updated_at).toLocaleTimeString()}</p>
                              </div>
@@ -564,7 +590,7 @@ export default function CanvasPage() {
   );
 }
 
-function StatusBadge({ status, onClick }: { status: string, onClick?: (e: React.MouseEvent) => void }) {
+function StatusBadge({ status, isViolation, onClick }: { status: string, isViolation?: boolean, onClick?: (e: React.MouseEvent) => void }) {
   const styles: Record<string, any> = {
     queued: { icon: Clock, color: "text-yellow-500", bg: "bg-yellow-500/10" },
     running: { icon: Loader2, color: "text-blue-500", bg: "bg-blue-500/10", animate: "animate-spin" },
@@ -575,18 +601,19 @@ function StatusBadge({ status, onClick }: { status: string, onClick?: (e: React.
 
   const config = styles[status] || styles.queued;
   const Icon = config.icon;
+  const label = isViolation ? "KILLED" : status;
 
   return (
     <div 
       onClick={onClick}
-      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl ${config.bg} ${config.color} text-[10px] font-black uppercase tracking-widest border border-white/5 ${onClick ? 'cursor-pointer hover:brightness-125 transition-all active:scale-95 group/status' : ''}`}
+      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl ${config.bg} ${config.color} text-[10px] font-black uppercase tracking-widest border border-white/5 ${isViolation ? 'animate-pulse shadow-[0_0_15px_rgba(239,68,68,0.2)]' : ''} ${onClick ? 'cursor-pointer hover:brightness-125 transition-all active:scale-95 group/status' : ''}`}
     >
       <Icon className={`w-3.5 h-3.5 ${config.animate || ""}`} />
-      {status}
+      {label}
       {onClick && (
         <span className="ml-1 opacity-50 group-hover/status:opacity-100 flex items-center gap-1 border-l border-current pl-1.5 transition-opacity">
            <Terminal className="w-3 h-3" />
-           {status === 'running' ? 'LOGS' : 'VIEW'}
+           {status === 'running' ? 'LOGS' : isViolation ? 'AUDIT' : 'VIEW'}
         </span>
       )}
     </div>

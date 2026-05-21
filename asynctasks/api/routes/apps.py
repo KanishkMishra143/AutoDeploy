@@ -174,7 +174,13 @@ def create_app(app_data: AppCreate, db: Session = Depends(get_db), current_user:
         pre_build_steps=app_data.pre_build_steps or [],
         post_build_steps=app_data.post_build_steps or [],
         env_vars=encrypted_env,
-        credential_id=app_data.credential_id
+        credential_id=app_data.credential_id,
+        command=app_data.command,
+        entrypoint=app_data.entrypoint,
+        healthcheck=app_data.healthcheck,
+        restart=app_data.restart or "unless-stopped",
+        labels=app_data.labels or {},
+        build_args=app_data.build_args or {}
     )
     db.add(new_app)
     try:
@@ -306,7 +312,13 @@ def deploy_app(app_id: UUID, trigger_reason: str = "Manual", db: Session = Depen
             "root_dir": app.root_dir,
             "pre_build_steps": app.pre_build_steps,
             "post_build_steps": app.post_build_steps,
-            "credential_id": str(app.credential_id) if app.credential_id else None
+            "credential_id": str(app.credential_id) if app.credential_id else None,
+            "command": app.command,
+            "entrypoint": app.entrypoint,
+            "healthcheck": app.healthcheck,
+            "restart": app.restart,
+            "labels": app.labels,
+            "build_args": app.build_args
         }
     )
     db.add(new_job)
