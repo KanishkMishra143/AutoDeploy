@@ -16,6 +16,14 @@ import socket
 from datetime import datetime
 from celery import chain, signature
 from core.crypto import decrypt_dict, encrypt_dict
+from core.vault import vault
+from typing import Dict
+
+def mask_env(env_vars: Dict[str, str]) -> Dict[str, str]:
+    """Masks secret values for safe transport to the dashboard."""
+    if not env_vars:
+        return {}
+    return {k: "********" for k in env_vars.keys()}
 
 # --- AUTO-HEALING & ERROR DIAGNOSIS ---
 
@@ -896,34 +904,40 @@ def pipeline_build(prev_result: dict):
         config = discover_config(effective_workspace)
         payload_updates = {}
         
-        dashboard_port = job.payload.get("internal_port")
+        # Precedence: 1. Dashboard/CLI Override, 2. autodeploy.yml, 3. Dockerfile, 4. Template Default
+        final_port = job.payload.get("internal_port")
         discovered_port = config["internal_port"]
 
         if config["warning"]:
             save_log(db, job_id, config["warning"], owner_id=owner_id)
         
-        # --- SWIFT-RESOLUTION: Respect Dashboard Choice & Patch Repo ---
-        if discovered_port and dashboard_port and discovered_port != dashboard_port:
-            save_log(db, job_id, f"⚡ User override detected: Enforcing port {dashboard_port} (Dashboard) over {discovered_port} ({config['source']}).", owner_id=owner_id)
-            reconcile_port_in_dockerfile(dockerfile_path, dashboard_port, db, job_id, owner_id)
-            reconcile_port_in_yml(os.path.join(effective_workspace, "autodeploy.yml"), dashboard_port, db, job_id, owner_id)
-            # We keep internal_port as dashboard_port
-        elif discovered_port:
-            save_log(db, job_id, f"🔍 Autodiscovered port {discovered_port} from {config['source']}.", owner_id=owner_id)
-            payload_updates["internal_port"] = discovered_port
-            
+        # Log the discovery findings
+        if discovered_port:
+            save_log(db, job_id, f"🔍 Port Discovery: Found port {discovered_port} in {config['source']}.", owner_id=owner_id)
+
+        # 🚀 HARDENING: Resolve the final port and ALWAYS sync the Dockerfile
+        if not final_port:
+            final_port = discovered_port or (80 if stack == "static" else 8000)
+            payload_updates["internal_port"] = final_port
+            save_log(db, job_id, f"ℹ️ Final target port resolved to: {final_port}", owner_id=owner_id)
+        
+        # Always attempt to patch the Dockerfile to match our final_port
+        # This prevents mismatches where YML was right but Dockerfile was hardcoded
+        reconcile_port_in_dockerfile(dockerfile_path, final_port, db, job_id, owner_id)
+        reconcile_port_in_yml(os.path.join(effective_workspace, "autodeploy.yml"), final_port, db, job_id, owner_id)
+
+        # 🔑 ENFORCE PORT ENV: Most frameworks (Express, Uvicorn, Gunicorn) respect PORT env
+        save_log(db, job_id, f"🔑 Injecting PORT={final_port} into runtime environment.", owner_id=owner_id)
+        current_vault_env = vault.get_env_vars(job.app_id)
+        new_vault_env = {**current_vault_env, **config["env_vars"], "PORT": str(final_port)}
+        vault.store_env_vars(job.app_id, new_vault_env)
+        
+        # Update DB with masked version for UI consistency
+        payload_updates["env_vars"] = mask_env(new_vault_env)
+
         if config["volumes"]:
             save_log(db, job_id, f"📦 Found {len(config['volumes'])} volume mappings in autodeploy.yml.", owner_id=owner_id)
             payload_updates["volumes"] = config["volumes"]
-
-        # --- ENV VARS MERGING ---
-        if config["env_vars"]:
-            save_log(db, job_id, f"🔐 Found {len(config['env_vars'])} environment variables in autodeploy.yml.", owner_id=owner_id)
-            # Encrypt YML env vars
-            encrypted_yml_env = encrypt_dict(config["env_vars"])
-            # Merge: Dashboard (current payload) overrides YML
-            current_env = job.payload.get("env", {})
-            payload_updates["env"] = {**encrypted_yml_env, **current_env}
 
         # --- OTHER ORCHESTRATOR CONFIGS ---
         for field in ["command", "entrypoint", "healthcheck", "restart", "labels"]:
@@ -936,12 +950,7 @@ def pipeline_build(prev_result: dict):
             app_id = job.app_id
             if app_id:
                 from core.models import Application
-                # Remap 'env' to 'env_vars' for the Application model update
-                app_updates = payload_updates.copy()
-                if "env" in app_updates:
-                    app_updates["env_vars"] = app_updates.pop("env")
-                
-                db.query(Application).filter(Application.id == app_id).update(app_updates)
+                db.query(Application).filter(Application.id == app_id).update(payload_updates)
             db.commit()
 
         try:
@@ -962,7 +971,7 @@ def pipeline_build(prev_result: dict):
 
 @app.task(name="worker.pipeline.deploy")
 def pipeline_deploy(prev_result: dict):
-    """Step: Run the container with decrypted environment variables and user-level resource quotas."""
+    """Step: Run the container with real environment variables and user-level resource quotas."""
     job_id = prev_result["job_id"]
     image_tag = prev_result["image_tag"]
     stack = prev_result["stack"]
@@ -972,9 +981,19 @@ def pipeline_deploy(prev_result: dict):
         from core.models import Job, Profile
         job = db.query(Job).filter(Job.id == job_id).first()
         
-        # 🔓 Decrypt the environment variables right before they go into Docker
-        encrypted_env = job.payload.get("env", {})
-        decrypted_env = decrypt_dict(encrypted_env)
+        # 🔐 Directly fetch the real secrets from Vault (Source of Truth)
+        # This bypasses the Job history and ensures maximum security.
+        decrypted_env = {}
+        if job.app_id:
+            save_log(db, job_id, "🔐 Worker: Retrieving secrets from HashiCorp Vault...", owner_id=owner_id)
+            try:
+                decrypted_env = vault.get_env_vars(job.app_id)
+                if decrypted_env:
+                    save_log(db, job_id, f"🔑 Successfully retrieved {len(decrypted_env)} secrets.", owner_id=owner_id)
+                else:
+                    save_log(db, job_id, "ℹ️ No secrets found in Vault for this application.", owner_id=owner_id)
+            except Exception as e:
+                save_log(db, job_id, f"⚠️ Vault Error: Could not fetch secrets ({str(e)})", owner_id=owner_id)
         
         app_name = job.payload.get("app_name")
         internal_port = job.payload.get("internal_port")

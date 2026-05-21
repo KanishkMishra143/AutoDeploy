@@ -120,8 +120,9 @@ export default function LogViewer({ jobId, onClose }: { jobId: string; onClose: 
     if (!scrollRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
 
-    // Increased tolerance (150px) to handle large log batches during auto-scroll
-    const atBottom = scrollHeight - scrollTop - clientHeight < 150;
+    // Increased tolerance (200px) to handle large log batches during auto-scroll
+    const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+    const atBottom = distanceFromBottom < 200;
 
     if (atBottom !== isAtBottom) {
       setIsAtBottom(atBottom);
@@ -131,8 +132,12 @@ export default function LogViewer({ jobId, onClose }: { jobId: string; onClose: 
   // Sticky Auto-scroll logic
   useEffect(() => {
     if (isAtBottom && scrollRef.current) {
-      // Direct scroll for better performance and reliability
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      // Use direct scroll with 'auto' behavior for better performance and reliability 
+      // during high-velocity log bursts.
+      scrollRef.current.scrollTo({
+        top: scrollRef.current.scrollHeight,
+        behavior: 'auto'
+      });
     }
   }, [logs, isAtBottom]);
 

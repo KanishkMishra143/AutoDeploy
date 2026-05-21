@@ -167,6 +167,9 @@ def create_app(app_data: AppCreate, db: Session = Depends(get_db), current_user:
     if existing:
         raise HTTPException(status_code=400, detail="Application name already exists")
 
+    # Store masked keys in DB so UI can always see them
+    masked_env = mask_env(app_data.env_vars) if app_data.env_vars else {}
+
     new_app = Application(
         owner_id=current_user["sub"],
         name=app_data.name,
@@ -178,7 +181,7 @@ def create_app(app_data: AppCreate, db: Session = Depends(get_db), current_user:
         root_dir=app_data.root_dir or ".",
         pre_build_steps=app_data.pre_build_steps or [],
         post_build_steps=app_data.post_build_steps or [],
-        env_vars={}, # We store env-vars in Vault now
+        env_vars=masked_env, # Masked in DB
         credential_id=app_data.credential_id,
         command=app_data.command,
         entrypoint=app_data.entrypoint,
@@ -192,19 +195,16 @@ def create_app(app_data: AppCreate, db: Session = Depends(get_db), current_user:
         db.commit()
         db.refresh(new_app)
         
-        # Store in Vault using the newly generated UUID
+        # Store real values in Vault
         if app_data.env_vars:
             vault.store_env_vars(new_app.id, app_data.env_vars)
             
     except Exception as e:
         db.rollback()
-        # Cleanup Vault if DB failed
         if 'new_app' in locals() and new_app.id:
             vault.delete_env_vars(new_app.id)
         raise HTTPException(status_code=400, detail=f"A concurrency error occurred: {str(e)}")
 
-    # Return with masked vars for the response
-    new_app.env_vars = mask_env(app_data.env_vars)
     new_app.role = "OWNER"
     return new_app
 
@@ -226,26 +226,23 @@ def update_app(app_id: UUID, app_data: AppUpdate, db: Session = Depends(get_db),
             raise HTTPException(status_code=400, detail="Application name already exists")
 
     if "env_vars" in update_data:
-        # Fetch current secrets from Vault to handle masking
+        # 1. Fetch current secrets from Vault to handle masking
         current_secrets = vault.get_env_vars(app_id)
         incoming_env = update_data["env_vars"]
         
-        # Merge logic: if incoming value is "********", keep the old value.
-        # Otherwise, update with the new value.
-        # If a key is missing from incoming_env, it is deleted (implicitly by not being in final_env).
-        final_env = {}
+        # 2. Merge logic for Vault
+        final_real_env = {}
         for k, v in incoming_env.items():
             if v == "********":
-                final_env[k] = current_secrets.get(k, "")
+                final_real_env[k] = current_secrets.get(k, "")
             else:
-                final_env[k] = v
+                final_real_env[k] = v
         
-        # Update Vault with the merged/final set
-        vault.store_env_vars(app_id, final_env)
+        # 3. Store real values in Vault
+        vault.store_env_vars(app_id, final_real_env)
         
-        # Ensure DB record remains empty of secrets
-        app.env_vars = {} 
-        del update_data["env_vars"]
+        # 4. Store masked version in DB for UI
+        update_data["env_vars"] = mask_env(final_real_env)
 
     for key, value in update_data.items():
         setattr(app, key, value)
@@ -269,8 +266,6 @@ def list_apps(db: Session = Depends(get_db), current_user: dict = Depends(get_cu
     
     for app in owned_apps:
         app.role = "OWNER"
-        # Mask env vars from Vault
-        app.env_vars = mask_env(vault.get_env_vars(app.id))
 
     # Shared apps
     shared_access = db.query(AppAccess).filter(AppAccess.user_id == user_uuid).all()
@@ -283,7 +278,6 @@ def list_apps(db: Session = Depends(get_db), current_user: dict = Depends(get_cu
         
         if app:
             app.role = access.role
-            app.env_vars = mask_env(vault.get_env_vars(app.id))
             shared_apps.append(app)
     
     # Sort shared apps by updated_at DESC (latest first)
@@ -305,8 +299,6 @@ def get_app(app_id: UUID, db: Session = Depends(get_db), current_user: dict = De
         raise HTTPException(status_code=404, detail="Application not found")
 
     app_with_access = get_app_with_access(app_id, current_user["sub"], db)
-    # Mask env vars from Vault
-    app_with_access.env_vars = mask_env(vault.get_env_vars(app_id))
     return app_with_access
 
 @router.post("/{app_id}/deploy", response_model=JobResponse)

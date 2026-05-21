@@ -5,7 +5,8 @@ from uuid import UUID
 
 class VaultClient:
     def __init__(self):
-        self.addr = os.getenv("VAULT_ADDR", "http://localhost:8200")
+        # Use vault:8200 for internal docker communication
+        self.addr = os.getenv("VAULT_ADDR", "http://vault:8200")
         self.token = os.getenv("VAULT_TOKEN", "root")
         self.client = None
         
