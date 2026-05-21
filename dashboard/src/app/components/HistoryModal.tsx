@@ -628,7 +628,21 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
                                   </span>
                                 </div>
                                 <div className="flex items-center gap-2 mt-1">
-                                    <p className="text-[10px] text-gray-600 font-mono">Job: {job.id.split('-')[0]}</p>
+                                    <p 
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        navigator.clipboard.writeText(job.id);
+                                        toast.success("FULL JOB ID COPIED TO CLIPBOARD", {
+                                          style: { background: '#111', color: '#fff', border: '1px solid rgba(255,255,255,0.1)', fontSize: '10px', fontWeight: '900', letterSpacing: '0.1em' },
+                                          icon: '📋'
+                                        });
+                                      }}
+                                      className="text-[10px] text-gray-600 font-mono cursor-pointer hover:text-accent transition-colors group/id"
+                                      title="Click to copy full UUID"
+                                    >
+                                      Job: {job.id.split('-')[0]}
+                                      <span className="ml-2 opacity-0 group-hover/id:opacity-100 transition-opacity text-[8px] font-black uppercase tracking-tighter text-accent/50">Click to copy</span>
+                                    </p>
                                     {job.trigger_metadata?.commit_id && (
                                         <span className="text-[10px] text-accent/50 font-mono font-bold italic">@{job.trigger_metadata.commit_id}</span>
                                     )}

@@ -41,7 +41,7 @@ class LogStreamer:
         self.url = None
         self.api_key = config.get_api_key()
         self.api_base = config.get_api_base()
-        self.ws_base = self.api_base.replace("http://", "ws://")
+        self.ws_base = self.api_base.replace("https://", "wss://").replace("http://", "ws://")
         self.ws_status = "CONNECTING"
         self._stop_event = asyncio.Event()
         self.scroll_offset = 0

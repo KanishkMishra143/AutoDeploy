@@ -33,4 +33,5 @@ def get_api_key() -> str:
 
 def get_api_base() -> str:
     config = load_config()
-    return config.get("api_base", "http://127.0.0.1:8000")
+    # Default to api subdomain instead of root domain
+    return config.get("api_base", "https://api.auto-deploy.tech")

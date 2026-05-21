@@ -53,7 +53,7 @@ def list_apps():
             for a in apps:
                 table.add_row(
                     a["name"],
-                    str(a["id"])[:8] + "...",
+                    str(a["id"]),
                     a["stack"],
                     a["branch"],
                     a.get("role", "OWNER"),
@@ -210,7 +210,7 @@ def purge_cluster():
         table.add_column("Application Name", style="bold red")
         table.add_column("ID", style="dim")
         for a in apps_list:
-            table.add_row(a["name"], str(a["id"])[:8] + "...")
+            table.add_row(a["name"], str(a["id"]))
         console.print(table)
 
     apps = fetch_apps_list()

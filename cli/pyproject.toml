@@ -1,19 +1,36 @@
 [project]
 name = "autodeploy-cli"
-version = "0.1.0"
-description = "AutoDeploy CLI"
+version = "0.5.0a2"
+description = "The official CLI for AutoDeploy: The Next-Gen Developer-First PaaS"
 readme = "README.md"
-requires-python = ">=3.13"
+authors = [
+    { name = "Kanishk Mishra", email = "kanishkmishra143@gmail.com" }
+]
+keywords = ["paas", "orchestration", "deployment", "docker", "developer-experience"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Build Tools",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+requires-python = ">=3.11"
 dependencies = [
-    "requests>=2.34.2",
-    "rich>=15.0.0",
-    "typer>=0.25.1",
+    "requests>=2.31.0",
+    "rich>=13.7.0",
+    "typer>=0.12.0",
     "PyYAML>=6.0.1",
-    "websockets>=14.0",
+    "websockets>=12.0",
 ]
 
 [project.scripts]
 ad = "autodeploy_cli.main:app"
+
+[project.urls]
+Homepage = "https://auto-deploy.tech"
+Repository = "https://github.com/kanishkmishra/AutoDeploy"
 
 [tool.uv]
 package = true

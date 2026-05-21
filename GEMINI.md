@@ -43,24 +43,21 @@
         - **Global Maintenance Task:** Implemented `maintenance_sweep` in the worker, scanning all applications to enforce retention policies.
         - **Proactive Pruning:** Configured Celery Beat to run a global sweep every 24 hours.
     - **Dashboard Branding Sync:** Updated versioning to `v0.5 ALPHA` across the entire UI.
-### 📅 Wednesday, May 20, 2026
-- **Status:** Core Hardening, Cloudflare SSL & Production Persistence COMPLETE.
+### 📅 Thursday, May 21, 2026
+- **Status:** Phase 11 (AutoDeploy CLI) & Multi-Resource Sentinel COMPLETE.
 - **Milestones:**
-    - **Container Security (Task 7 Fix):** Implemented short-term "Defense in Depth" for user containers.
-        - **Resource Quotas:** Applied strict CPU (0.5), Memory (512MB), and Process (100 pids) limits.
-        - **Privilege Lockdown:** Enforced `--security-opt no-new-privileges` and `--cap-drop ALL`.
-    - **Concurrency & Race Protection (Task 8 Fix):** Resolved the "Double-Click Panic" at both UI and API layers.
-        - **Pessimistic Locking:** Implemented `with_for_update()` in SQLAlchemy for state-changing endpoints.
-    - **SSL/TLS & Global Access (Task 6 COMPLETE):** Transitioned to a public-facing infrastructure.
-        - **Cloudflare Tunnel:** Secured outbound connectivity from local hardware to `auto-deploy.tech` without port forwarding.
-        - **Dynamic Hostnames:** Updated the worker to generate `*.auto-deploy.tech` URLs dynamically via a `BASE_DOMAIN` environment variable.
-        - **Traefik Hardening:** Removed root privileges from the Traefik container for production security standards.
-    - **Server Persistence & Monitoring:**
-        - **Auto-Boot:** Configured `restart: unless-stopped` across the entire stack to ensure AutoDeploy wakes up on system boot.
-        - **Portainer Integration:** Added a visual management layer for monitoring system logs and container health in real-time.
+    - **Diagnostic Audit Engine:** Implemented high-fidelity "Black Box" recording for container terminations. The worker now captures CPU, Memory, and PID snapshots every 0.5s during startup.
+    - **Resource Hardening:** Upgraded the Sentinel and Global Reaper to enforce triple-axis quotas (Memory, CPU, PIDs). Added a "Zombie Protection" layer to catch and kill containers that have crashed internally but remain "Up" in Docker.
+    - **Dashboard Diagnostic UI:** 
+        - Created a new "Audit Trail" tab in the LogViewer.
+        - Implemented animated "KILLED" status badges for policy violations.
+        - Added red-glow violation alerts to the Topology Map.
+    - **PyPI Publication:** Successfully packaged and published `autodeploy-cli` to the official Python Package Index (PyPI) at `v0.5.0a0`. 
+        - CLI is now globally installable via `pip install autodeploy-cli`.
+        - Defaulted CLI connectivity to `api.auto-deploy.tech` for production-ready out-of-the-box usage.
 - **Next Task:**
-    1. **Task 11:** Refining the AutoDeploy CLI for production use.
-    2. **Public Launch:** Onboarding first test users.
+    1. **Phase 12:** Enterprise-Grade Distribution & Multi-Node Support.
+    2. **Scaling:** Implementing Horizontal Pod Autoscaling (HPA) logic for user applications.
 
 ## Mentor Memory (Architectural Notes)
 - **Data Ownership Architecture:** Ownership is enforced at the **API Layer**. Every protected route uses the `get_current_user` dependency. All SQLAlchemy queries MUST include `.filter(Model.owner_id == current_user["sub"])` OR check the `AppAccess` table for shared permissions.

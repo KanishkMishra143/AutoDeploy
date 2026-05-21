@@ -28,7 +28,7 @@ def logs(job_id: Optional[str] = typer.Argument(None, help="The ID of the job to
 @app.command()
 def login(
     key: Optional[str] = typer.Option(None, "--key", "-k", help="The API Key from your dashboard"),
-    api_base: Optional[str] = typer.Option(None, "--base", "-b", help="The API Base URL (default: http://127.0.0.1:8000)")
+    api_base: Optional[str] = typer.Option(None, "--base", "-b", help="The API Base URL (default: https://api.auto-deploy.tech)")
 ):
     """
     Authenticate the CLI with your AutoDeploy account.
@@ -40,8 +40,8 @@ def login(
         console.print("[red]Error:[/red] Invalid key format. Keys should start with 'ad_live_'")
         raise typer.Exit(1)
 
-    # Resolve API Base: CLI Argument > Existing Config > Default
-    final_api_base = api_base or config.get_api_base()
+    # Resolve API Base: CLI Argument > Default
+    final_api_base = api_base or "https://api.auto-deploy.tech"
     
     # Verify the key
     try:
@@ -125,15 +125,19 @@ def debug_ws(job_id: str):
     
     async def run_debug():
         key = config.get_api_key()
-        base = config.get_api_base().replace("http://", "ws://")
+        base = config.get_api_base().replace("https://", "wss://").replace("http://", "ws://")
         url = f"{base}/ws/logs/{job_id}?token={key}"
         console.print(f"Connecting to [cyan]{url}[/cyan]...")
         try:
             async with websockets.connect(url) as ws:
                 console.print("[green]Connected![/green] Waiting for messages...")
                 while True:
-                    msg = await ws.recv()
-                    console.print(f"[dim]RAW:[/dim] {msg}")
+                    try:
+                        msg = await ws.recv()
+                        console.print(f"[dim]RAW:[/dim] {msg}")
+                    except websockets.ConnectionClosed as e:
+                        console.print(f"\n[yellow]Connection Closed by Server:[/yellow] Code: {e.code}, Reason: {e.reason}")
+                        break
         except Exception as e:
             console.print(f"[red]Error:[/red] {e}")
 
