@@ -145,13 +145,13 @@ RUN npm run build
 
 FROM nginx:alpine
 COPY --from=builder /app/out /usr/share/nginx/html
-RUN printf "server { listen %s; location / { root /usr/share/nginx/html; index index.html; try_files \\$uri \\$uri/ /index.html; } }" {port} > /etc/nginx/conf.d/default.conf
+RUN printf "server {{ listen %s; location / {{ root /usr/share/nginx/html; index index.html; try_files \\$uri \\$uri/ /index.html; }} }}" {port} > /etc/nginx/conf.d/default.conf
 EXPOSE {port}
 """,
     "static": """
 FROM nginx:alpine
 COPY . /usr/share/nginx/html
-RUN printf "server { listen %s; location / { root /usr/share/nginx/html; index index.html; } }" {port} > /etc/nginx/conf.d/default.conf
+RUN printf "server {{ listen %s; location / {{ root /usr/share/nginx/html; index index.html; }} }}" {port} > /etc/nginx/conf.d/default.conf
 EXPOSE {port}
 """
 }
@@ -291,10 +291,16 @@ def run_container(db, job_id, image_tag, env_vars=None, app_name=None, internal_
     ]
     
     # Security Profiles: Prevent container escape & host takeover
+    # Note: Nginx requires CHOWN, SETGID, SETUID to drop privileges from root to 'nginx' user
+    # and DAC_OVERRIDE to access some system files before dropping privileges.
     security_flags = [
         "--security-opt", "no-new-privileges", # Prevent setuid/setgid privilege escalation
         "--cap-drop", "ALL",                   # Drop all kernel capabilities
-        "--cap-add", "NET_BIND_SERVICE"        # Only allow binding to low ports (<1024) if needed
+        "--cap-add", "NET_BIND_SERVICE",       # Only allow binding to low ports (<1024)
+        "--cap-add", "CHOWN",
+        "--cap-add", "SETGID",
+        "--cap-add", "SETUID",
+        "--cap-add", "DAC_OVERRIDE"
     ]
 
     base_labels = [
