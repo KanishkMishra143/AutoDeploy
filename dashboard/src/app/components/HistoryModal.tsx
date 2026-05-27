@@ -101,6 +101,7 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
     return [{key: "", value: ""}];
   });
   const [localPort, setLocalPort] = useState(initialApp.internal_port || 8000);
+  const [localStack, setLocalStack] = useState(initialApp.stack || "dockerfile");
   const [localBranch, setLocalBranch] = useState(initialApp.branch || "main");
   const [localRootDir, setLocalRootDir] = useState(initialApp.root_dir || ".");
   const [localRetention, setLocalRetention] = useState(initialApp.retention_limit || 10);
@@ -356,6 +357,7 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
         body: JSON.stringify({
           env_vars: envObj,
           internal_port: localPort,
+          stack: localStack,
           branch: localBranch,
           root_dir: localRootDir,
           retention_limit: localRetention,
@@ -866,6 +868,35 @@ export default function AppDetailModal({ app: initialApp, onClose, onViewLogs, a
                   </div>
                 </div>
 
+                <div>
+                  <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Stack Template</h4>
+                  <div className="flex items-center gap-4 bg-background border border-card-border rounded-2xl px-6 py-4 focus-within:border-accent transition-all group">
+                    <Layers className="w-4 h-4 text-gray-600 group-focus-within:text-accent" />
+                    <div className="flex-1">
+                      <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest mb-1">Runtime Environment</p>
+                      <select 
+                        className="w-full bg-transparent text-sm font-bold text-white outline-none cursor-pointer"
+                        value={localStack}
+                        onChange={(e) => {
+                          setLocalStack(e.target.value);
+                          if (e.target.value === 'static' || e.target.value === 'nextjs-static') setLocalPort(80);
+                          else if (e.target.value === 'nextjs') setLocalPort(3000);
+                          else if (localPort === 80 || localPort === 3000) setLocalPort(8000);
+                        }}
+                      >
+                        <option value="dockerfile" className="bg-card text-white">Native Dockerfile</option>
+                        <option value="python" className="bg-card text-white">Python Environment</option>
+                        <option value="nodejs" className="bg-card text-white">Node.js Runtime</option>
+                        <option value="nextjs" className="bg-card text-white">Next.js (Server)</option>
+                        <option value="nextjs-static" className="bg-card text-white">Next.js (Static)</option>
+                        <option value="static" className="bg-card text-white">Static Site (Nginx)</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mb-8 grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Target Branch</h4>
                   <div className="flex items-center gap-4 bg-background border border-card-border rounded-2xl px-6 py-4 focus-within:border-accent transition-all group">

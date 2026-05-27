@@ -647,6 +647,9 @@ def reconcile_port_in_dockerfile(dockerfile_path, port, db, job_id, owner_id):
     Surgically modifies a Dockerfile to match the overridden internal_port.
     Handles both shell-style and JSON-style (exec) commands.
     """
+    if not os.path.exists(dockerfile_path):
+        return
+
     try:
         with open(dockerfile_path, "r") as f:
             lines = f.readlines()
@@ -911,15 +914,23 @@ def pipeline_build(prev_result: dict):
         effective_workspace = os.path.abspath(os.path.join(workspace_dir, root_dir))
         save_log(db, job_id, f"📂 Effective workspace: {root_dir}", owner_id=owner_id)
         
+        # DEBUG: List workspace contents
+        try:
+            files = os.listdir(effective_workspace)
+            save_log(db, job_id, f"🔍 Workspace Files: {', '.join(files[:15])}{'...' if len(files) > 15 else ''}", owner_id=owner_id)
+        except Exception as e:
+            save_log(db, job_id, f"⚠️ Failed to list workspace: {str(e)}", owner_id=owner_id)
+
         dockerfile_path = os.path.join(effective_workspace, "Dockerfile")
         
         # Template Injection
         if not os.path.exists(dockerfile_path):
             if stack == "dockerfile":
-                if os.path.exists(os.path.join(effective_workspace, "package.json")):
-                    # Check for Next.js in package.json
+                pj_path = os.path.join(effective_workspace, "package.json")
+                if os.path.exists(pj_path):
+                    save_log(db, job_id, "🔍 Detected package.json, analyzing stack...", owner_id=owner_id)
                     try:
-                        with open(os.path.join(effective_workspace, "package.json"), "r") as f:
+                        with open(pj_path, "r") as f:
                             pj = json.load(f)
                             deps = {**pj.get("dependencies", {}), **pj.get("devDependencies", {})}
                             if "next" in deps:
@@ -933,18 +944,25 @@ def pipeline_build(prev_result: dict):
                                             if "output: 'export'" in content or 'output: "export"' in content:
                                                 stack = "nextjs-static"
                                                 break
+                                save_log(db, job_id, f"🎯 Auto-detected framework: {stack}", owner_id=owner_id)
                             else:
                                 stack = "nodejs"
-                    except:
+                    except Exception as e:
+                        save_log(db, job_id, f"⚠️ Detection failed: {str(e)}", owner_id=owner_id)
                         stack = "nodejs"
                 elif os.path.exists(os.path.join(effective_workspace, "requirements.txt")): stack = "python"
                 elif os.path.exists(os.path.join(effective_workspace, "index.html")): stack = "static"
+                else:
+                    save_log(db, job_id, "⚠️ No recognizable stack files found (package.json, requirements.txt, or index.html).", owner_id=owner_id)
             
             if stack in STACK_TEMPLATES:
                 save_log(db, job_id, f"💡 Injecting {stack} template...", owner_id=owner_id)
                 
                 # Dynamic port injection for templates
-                internal_port = job.payload.get("internal_port", 8000)
+                internal_port = job.payload.get("internal_port")
+                if not internal_port:
+                    internal_port = 80 if stack in ["static", "nextjs-static"] else (3000 if stack == "nextjs" else 8000)
+
                 template_content = STACK_TEMPLATES[stack].strip()
                 if "{port}" in template_content:
                     template_content = template_content.format(port=internal_port)
