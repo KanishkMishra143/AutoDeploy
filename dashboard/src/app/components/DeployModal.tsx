@@ -435,53 +435,56 @@ export default function DeployModal({ onClose }: { onClose: (jobId?: string) => 
                        value={stack}
                        onChange={(e) => {
                           setStack(e.target.value);
-                          if (e.target.value === 'static') setInternalPort(80);
+                          if (e.target.value === 'static' || e.target.value === 'nextjs-static') setInternalPort(80);
+                          else if (e.target.value === 'nextjs') setInternalPort(3000);
                           else setInternalPort(8000);
                        }}
+
                      >
                        <option value="dockerfile">NATIVE DOCKERFILE</option>
                        <option value="python">PYTHON ENVIRONMENT</option>
                        <option value="nodejs">NODE.JS RUNTIME</option>
+                       <option value="nextjs">NEXT.JS (SERVER)</option>
+                       <option value="nextjs-static">NEXT.JS (STATIC)</option>
                        <option value="static">STATIC SITE (NGINX)</option>
-                     </select>
-                   </div>
-                 </div>
-               </div>
+                       </select>
+                       </div>
+                       </div>
+                       </div>
 
-               <div className="grid grid-cols-2 gap-6">
-                 <div>
-                   <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-3">Root Directory</label>
-                   <div className="relative group">
-                     <Layers className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600 group-focus-within:text-accent transition-colors" />
-                     <input 
-                       type="text" 
+                       <div className="grid grid-cols-2 gap-6">
+                       <div>
+                       <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-3">Root Directory</label>
+                       <div className="relative group">
+                       <Layers className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600 group-focus-within:text-accent transition-colors" />
+                       <input
+                       type="text"
                        placeholder="E.G. ./apps/api"
                        className="w-full bg-background border border-card-border rounded-2xl py-4 pl-12 pr-6 text-sm focus:border-accent outline-none transition-all text-white placeholder:text-gray-700 font-bold"
                        value={rootDir}
                        onChange={(e) => setRootDir(e.target.value)}
-                     />
-                   </div>
-                 </div>
-                 <div>
-                   <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-3">Internal Port</label>
-                   <div className="relative group">
-                     <Terminal className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600 group-focus-within:text-accent transition-colors" />
-                     <input 
-                       type="number" 
+                       />
+                       </div>
+                       </div>
+                       <div>
+                       <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-3">Internal Port</label>
+                       <div className="relative group">
+                       <Terminal className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600 group-focus-within:text-accent transition-colors" />
+                       <input
+                       type="number"
                        placeholder="Defaults to 8000"
                        className="w-full bg-background border border-card-border rounded-2xl py-4 pl-12 pr-6 text-sm focus:border-accent outline-none transition-all text-white placeholder:text-gray-700 font-bold"
                        value={internalPort || ''}
                        onChange={(e) => setInternalPort(parseInt(e.target.value) || 0)}
-                     />
-                   </div>
-                 </div>
-               </div>
-               <p className="mt-[-24px] text-[9px] text-gray-600 font-bold uppercase tracking-widest leading-relaxed">
-                 Use Root Directory for monorepos. Port detection will scan this folder for Dockerfile or autodeploy.yml.
-               </p>
-            </div>
-          )}
-
+                       />
+                       </div>
+                       </div>
+                       </div>
+                       <p className="mt-[-24px] text-[9px] text-gray-600 font-bold uppercase tracking-widest leading-relaxed">
+                       Use Root Directory for monorepos. Port detection will scan this folder for Dockerfile or autodeploy.yml.
+                       </p>
+                       </div>
+                       )}
           {activeTab === 'env' && (
             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
                <div className="flex justify-between items-center">

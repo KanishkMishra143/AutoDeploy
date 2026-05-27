@@ -62,6 +62,8 @@ def detect_app_port(app_id: UUID, current_user: dict = Depends(get_current_user)
             if app.stack == "nodejs": port, source = 8000, "Node.js Template"
             elif app.stack == "python": port, source = 8000, "Python Template"
             elif app.stack == "static": port, source = 80, "Static Site Template"
+            elif app.stack == "nextjs": port, source = 3000, "Next.js Template"
+            elif app.stack == "nextjs-static": port, source = 80, "Next.js Static Template"
 
         return {"detected_port": port, "source": source}
     except Exception as e:

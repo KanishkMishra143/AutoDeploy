@@ -116,6 +116,38 @@ ENV PORT {port}
 EXPOSE {port}
 CMD ["npm", "start"]
 """,
+    "nextjs": """
+FROM node:18-slim AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+COPY . .
+RUN npm run build
+
+FROM node:18-slim AS runner
+WORKDIR /app
+ENV NODE_ENV production
+COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/node_modules ./node_modules
+ENV PORT {port}
+EXPOSE {port}
+CMD ["npm", "start"]
+""",
+    "nextjs-static": """
+FROM node:18-slim AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+COPY . .
+RUN npm run build
+
+FROM nginx:alpine
+COPY --from=builder /app/out /usr/share/nginx/html
+RUN printf "server { listen %s; location / { root /usr/share/nginx/html; index index.html; try_files \\$uri \\$uri/ /index.html; } }" {port} > /etc/nginx/conf.d/default.conf
+EXPOSE {port}
+""",
     "static": """
 FROM nginx:alpine
 COPY . /usr/share/nginx/html
@@ -487,13 +519,20 @@ def run_container(db, job_id, image_tag, env_vars=None, app_name=None, internal_
                             "peak_mem": max_mem_seen
                         }
                         db.commit()
-                    raise RuntimeError(f"Predictive OOM/Resource Limit: Application exceeded 95% quota")
+                    # Use a custom exception or move outside the try-except to avoid being swallowed
+                    return {"error": f"Predictive OOM/Resource Limit: Application exceeded 95% quota"}
 
                 if i % 4 == 0: # Log every 2 seconds
                     trend_indicator = "↗️" if (len(mem_history) > 1 and mem_history[-1] > mem_history[-2]) else "➡️"
                     save_log(db, job_id, f"📊 [Sentinel] CPU: {cpu_val:>5.1f}% | MEM: {mem_val:>6.1f}MiB {trend_indicator}", owner_id=owner_id)
+            except RuntimeError as re:
+                # Re-raise explicit runtime errors
+                raise re
             except Exception:
                 continue
+    
+    # Check if we exited early with an error
+    # (Note: we changed raise to return above to be safer, but let's handle it)
 
     # Final Verification
     inspect_status = subprocess.run(
@@ -877,7 +916,27 @@ def pipeline_build(prev_result: dict):
         # Template Injection
         if not os.path.exists(dockerfile_path):
             if stack == "dockerfile":
-                if os.path.exists(os.path.join(effective_workspace, "package.json")): stack = "nodejs"
+                if os.path.exists(os.path.join(effective_workspace, "package.json")):
+                    # Check for Next.js in package.json
+                    try:
+                        with open(os.path.join(effective_workspace, "package.json"), "r") as f:
+                            pj = json.load(f)
+                            deps = {**pj.get("dependencies", {}), **pj.get("devDependencies", {})}
+                            if "next" in deps:
+                                stack = "nextjs"
+                                # Look for Static Export hint in config files
+                                for ext in ["js", "mjs", "ts"]:
+                                    cfg_path = os.path.join(effective_workspace, f"next.config.{ext}")
+                                    if os.path.exists(cfg_path):
+                                        with open(cfg_path, "r") as cf:
+                                            content = cf.read()
+                                            if "output: 'export'" in content or 'output: "export"' in content:
+                                                stack = "nextjs-static"
+                                                break
+                            else:
+                                stack = "nodejs"
+                    except:
+                        stack = "nodejs"
                 elif os.path.exists(os.path.join(effective_workspace, "requirements.txt")): stack = "python"
                 elif os.path.exists(os.path.join(effective_workspace, "index.html")): stack = "static"
             
@@ -917,7 +976,7 @@ def pipeline_build(prev_result: dict):
 
         # 🚀 HARDENING: Resolve the final port and ALWAYS sync the Dockerfile
         if not final_port:
-            final_port = discovered_port or (80 if stack == "static" else 8000)
+            final_port = discovered_port or (80 if stack in ["static", "nextjs-static"] else (3000 if stack == "nextjs" else 8000))
             payload_updates["internal_port"] = final_port
             save_log(db, job_id, f"ℹ️ Final target port resolved to: {final_port}", owner_id=owner_id)
         
@@ -998,7 +1057,7 @@ def pipeline_deploy(prev_result: dict):
         app_name = job.payload.get("app_name")
         internal_port = job.payload.get("internal_port")
         if not internal_port:
-            internal_port = 80 if stack == "static" else 8000
+            internal_port = 80 if stack in ["static", "nextjs-static"] else (3000 if stack == "nextjs" else 8000)
             
         volumes = job.payload.get("volumes", [])
         
