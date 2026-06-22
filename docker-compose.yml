@@ -1,7 +1,7 @@
 services:
   # --- Control Plane (Our Apps) ---
   api:
-    build: 
+    build:
       context: ./asynctasks
       dockerfile: Dockerfile
     container_name: autodeploy-api
@@ -10,7 +10,7 @@ services:
     env_file:
       - ./asynctasks/.env
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     depends_on:
       - db
       - redis
@@ -19,7 +19,7 @@ services:
       - autodeploy-net
 
   worker:
-    build: 
+    build:
       context: ./asynctasks
       dockerfile: Dockerfile.worker
     container_name: autodeploy-worker
@@ -36,7 +36,7 @@ services:
       - autodeploy-net
 
   beat:
-    build: 
+    build:
       context: ./asynctasks
       dockerfile: Dockerfile.worker
     container_name: autodeploy-beat
@@ -60,18 +60,18 @@ services:
       POSTGRES_PASSWORD: kanishk
       POSTGRES_DB: asynctasks
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - autodeploy-net
-  
+
   redis:
     image: redis:7-alpine
     container_name: autodeploy-redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     networks:
       - autodeploy-net
 
@@ -84,7 +84,7 @@ services:
       - ./vault_data:/vault/file
       - ./vault.hcl:/vault/config/vault.hcl:ro
     ports:
-      - "8200:8200"
+      - "127.0.0.1:8200:8200"
     cap_add:
       - IPC_LOCK
     networks:
@@ -121,8 +121,8 @@ services:
       - "--providers.docker.endpoint=unix:///var/run/docker.sock"
       - "--entrypoints.web.address=:80"
     ports:
-      - "80:80"
-      - "8080:8080"
+      - "127.0.0.1:80:80"
+      - "127.0.0.1:8080:8080"
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
     networks:
@@ -134,7 +134,7 @@ services:
     container_name: portainer
     restart: unless-stopped
     ports:
-      - "9000:9000"
+      - "127.0.0.1:9000:9000"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - portainer_data:/data

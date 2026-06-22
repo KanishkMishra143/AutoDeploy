@@ -13,9 +13,12 @@ venv/
 env/
 
 GEMINI.md
+CONTEXT.md  
 plan.md
 migration-to-public.md
 loopholes-before-live.md
+security-audit.md
+security-audit-notes.md
 
 # Node.js
 node_modules/
@@ -59,3 +62,9 @@ vault_data/
 .idea/
 *.swp
 *.swo
+
+# Files
+worker-flow.gv
+worker-flow.png
+
+.aider*
