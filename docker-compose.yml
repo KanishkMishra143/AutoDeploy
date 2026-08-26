@@ -121,8 +121,8 @@ services:
       - "--providers.docker.endpoint=unix:///var/run/docker.sock"
       - "--entrypoints.web.address=:80"
     ports:
-      - "127.0.0.1:80:80"
-      - "127.0.0.1:8080:8080"
+      - "80:80"
+      - "127.0.0.1:8090:8080"
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
     networks:
