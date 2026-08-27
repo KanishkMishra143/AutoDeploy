@@ -131,7 +131,7 @@ services:
   # --- Server Management ---
   portainer:
     image: portainer/portainer-ce:latest
-    container_name: portainer
+    container_name: autodeploy-portainer
     restart: unless-stopped
     ports:
       - "127.0.0.1:9000:9000"
