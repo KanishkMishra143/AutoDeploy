@@ -132,7 +132,7 @@ export default function Header({
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
-    window.location.reload();
+    window.location.href = "/";
   };
 
   const userMeta = user?.user_metadata || {};
@@ -155,7 +155,7 @@ export default function Header({
           }`}
         >
           {/* Logo Section */}
-          <Link href="/" className="flex items-center gap-3 md:gap-6 group cursor-pointer z-10">
+          <Link href="/dashboard" className="flex items-center gap-3 md:gap-6 group cursor-pointer z-10">
             <div className="relative shrink-0">
               <div className="absolute inset-0 bg-accent blur-xl opacity-20 group-hover:opacity-40 transition-opacity" />
               <div className="relative w-10 h-10 md:w-12 md:h-12 bg-accent rounded-xl md:rounded-2xl flex items-center justify-center shadow-lg shadow-accent/20 group-hover:scale-105 transition-transform duration-500">

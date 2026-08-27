@@ -40,7 +40,7 @@ export default function SettingsPage() {
   const router = useRouter();
 
   const onViewJob = (jobId: string) => {
-    router.push(`/?jobId=${jobId}`);
+    router.push(`/dashboard?jobId=${jobId}`);
   };
 
   const handleToggleNotification = async (key: string) => {
@@ -137,7 +137,7 @@ export default function SettingsPage() {
       });
       if (res.ok) {
         toast.success("Cluster purged successfully.");
-        router.push("/");
+        router.push("/dashboard");
       } else {
         toast.error("Failed to purge cluster.");
       }
@@ -169,14 +169,14 @@ export default function SettingsPage() {
         apps={apps}
         profile={profile}
         onViewJob={onViewJob}
-        onSelectApp={(app) => router.push(`/?appId=${app.id}`)}
+        onSelectApp={(app) => router.push(`/dashboard?appId=${app.id}`)}
         isModalOpen={isPurgeModalOpen}
       />
 
       <main className="pt-52 pb-20 px-8">
         <div className="max-w-4xl mx-auto">
           <Link 
-            href="/"
+            href="/dashboard"
             className="flex items-center gap-2 text-gray-500 hover:text-white transition-colors mb-8 group"
           >
             <ChevronLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />

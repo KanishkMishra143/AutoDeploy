@@ -1,621 +1,262 @@
 "use client";
-import { useState, useEffect } from "react";
-import { 
-  Activity, Server, Clock, CheckCircle2, XCircle, Loader2, Plus, 
-  StopCircle, RotateCcw, Box, Globe, ChevronRight, User, 
-  Settings as SettingsIcon, LayoutGrid, Rocket, LogOut, Search, Bell, ExternalLink, GitBranch, Terminal, AlertCircle,
-  ArrowUpDown
+
+import Link from "next/link";
+import { useState } from "react";
+import {
+  ArrowRight,
+  CheckCircle2,
+  Clock3,
+  Github,
+  Globe,
+  Radar,
+  Rocket,
+  Server,
+  ShieldCheck,
+  Workflow,
 } from "lucide-react";
-import toast from "react-hot-toast";
-import { useSearchParams, useRouter } from "next/navigation";
-import { useJobs, Job, Application } from "./useJobs";
-import { API_BASE_URL } from "@/lib/api";
-import LogViewer from "./components/LogViewer";
-import DeployModal from "./components/DeployModal";
-import AppDetailModal from "./components/HistoryModal"; 
-import TopologyMap from "./components/TopologyMap";
-import ConfirmationModal from "./components/ConfirmationModal";
-import Header from "./components/Header";
 import { supabase } from "../lib/supabase";
 
-export default function CanvasPage() {
-  const { jobs, apps, profile, credentials, loading, error, workerCount } = useJobs();
-  const searchParams = useSearchParams();
-  const router = useRouter();
-  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
-  const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
+const featureCards = [
+  {
+    icon: Rocket,
+    title: "One-click repository deployment",
+    description: "Connect a GitHub repo, choose a branch and runtime, and let AutoDeploy build and publish it without hand-managed server steps.",
+  },
+  {
+    icon: Radar,
+    title: "Real-time deployment visibility",
+    description: "Track running jobs, recent history, live status, and deployment results from a single control surface instead of scattered tools.",
+  },
+  {
+    icon: Workflow,
+    title: "Operational workflow in one place",
+    description: "Handle deployment triggers, topology awareness, and service lifecycle actions from the same product experience.",
+  },
+  {
+    icon: ShieldCheck,
+    title: "Auth-protected control plane",
+    description: "GitHub sign-in via Supabase keeps the orchestration layer private while still giving the project a public-facing product story.",
+  },
+];
 
-  // Pick up jobId or appId from URL if present
-  useEffect(() => {
-    const jobId = searchParams.get('jobId');
-    const appId = searchParams.get('appId');
-    
-    if (jobId) {
-      setSelectedJobId(jobId);
-    }
-    if (appId) {
-      setSelectedAppId(appId);
-    }
+const workflowSteps = [
+  "Sign in with GitHub and register a repository.",
+  "Configure branch, build pack, and deployment settings.",
+  "Trigger a deployment and watch the pipeline update live.",
+  "Open the deployed URL, inspect logs, or stop the service from the dashboard.",
+];
 
-    if (jobId || appId) {
-      // Clean up URL
-      router.replace('/');
-    }
-  }, [searchParams, router]);
+export default function LandingPage() {
+  const [isSigningIn, setIsSigningIn] = useState(false);
 
-  // Sync selectedApp with selectedAppId
-  useEffect(() => {
-    if (selectedAppId && apps.length > 0) {
-      const app = apps.find(a => a.id === selectedAppId);
-      if (app) setSelectedApp(app);
-      setSelectedAppId(null);
-    }
-  }, [selectedAppId, apps]);
-
-  const [showDeployModal, setShowDeployModal] = useState(false);
-  const [selectedApp, setSelectedApp] = useState<Application | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [ownedSortOrder, setOwnedSortOrder] = useState<"desc" | "asc">("desc");
-  const [sharedSortOrder, setSharedSortOrder] = useState<"desc" | "asc">("desc");
-  const [isHeaderOverlayOpen, setIsHeaderOverlayOpen] = useState(false);
-  
-  // Track job statuses to trigger toasts on completion
-  const [prevJobStatuses, setPrevJobStatuses] = useState<Record<string, string>>({});
-
-  useEffect(() => {
-    jobs.forEach(job => {
-      const prevStatus = prevJobStatuses[job.id];
-      if (prevStatus && prevStatus === 'running' && job.status !== 'running') {
-        const app = apps.find(a => a.id === job.app_id);
-        const appName = app?.name || "Application";
-        
-        if (job.status === 'success') {
-          toast.success(`${appName} deployed successfully!`, {
-            duration: 5000,
-            icon: '🚀'
-          });
-        } else if (job.status === 'failed') {
-          if (job.result?.is_violation) {
-            toast.error(`${appName} TERMINATED: Policy Violation detected!`, {
-              duration: 8000,
-              icon: '🚨'
-            });
-          } else {
-            toast.error(`${appName} deployment failed.`, {
-              duration: 6000
-            });
-          }
-        }
-      }
+  const handleLogin = async () => {
+    setIsSigningIn(true);
+    await supabase.auth.signInWithOAuth({
+      provider: "github",
+      options: {
+        redirectTo: `${window.location.origin}/dashboard`,
+      },
     });
-
-    // Update statuses for next run
-    const newStatuses: Record<string, string> = {};
-    jobs.forEach(j => { newStatuses[j.id] = j.status; });
-    setPrevJobStatuses(newStatuses);
-  }, [jobs, apps]);
-
-  useEffect(() => {
-    if (selectedApp) {
-      const fresh = apps.find(a => a.id === selectedApp.id);
-      if (fresh) setSelectedApp(fresh);
-    }
-  }, [apps]);
-
-  // Confirmation Modal State
-  const [confirmConfig, setConfirmConfig] = useState<{
-    isOpen: boolean;
-    title: string;
-    message: string;
-    confirmLabel: string;
-    confirmVariant: "danger" | "accent";
-    onConfirm: () => void;
-    isLoading?: boolean;
-  }>({
-    isOpen: false,
-    title: "",
-    message: "",
-    confirmLabel: "",
-    confirmVariant: "accent",
-    onConfirm: () => {},
-    isLoading: false
-  });
-
-  // Prevent background scroll when any modal is open
-  useEffect(() => {
-    const isModalOpen = showDeployModal || !!selectedApp || confirmConfig.isOpen || !!selectedJobId || isHeaderOverlayOpen;
-    if (isModalOpen) {
-      document.body.style.overflow = "hidden";
-    } else {
-      document.body.style.overflow = "unset";
-    }
-    return () => {
-      document.body.style.overflow = "unset";
-    };
-  }, [showDeployModal, selectedApp, confirmConfig.isOpen, selectedJobId, isHeaderOverlayOpen]);
-
-  const handleStopJob = (e: React.MouseEvent, jobId: string) => {
-    e.stopPropagation();
-    
-    setConfirmConfig({
-      isOpen: true,
-      title: "Stop Service",
-      message: "Are you sure you want to stop this service? This will kill the container and disconnect the live URL.",
-      confirmLabel: "Stop Container",
-      confirmVariant: "danger",
-      onConfirm: async () => {
-        setConfirmConfig(prev => ({ ...prev, isLoading: true }));
-        try {
-          const { data: { session } } = await supabase.auth.getSession();
-          const res = await fetch(`${API_BASE_URL}/jobs/${jobId}`, {
-            method: "DELETE",
-            headers: {
-              "Authorization": `Bearer ${session?.access_token}`,
-            }
-          });
-          if (res.ok) {
-            toast.success("Service termination signal sent.");
-          } else {
-            toast.error("Failed to stop service");
-          }
-          setConfirmConfig(prev => ({ ...prev, isOpen: false }));
-        } catch (err) {
-          console.error(err);
-          toast.error("Network error while stopping service");
-        } finally {
-          setConfirmConfig(prev => ({ ...prev, isLoading: false }));
-        }
-      }
-    });
-  };
-
-  // Track deploy loading state per appId to debounce clicks
-  const [deployingApps, setDeployingApps] = useState<Record<string, boolean>>({});
-
-  const deployApp = async (appId: string) => {
-    if (deployingApps[appId]) return; // Debounce if already in-flight
-    
-    setDeployingApps(prev => ({ ...prev, [appId]: true }));
-    const tId = toast.loading("Triggering deployment...");
-    
-    try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const res = await fetch(`${API_BASE_URL}/apps/${appId}/deploy?trigger_reason=Manual:Canvas`, { 
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${session?.access_token}`,
-          }
-        });
-        
-        if (res.ok) {
-            const data = await res.json();
-            setSelectedJobId(data.id);
-            toast.success("Deployment started!", { id: tId });
-        } else if (res.status === 409) {
-            toast.error("Deployment already in progress", { id: tId });
-        } else {
-            toast.error("Deployment failed to trigger", { id: tId });
-        }
-    } catch (err) {
-        console.error(err);
-        toast.error("Connection error", { id: tId });
-    } finally {
-        setDeployingApps(prev => ({ ...prev, [appId]: false }));
-    }
-  };
-
-  const filteredApps = apps.filter(app =>
-    app.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    app.repo_url.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const ownedApps = filteredApps
-    .filter(app => app.role === 'OWNER')
-    .sort((a, b) => {
-      const dateA = new Date(a.updated_at).getTime();
-      const dateB = new Date(b.updated_at).getTime();
-      return ownedSortOrder === "desc" ? dateB - dateA : dateA - dateB;
-    });
-
-  const sharedApps = filteredApps
-    .filter(app => app.role !== 'OWNER')
-    .sort((a, b) => {
-      const dateA = new Date(a.updated_at).getTime();
-      const dateB = new Date(b.updated_at).getTime();
-      return sharedSortOrder === "desc" ? dateB - dateA : dateA - dateB;
-    });
-
-  const renderAppCard = (app: Application) => {
-    const latestJob = jobs.find(j => j.app_id === app.id);
-    const isRunning = latestJob?.status === 'running';
-    const progressMsg = latestJob?.result?.progress_msg || "Initializing...";
-    const progressPct = latestJob?.result?.progress_pct || 0;
-
-    return (
-      <div 
-        key={app.id} 
-        onClick={() => setSelectedApp(app)}
-        className="group relative pt-6 z-10 hover:z-20 transition-[z-index] duration-0"
-      >
-        {/* Smart Progress Tab (Slides out from top) */}
-        <div 
-          onClick={(e) => {
-            e.stopPropagation();
-            if (latestJob) setSelectedJobId(latestJob.id);
-          }}
-          className={`absolute top-0 left-0 right-0 h-20 bg-accent rounded-t-[28px] flex items-start pt-4 px-8 transition-all duration-500 ease-out z-0 cursor-pointer hover:bg-accent/90 active:scale-[0.98] ${isRunning ? '-translate-y-8 opacity-100' : 'translate-y-0 opacity-0 pointer-events-none'}`}
-        >
-            <div className="flex flex-col w-full gap-3">
-               <div className="flex justify-between items-center">
-                  <span className="text-[11px] font-black text-white uppercase tracking-widest flex items-center gap-2">
-                     <Loader2 className="w-4 h-4 animate-spin" />
-                     {progressMsg}
-                  </span>
-                  <div className="flex items-center gap-2">
-                     <span className="px-2 py-0.5 bg-white/20 rounded text-[9px] font-black text-white uppercase tracking-tighter flex items-center gap-1">
-                        <Terminal className="w-2.5 h-2.5" /> View Logs
-                     </span>
-                     <span className="text-[11px] font-black text-white/80">{progressPct}%</span>
-                  </div>
-               </div>
-               <div className="h-2 bg-white/20 rounded-full overflow-hidden border border-white/10 p-0.5">
-                  <div 
-                    className="h-full bg-white rounded-full transition-all duration-1000 ease-in-out shadow-[0_0_12px_rgba(255,255,255,0.6)]" 
-                    style={{ width: `${progressPct}%` }} 
-                  />
-               </div>
-            </div>
-        </div>
-
-        <div className="bg-card border border-card-border rounded-[22px] md:rounded-[28px] overflow-hidden hover:border-accent/40 transition-all cursor-pointer relative z-10 shadow-xl">
-          <div className="p-6 md:p-8">
-            <div className="flex justify-between items-start mb-6 md:mb-8">
-               <div className="flex flex-col gap-3">
-                 <div className="p-3 md:p-4 bg-accent/5 rounded-xl md:rounded-2xl border border-accent/10 group-hover:bg-accent/10 transition-colors text-accent group-hover:scale-110 duration-300 w-fit">
-                    <Box className="w-6 h-6 md:w-7 md:h-7" />
-                 </div>
-                 {app.role && app.role !== 'OWNER' && (
-                   <span className="px-2 py-0.5 bg-blue-500/10 text-blue-500 text-[8px] font-black rounded uppercase tracking-widest border border-blue-500/20 w-fit animate-in fade-in zoom-in-95">
-                     {app.role} Access
-                   </span>
-                 )}
-               </div>
-               {latestJob ? (
-                 <StatusBadge 
-                   status={latestJob.status} 
-                   isViolation={latestJob.result?.is_violation}
-                   onClick={(e) => {
-                     e.stopPropagation();
-                     setSelectedJobId(latestJob.id);
-                   }}
-                 />
-               ) : (
-                 <span className="text-[10px] font-bold text-gray-600 uppercase tracking-widest">Pending</span>
-               )}
-            </div>
-            
-            <h4 className="text-xl md:text-2xl font-black mb-1 text-white uppercase tracking-tighter">{app.name}</h4>
-            <div className="space-y-1 md:space-y-1.5 mb-6 md:mb-8">
-              <p className="text-[10px] md:text-xs text-gray-500 font-mono flex items-center gap-1.5 truncate opacity-60">
-                <Globe className="w-3 md:w-3.5 h-3 md:h-3.5" /> {app.repo_url}
-              </p>
-              <p className="text-[9px] md:text-[10px] text-accent/70 font-bold flex items-center gap-1.5 uppercase tracking-widest">
-                <GitBranch className="w-3 md:w-3.5 h-3 md:h-3.5" /> {app.branch || 'main'}
-              </p>
-            </div>
-
-            {latestJob?.status === 'failed' && latestJob.result?.is_violation && (
-              <div className="mb-6 p-3 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-2">
-                 <div className="bg-red-500/20 p-1.5 rounded-lg border border-red-500/20 animate-pulse">
-                    <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
-                 </div>
-                 <div className="flex-1 min-w-0">
-                    <p className="text-[10px] font-black text-red-500 uppercase tracking-widest leading-none mb-0.5">
-                       Policy Violation
-                    </p>
-                    <p className="text-[9px] font-bold text-gray-500 uppercase tracking-tight truncate">
-                       {latestJob.result.violation_type} Termination
-                    </p>
-                 </div>
-              </div>
-            )}
-
-            {latestJob?.status === 'failed' && !latestJob.result?.is_violation && latestJob.result?.diagnosis && (
-              <div className="mb-6 p-3 bg-red-500/5 border border-red-500/10 rounded-xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-2">
-                 <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
-                 <p className="text-[10px] font-bold text-red-500/80 uppercase tracking-tight truncate">
-                    {latestJob.result.diagnosis.title} Detected
-                 </p>
-              </div>
-            )}
-
-            <div className="flex gap-2.5 pointer-events-auto" onClick={(e) => e.stopPropagation()}>
-
-              <button 
-                onClick={() => deployApp(app.id)}
-                disabled={app.role === 'VIEWER' || deployingApps[app.id]}
-                title={app.role === 'VIEWER' ? "Only owners and admins can redeploy" : "Redeploy"}
-                className="flex-1 bg-accent/10 hover:bg-accent/20 text-accent py-3 rounded-xl text-[11px] font-black transition-all flex items-center justify-center gap-2 uppercase tracking-widest border border-accent/10 disabled:opacity-20 disabled:cursor-not-allowed"
-              >
-                {deployingApps[app.id] ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
-                {deployingApps[app.id] ? "Starting..." : "Redeploy"}
-              </button>
-              
-              {latestJob?.status === "success" && latestJob.result?.url && (
-                 <a 
-                   href={latestJob.result.url} 
-                   target="_blank" 
-                   className="p-3 bg-green-500/10 hover:bg-green-500/20 text-green-500 rounded-xl transition-all border border-green-500/10"
-                   title="View Live"
-                 >
-                   <ExternalLink className="w-5 h-5" />
-                 </a>
-              )}
-
-              <button 
-                onClick={(e) => latestJob?.id && handleStopJob(e, latestJob.id)}
-                disabled={!latestJob || latestJob.status !== 'success' || app.role === 'VIEWER'}
-                title={app.role === 'VIEWER' ? "Only owners and admins can stop services" : "Stop Service"}
-                className="p-3 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-xl transition-all disabled:opacity-20 disabled:cursor-not-allowed border border-red-500/10"
-              >
-                <StopCircle className="w-5 h-5" />
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <Header
-        workerCount={workerCount}
-        apiError={error}
-        onSearch={setSearchQuery}
-        jobs={jobs}
-        apps={apps}
-        profile={profile}
-        onViewJob={setSelectedJobId}
-        onSelectApp={setSelectedApp}
-        isModalOpen={showDeployModal || !!selectedApp || confirmConfig.isOpen || !!selectedJobId || isHeaderOverlayOpen}
-        onOverlayToggle={setIsHeaderOverlayOpen}
-      />
-      <main className="pt-28 md:pt-48 pb-10 md:pb-20 px-4 md:px-8">
-        {selectedJobId && (
-          <LogViewer jobId={selectedJobId} onClose={() => setSelectedJobId(null)} />
-        )}
+    <main className="relative min-h-screen overflow-hidden bg-background text-white">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.18),transparent_32%),radial-gradient(circle_at_80%_20%,rgba(16,185,129,0.12),transparent_22%),linear-gradient(180deg,#050505_0%,#0a0a0a_50%,#050505_100%)]" />
+      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
 
-        {showDeployModal && (
-          <DeployModal onClose={(jobId) => {
-            setShowDeployModal(false);
-            if (jobId) {
-              setSelectedJobId(jobId);
-              toast.success("New application registered!");
-            }
-          }} />
-        )}
+      <section className="relative px-5 pb-20 pt-6 md:px-10 md:pb-28 md:pt-8">
+        <div className="mx-auto max-w-6xl">
+          <header className="glass mb-14 flex items-center justify-between rounded-[28px] px-5 py-4 md:px-7">
+            <div className="flex items-center gap-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-accent shadow-lg shadow-accent/20">
+                <Rocket className="h-6 w-6 text-white" />
+              </div>
+              <div>
+                <p className="text-lg font-black uppercase tracking-tight">AutoDeploy</p>
+                <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-gray-500">Developer-first deployment orchestration</p>
+              </div>
+            </div>
 
-        {selectedApp && (
-          <AppDetailModal 
-            app={selectedApp} 
-            onClose={() => setSelectedApp(null)} 
-            onViewLogs={(id) => setSelectedJobId(id)}
-            allJobs={jobs}
-            allApps={apps}
-            credentials={credentials}
-          />
-        )}
+            <div className="flex items-center gap-3">
+              <a
+                href="#features"
+                className="hidden rounded-2xl border border-white/10 px-4 py-3 text-[11px] font-black uppercase tracking-[0.2em] text-gray-300 transition hover:border-white/20 hover:text-white md:inline-flex"
+              >
+                Explore
+              </a>
+              <button
+                onClick={handleLogin}
+                disabled={isSigningIn}
+                className="inline-flex items-center gap-2 rounded-2xl bg-white px-5 py-3 text-[11px] font-black uppercase tracking-[0.2em] text-black transition hover:bg-accent hover:text-white disabled:cursor-wait disabled:opacity-70"
+              >
+                <Github className="h-4 w-4" />
+                {isSigningIn ? "Signing In" : "Open Dashboard"}
+              </button>
+            </div>
+          </header>
 
-        <ConfirmationModal 
-          isOpen={confirmConfig.isOpen}
-          title={confirmConfig.title}
-          message={confirmConfig.message}
-          confirmLabel={confirmConfig.confirmLabel}
-          confirmVariant={confirmConfig.confirmVariant}
-          onConfirm={confirmConfig.onConfirm}
-          onCancel={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))}
-          isLoading={confirmConfig.isLoading}
-        />
-
-        <div className="max-w-7xl mx-auto">
-          {/* Hero Section */}
-          <div className="flex flex-col md:flex-row md:justify-between md:items-end gap-6 mb-12 md:mb-16">
+          <div className="grid gap-10 lg:grid-cols-[1.2fr_0.8fr] lg:items-end">
             <div>
-              <div className="flex items-center gap-2 mb-3">
-                <span className="px-2 py-0.5 bg-accent/10 text-accent text-[9px] font-black rounded uppercase tracking-widest border border-accent/20">v0.5 ALPHA</span>
+              <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2">
+                <span className="h-2 w-2 rounded-full bg-accent shadow-[0_0_12px_rgba(59,130,246,0.8)]" />
+                <span className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400"> Welcome to the future of orchestration!</span>
               </div>
-              <h2 className="text-3xl md:text-4xl font-black tracking-tighter text-white uppercase mb-2">Workspace</h2>
-              <p className="text-gray-500 text-xs md:text-sm max-w-md font-medium">Manage your distributed application cluster from a single pane of glass.</p>
+
+              <h1 className="max-w-4xl text-5xl font-black uppercase leading-[0.92] tracking-[-0.05em] text-white md:text-7xl">
+                Deploy repositories through a focused orchestration control plane.
+              </h1>
+
+              <p className="mt-6 max-w-2xl text-base leading-8 text-gray-300 md:text-lg">
+                AutoDeploy is a full-stack deployment solution that turns a GitHub repository into a managed application workflow.
+                It centralizes repo onboarding, deployment execution, live status tracking, and service control in one dashboard.
+              </p>
+
+              <div className="mt-8 flex flex-col gap-4 sm:flex-row">
+                <button
+                  onClick={handleLogin}
+                  disabled={isSigningIn}
+                  className="inline-flex items-center justify-center gap-3 rounded-[22px] bg-accent px-6 py-4 text-xs font-black uppercase tracking-[0.22em] text-white transition hover:bg-blue-500 disabled:cursor-wait disabled:opacity-70"
+                >
+                  Launch With GitHub
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+                <Link
+                  href="#workflow"
+                  className="inline-flex items-center justify-center gap-3 rounded-[22px] border border-white/10 bg-white/5 px-6 py-4 text-xs font-black uppercase tracking-[0.22em] text-gray-200 transition hover:border-white/20 hover:bg-white/10"
+                >
+                  See Workflow
+                </Link>
+              </div>
             </div>
-            
-            <button 
-              onClick={() => setShowDeployModal(true)}
-              className="bg-accent hover:bg-accent/90 text-white px-6 py-3 md:py-3.5 rounded-xl md:rounded-2xl flex items-center justify-center gap-3 text-sm font-black transition-all shadow-xl shadow-accent/20 active:scale-95 uppercase tracking-widest border border-accent/20 w-full md:w-auto"
-            >
-              <Plus className="w-5 h-5" />
-              New Application
-            </button>
-          </div>
 
-          {/* Global Topology Map Section (Compact) */}
-          <div className="mb-16">
-             <div className="flex items-center gap-2 mb-6">
-                <Activity className="w-5 h-5 text-accent" />
-                <h3 className="text-xl font-bold text-white uppercase tracking-tight">Global Infrastructure</h3>
-             </div>
-             <TopologyMap 
-               apps={apps} 
-               jobs={jobs} 
-               compact={true} 
-               onAppClick={(app) => setSelectedApp(app)} 
-             />
-          </div>
-
-          {/* Applications Section */}
-          <div className="mb-24 mt-12">
-            {loading && apps.length === 0 ? (
-              <div className="h-64 flex items-center justify-center">
-                  <div className="flex flex-col items-center gap-4">
-                    <Loader2 className="w-10 h-10 animate-spin text-accent" />
-                    <p className="text-xs font-bold text-gray-500 uppercase tracking-widest">Waking up cluster...</p>
-                  </div>
+            <div className="glass rounded-[32px] p-6 md:p-8">
+              <div className="mb-6 flex items-center justify-between">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-500">Overview</p>
+                  <h2 className="mt-2 text-2xl font-black uppercase tracking-tight">Why it matters</h2>
+                </div>
+                <Server className="h-8 w-8 text-accent" />
               </div>
-            ) : filteredApps.length === 0 ? (
-               <div className="rounded-[32px] border-2 border-dashed border-card-border p-20 flex flex-col items-center justify-center text-gray-500 bg-card/20 backdrop-blur-sm">
-                  <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mb-6">
-                    <Box className="w-10 h-10 opacity-20" />
-                  </div>
-                  <h4 className="text-white font-bold mb-2">No applications found</h4>
-                  <p className="text-sm mb-8 text-center max-w-xs">
-                    {searchQuery ? `No results matching "${searchQuery}"` : "Get started by creating your first application in this workspace."}
+
+              <div className="space-y-4">
+                <div className="rounded-3xl border border-white/8 bg-white/[0.03] p-5">
+                  <p className="mt-2 text-sm leading-7 text-gray-300">
+                    This is not just a UI mockup. It demonstrates product thinking, deployment workflow design, authentication, and operational observability in one system.
                   </p>
-                  {!searchQuery && (
-                    <button 
-                      onClick={() => setShowDeployModal(true)}
-                      className="px-6 py-2.5 bg-white/5 hover:bg-white/10 text-white rounded-xl text-xs font-bold transition-all border border-white/5"
-                    >
-                      Initialize App
-                    </button>
-                  )}
-               </div>
-            ) : (
-              <div className="space-y-20">
-                {/* Your Applications Section */}
-                {ownedApps.length > 0 && (
-                  <div>
-                    <div className="flex items-center justify-between mb-10 text-white">
-                      <div className="flex items-center gap-2">
-                        <Box className="w-5 h-5 text-accent" />
-                        <h3 className="text-xl font-bold uppercase tracking-tight">Your Projects</h3>
-                        <span className="ml-3 px-2 py-0.5 bg-accent/10 text-accent text-[10px] font-black rounded border border-accent/20">{ownedApps.length}</span>
-                      </div>
-                      <button 
-                        onClick={() => setOwnedSortOrder(ownedSortOrder === 'desc' ? 'asc' : 'desc')}
-                        className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl border border-white/5 text-[10px] font-black uppercase tracking-widest transition-all"
-                      >
-                        <ArrowUpDown className="w-3.5 h-3.5 text-accent" />
-                        Last Modified: {ownedSortOrder === 'desc' ? 'Newest' : 'Oldest'}
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                      {ownedApps.map(app => renderAppCard(app))}
-                    </div>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="rounded-3xl border border-white/8 bg-white/[0.03] p-5">
+                    <Clock3 className="mb-3 h-5 w-5 text-emerald-400" />
+                    <p className="text-sm font-black uppercase tracking-wider">Live pipeline feedback</p>
+                    <p className="mt-2 text-sm text-gray-400">Recent jobs, running states, logs, and deployment results stay visible.</p>
                   </div>
-                )}
-
-                {/* Shared Section */}
-                {sharedApps.length > 0 && (
-                  <div>
-                    <div className="flex items-center justify-between mb-10 text-white">
-                      <div className="flex items-center gap-2">
-                        <User className="w-5 h-5 text-blue-500" />
-                        <h3 className="text-xl font-bold uppercase tracking-tight">Shared with You</h3>
-                        <span className="ml-3 px-2 py-0.5 bg-blue-500/10 text-blue-500 text-[10px] font-black rounded border border-blue-500/20">{sharedApps.length}</span>
-                      </div>
-                      <button 
-                        onClick={() => setSharedSortOrder(sharedSortOrder === 'desc' ? 'asc' : 'desc')}
-                        className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl border border-white/5 text-[10px] font-black uppercase tracking-widest transition-all"
-                      >
-                        <ArrowUpDown className="w-3.5 h-3.5 text-blue-500" />
-                        Last Modified: {sharedSortOrder === 'desc' ? 'Newest' : 'Oldest'}
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                      {sharedApps.map(app => renderAppCard(app))}
-                    </div>
+                  <div className="rounded-3xl border border-white/8 bg-white/[0.03] p-5">
+                    <Globe className="mb-3 h-5 w-5 text-blue-400" />
+                    <p className="text-sm font-black uppercase tracking-wider">From repo to URL</p>
+                    <p className="mt-2 text-sm text-gray-400">The product story is clear: source code in, deployed service out.</p>
                   </div>
-                )}
+                </div>
               </div>
-            )}
-          </div>
-
-          {/* Recent Activity Section */}
-          <div className="max-w-4xl">
-              <div className="flex items-center gap-2 mb-6">
-                  <Activity className="w-5 h-5 text-gray-500" />
-                  <h3 className="text-xl font-bold text-white uppercase tracking-tight">Recent Activity</h3>
-              </div>
-              
-              <div className="grid gap-3">
-                 {jobs.length === 0 ? (
-                    <div className="p-8 border border-dashed border-card-border rounded-[24px] text-center">
-                       <p className="text-gray-600 text-xs font-bold uppercase tracking-[0.2em]">No operational logs</p>
-                    </div>
-                 ) : (
-                   jobs.map(job => {
-                     const app = apps.find(a => job.app_id === a.id);
-                     return (
-                       <div 
-                          key={job.id} 
-                          onClick={() => setSelectedJobId(job.id)}
-                          className="bg-card/30 border border-card-border p-5 rounded-2xl flex items-center justify-between hover:bg-card hover:border-accent/20 transition-all cursor-pointer group"
-                        >
-                          <div className="flex items-center gap-5">
-                             <div className={`w-2.5 h-2.5 rounded-full ${job.status === 'success' ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]' : job.status === 'running' ? 'bg-blue-500 animate-pulse' : job.status === 'stopped' ? 'bg-gray-500' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]'}`} />
-                             <div>
-                                <p className="text-sm font-black text-white flex items-center gap-2 uppercase tracking-tight">
-                                  {job.type} {job.build_number ? `Build #${job.build_number}` : 'Job'} 
-                                  {app && <span className="px-2 py-0.5 bg-accent text-white text-[9px] rounded font-black uppercase tracking-tighter ml-1">{app.name}</span>}
-                                </p>
-                                <p className="text-[10px] text-gray-500 font-mono mt-0.5">Operation Ref: {job.id.split('-')[0]}</p>
-                             </div>
-                          </div>
-                          
-                          <div className="flex items-center gap-8">
-                             <div className="text-right">
-                                <div className="flex items-center gap-2 justify-end">
-                                   <span className="opacity-0 group-hover:opacity-100 transition-opacity text-[9px] font-black text-accent flex items-center gap-1">
-                                      <Terminal className="w-3 h-3" /> {job.result?.is_violation ? 'AUDIT' : 'LOGS'}
-                                   </span>
-                                   <p className={`text-[10px] font-black uppercase tracking-widest ${job.status === 'failed' ? 'text-red-500' : job.status === 'running' ? 'text-blue-500' : job.status === 'success' ? 'text-green-500' : 'text-gray-400'}`}>
-                                      {job.status === 'failed' && job.result?.is_violation ? 'KILLED' : job.status}
-                                   </p>
-                                </div>
-                                <p className="text-[10px] text-gray-500 font-medium">{new Date(job.updated_at).toLocaleTimeString()}</p>
-                             </div>
-                             <div className="p-2 bg-white/5 rounded-lg group-hover:bg-accent/10 group-hover:text-accent transition-all duration-300">
-                                <ChevronRight className="w-4 h-4" />
-                             </div>
-                          </div>
-                       </div>
-                     )
-                   })
-                 )}
-              </div>
+            </div>
           </div>
         </div>
-      </main>
-    </div>
-  );
-}
+      </section>
 
-function StatusBadge({ status, isViolation, onClick }: { status: string, isViolation?: boolean, onClick?: (e: React.MouseEvent) => void }) {
-  const styles: Record<string, any> = {
-    queued: { icon: Clock, color: "text-yellow-500", bg: "bg-yellow-500/10" },
-    running: { icon: Loader2, color: "text-blue-500", bg: "bg-blue-500/10", animate: "animate-spin" },
-    success: { icon: CheckCircle2, color: "text-green-500", bg: "bg-green-500/10" },
-    failed: { icon: XCircle, color: "text-red-500", bg: "bg-red-500/10" },
-    stopped: { icon: StopCircle, color: "text-gray-500", bg: "bg-gray-500/10" },
-  };
+      <section id="features" className="relative px-5 py-16 md:px-10 md:py-24">
+        <div className="mx-auto max-w-6xl">
+          <div className="mb-10 max-w-2xl">
+            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-500">Core capabilities</p>
+            <h2 className="mt-3 text-3xl font-black uppercase tracking-tight md:text-4xl">What AutoDeploy can do</h2>
+            <p className="mt-4 text-sm leading-7 text-gray-400 md:text-base">
+              The landing page explains the product in plain language so a recruiter, teammate, or interviewer can understand the system quickly.
+            </p>
+          </div>
 
-  const config = styles[status] || styles.queued;
-  const Icon = config.icon;
-  const label = isViolation ? "KILLED" : status;
+          <div className="grid gap-5 md:grid-cols-2">
+            {featureCards.map((feature) => (
+              <article key={feature.title} className="glass rounded-[28px] p-6 md:p-7">
+                <feature.icon className="mb-5 h-7 w-7 text-accent" />
+                <h3 className="text-xl font-black uppercase tracking-tight text-white">{feature.title}</h3>
+                <p className="mt-3 text-sm leading-7 text-gray-400">{feature.description}</p>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
 
-  return (
-    <div 
-      onClick={onClick}
-      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl ${config.bg} ${config.color} text-[10px] font-black uppercase tracking-widest border border-white/5 ${isViolation ? 'animate-pulse shadow-[0_0_15px_rgba(239,68,68,0.2)]' : ''} ${onClick ? 'cursor-pointer hover:brightness-125 transition-all active:scale-95 group/status' : ''}`}
-    >
-      <Icon className={`w-3.5 h-3.5 ${config.animate || ""}`} />
-      {label}
-      {onClick && (
-        <span className="ml-1 opacity-50 group-hover/status:opacity-100 flex items-center gap-1 border-l border-current pl-1.5 transition-opacity">
-           <Terminal className="w-3 h-3" />
-           {status === 'running' ? 'LOGS' : isViolation ? 'AUDIT' : 'VIEW'}
-        </span>
-      )}
-    </div>
+      <section id="workflow" className="relative px-5 py-16 md:px-10 md:py-24">
+        <div className="mx-auto grid max-w-6xl gap-8 lg:grid-cols-[0.8fr_1.2fr]">
+          <div className="glass rounded-[30px] p-7 md:p-8">
+            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-500">System narrative</p>
+            <h2 className="mt-3 text-3xl font-black uppercase tracking-tight">How the experience flows</h2>
+            <p className="mt-4 text-sm leading-7 text-gray-400">
+              The product now works as a guided path from authentication to deployment operations, which makes the whole system easier to present.
+            </p>
+          </div>
+
+          <div className="space-y-4">
+            {workflowSteps.map((step, index) => (
+              <div key={step} className="glass flex gap-4 rounded-[28px] p-5 md:p-6">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-accent/15 text-sm font-black text-accent">
+                  0{index + 1}
+                </div>
+                <div>
+                  <p className="text-lg font-black uppercase tracking-tight text-white">{step}</p>
+                  <p className="mt-2 text-sm leading-7 text-gray-400">
+                    {index === 0 && "Authentication gates access to the private control plane while keeping the project presentation public."}
+                    {index === 1 && "Deployment setup makes it clear the app supports configurable runtime behavior rather than a static demo path."}
+                    {index === 2 && "Operational visibility is part of the product experience, not just backend plumbing."}
+                    {index === 3 && "The loop closes with live URLs, logs, topology context, and direct lifecycle controls."}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="relative px-5 py-16 md:px-10 md:py-24">
+        <div className="mx-auto max-w-6xl rounded-[36px] border border-white/10 bg-white/[0.04] p-8 md:p-12">
+          <div className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-500">Interview talking points</p>
+              <h2 className="mt-3 text-3xl font-black uppercase tracking-tight md:text-4xl">
+                The project now reads like a complete product, not a hidden internal screen.
+              </h2>
+              <div className="mt-6 space-y-3 text-sm leading-7 text-gray-300">
+                <p>It has a clear public-facing explanation of the problem space.</p>
+                <p>It shows the practical value of the system before asking the user to sign in.</p>
+                <p>It gives you a stronger narrative for your CV, portfolio, and demos.</p>
+              </div>
+            </div>
+
+            <div className="glass rounded-[30px] p-6 md:p-8">
+              <p className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-500">Highlights</p>
+              <div className="mt-5 space-y-4">
+                {[
+                  "Public root landing page on auto-deploy.tech",
+                  "Protected dashboard after GitHub authentication",
+                  "Single-product story from repository intake to live deployment",
+                ].map((item) => (
+                  <div key={item} className="flex items-start gap-3">
+                    <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-400" />
+                    <p className="text-sm leading-7 text-gray-300">{item}</p>
+                  </div>
+                ))}
+              </div>
+
+              <button
+                onClick={handleLogin}
+                disabled={isSigningIn}
+                className="mt-8 inline-flex w-full items-center justify-center gap-3 rounded-[22px] bg-white px-6 py-4 text-xs font-black uppercase tracking-[0.22em] text-black transition hover:bg-accent hover:text-white disabled:cursor-wait disabled:opacity-70"
+              >
+                <Github className="h-4 w-4" />
+                {isSigningIn ? "Redirecting" : "Sign In To Continue"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
   );
 }
