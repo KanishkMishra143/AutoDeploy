@@ -1,3 +1,4 @@
+import os
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from core.database import engine, get_db, session_scope
 from core.models import Base, Log, Application, Job, Worker
@@ -10,7 +11,13 @@ from api.routes.apps import router as apps_router
 from api.routes.auth import router as auth_router
 
 Base.metadata.create_all(bind=engine)
-app = FastAPI(title="AsyncTasks API")
+ENABLE_API_DOCS = os.getenv("ENABLE_API_DOCS", "false").lower() == "true"
+app = FastAPI(
+    title="AsyncTasks API",
+    docs_url="/docs" if ENABLE_API_DOCS else None,
+    redoc_url="/redoc" if ENABLE_API_DOCS else None,
+    openapi_url="/openapi.json" if ENABLE_API_DOCS else None,
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -53,7 +60,7 @@ async def websocket_logs(websocket: WebSocket, job_id: str):
         return
 
     user_id = None
-    
+
     # 1. Check for API Key (CLI)
     if token.startswith("ad_live_"):
         import hashlib
@@ -63,7 +70,7 @@ async def websocket_logs(websocket: WebSocket, job_id: str):
             api_key = db.query(APIKey).filter(APIKey.key_hash == key_hash).first()
             if api_key:
                 user_id = str(api_key.user_id)
-    
+
     # 2. Fallback to JWT (Dashboard)
     if not user_id:
         payload = verify_token(token)
@@ -75,7 +82,7 @@ async def websocket_logs(websocket: WebSocket, job_id: str):
         return
 
     await websocket.accept()
-    
+
     # 1. INITIAL HISTORY: Send all existing logs from the database once
     with session_scope() as db:
         # First, check if this is an Application ID by mistake
@@ -98,7 +105,7 @@ async def websocket_logs(websocket: WebSocket, job_id: str):
     # 2. REAL-TIME STREAMING: Subscribe to Redis channel for this job
     pubsub = async_redis_client.pubsub()
     await pubsub.subscribe(f"logs:{job_id}")
-    
+
     try:
         async for message in pubsub.listen():
             if message["type"] == "message":
@@ -106,10 +113,9 @@ async def websocket_logs(websocket: WebSocket, job_id: str):
                 log_data = json.loads(message["data"])
                 # Send as a list to maintain compatibility with the frontend expected format
                 await websocket.send_json([log_data])
-                
+
     except WebSocketDisconnect:
         print(f"Client disconnected from logs for job {job_id}")
     finally:
         await pubsub.unsubscribe(f"logs:{job_id}")
         await pubsub.close()
-
