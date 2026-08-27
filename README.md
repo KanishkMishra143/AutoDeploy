@@ -1,130 +1,99 @@
-    # AutoDeploy 🚀
+<div align="center">
 
-**The Next-Generation Open-Source PaaS Orchestrator**
+<img
+  width="128"
+  alt="AutoDeploy rocket logo"
+  src="https://raw.githubusercontent.com/KanishkMishra143/AutoDeploy/master/dashboard/src/app/icon.svg"
+/>
 
-AutoDeploy is a modern, developer-friendly Platform as a Service (PaaS) designed to bridge the gap between source code and live infrastructure. Inspired by the developer experience of **Render** and **Railway**, it transforms your repositories into live, production-grade applications with zero-config networking, real-time observability, and multi-tenant security.
+# AutoDeploy
 
----
+### From Git push to production, without the infrastructure busywork.
 
-## 🏗 High-Level Architecture
+AutoDeploy is a modern platform-as-a-service that builds, deploys, and
+monitors applications from GitHub and GitLab repositories.
 
-AutoDeploy follows a decoupled **Control Plane vs. Data Plane** architecture, allowing the "Brain" to live in the cloud while the "Hands" execute locally or on distributed edge nodes.
+<p>
+  <a href="https://auto-deploy.tech">
+    <img src="https://img.shields.io/badge/Website-Visit%20AutoDeploy-3b82f6?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Website">
+  </a>
+  <a href="https://github.com/KanishkMishra143/AutoDeploy#readme">
+    <img src="https://img.shields.io/badge/Documentation-Read%20the%20Docs-24292f?style=for-the-badge&logo=github&logoColor=white" alt="Documentation">
+  </a>
+  <a href="https://api.auto-deploy.tech/health">
+    <img src="https://img.shields.io/website?url=https%3A%2F%2Fapi.auto-deploy.tech%2Fhealth&style=for-the-badge&label=API%20Status&logo=fastapi&logoColor=white" alt="API status">
+  </a>
+  <a href="https://github.com/KanishkMishra143/AutoDeploy">
+    <img src="https://img.shields.io/badge/GitHub-View%20Source-181717?style=for-the-badge&logo=github&logoColor=white" alt="GitHub">
+  </a>
+</p>
 
-### 🧠 Control Plane (API)
-- **Framework:** FastAPI (Python 3.11+)
-- **Identity & Auth:** Supabase Auth (JWT-based multi-tenancy)
-- **Database:** Supabase (Cloud PostgreSQL 15+)
-- **State Management:** SQLAlchemy 2.0 (Synchronous with strict ownership filtering)
+<p>
+  <img src="https://img.shields.io/website?url=https%3A%2F%2Fauto-deploy.tech&style=flat-square&label=dashboard" alt="Dashboard status">
+  <img src="https://img.shields.io/github/last-commit/KanishkMishra143/AutoDeploy/master?style=flat-square&label=last%20updated" alt="Last updated">
+</p>
 
-### ⚙️ Execution Plane (Worker)
-- **Orchestrator:** Celery + Redis
-- **Containerization:** Native Docker Engine integration
-- **Networking:** Dynamic Service Discovery via Traefik v2.11
-- **Log Engine:** Dual-path logging (Redis Pub/Sub for live stream + PostgreSQL for history)
+</div>
 
-### 🎨 The "Canvas" (Dashboard)
-- **Framework:** Next.js 15 (App Router, TypeScript)
-- **Visuals:** React Flow (Visual Topology Map)
-- **Real-time:** WebSockets for live terminal logs
-- **UX:** Tailwind CSS + Radix UI (Acrylic aesthetic)
+## Deploy with confidence
 
----
+AutoDeploy connects your source code to running infrastructure. Connect a
+repository, configure your application, and let AutoDeploy manage the build,
+deployment, networking, and service lifecycle.
 
-## ✨ Key Features
+## Features
 
-- **🔒 Multi-Tenant Security:** Full data isolation where every Application, Job, and Log is strictly tied to a user account.
-- **🗺 Visual Topology Map:** An interactive, node-based map of your infrastructure showing live connections between the Gateway and your Services.
-- **📟 Real-Time Log Engine:** High-performance terminal streaming powered by Redis Pub/Sub with $O(1)$ deduplication and $O(N)$ historical backfilling.
-- **⛓ Customizable DAG Pipelines:** Define custom pre-build (e.g., `npm install`) and post-build (e.g., `db migrate`) hooks to adapt to any deployment workflow.
-- **🩺 Auto-Diagnosis:** The orchestrator analyzes build logs in real-time to provide actionable suggestions when deployments fail.
-- **🔄 One-Click Rollbacks:** Instantly restore any service to a previous successful version with full provenance tracking.
+| | Capability | Description |
+| :---: | --- | --- |
+| :rocket: | **Git-based deployments** | Deploy directly from GitHub or GitLab. |
+| :gear: | **Automatic build detection** | Support for Node.js, Python, Next.js, static, and Docker applications. |
+| :lock: | **Private repositories** | Use securely managed SSH keys and personal access tokens. |
+| :satellite: | **Real-time logs** | Follow build and runtime output as it happens. |
+| :repeat: | **Rollbacks** | Restore a service to a previous successful deployment. |
+| :busts_in_silhouette: | **Team access** | Share applications with role-based permissions. |
+| :world_map: | **Infrastructure map** | Understand how your services connect. |
+| :shield: | **Secret protection** | Keep credentials and environment secrets out of plain text. |
 
----
+## How it works
 
-## 🛠 Tech Stack
-
-| Tier | Technologies |
-| :--- | :--- |
-| **Backend** | Python, FastAPI, Celery, SQLAlchemy |
-| **Frontend** | Next.js, React Flow, Lucide Icons, Tailwind |
-| **Cloud** | Supabase (Auth/DB) |
-| **Infrastructure** | Docker, Traefik, Redis |
-
----
-
-## 📦 Getting Started
-
-### 1. Prerequisites
-- **Docker & Docker Compose** installed and running.
-- **Python 3.11+** (preferably with `uv`).
-- **Node.js 18+**.
-- A **Supabase** project for Auth and Database.
-
-### 2. Infrastructure Setup
-Spin up the core infrastructure (Redis, PostgreSQL, Traefik, and HashiCorp Vault):
-```bash
-docker compose up -d
+```text
+Connect repository  ->  Configure application  ->  Deploy
+                                                   |
+                              Monitor logs  <-  Running service
 ```
 
-### 3. Backend (AsyncTasks)
-Configure your `.env` in `asynctasks/` (refer to `asynctasks/.env.example` if available):
-```env
-SUPABASE_URL=your_supabase_url
-SUPABASE_KEY=your_supabase_anon_key
-SUPABASE_DB_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT].supabase.co:5432/postgres
-REDIS_URL=redis://localhost:6379/0
-SECRET_KEY=your_encryption_key
-VAULT_ADDR=http://localhost:8200
-VAULT_TOKEN=root
-```
+1. Open the [AutoDeploy dashboard](https://auto-deploy.tech).
+2. Create an application and connect its repository.
+3. Select a branch and configure the application.
+4. Start a deployment and monitor its progress.
+5. Open the generated application URL when it is ready.
 
-Install dependencies and start the services:
-```bash
-cd asynctasks
-uv sync
+Repository webhooks can trigger new deployments automatically whenever changes
+are pushed.
 
-# Terminal 1: API Server
-uvicorn api.main:app --reload --port 8000
+## Supported application types
 
-# Terminal 2: Celery Worker
-celery -A worker.celery_app worker --loglevel=info
-```
+- Node.js applications
+- Python applications
+- Next.js applications
+- Static websites
+- Custom Docker applications
 
-### 4. Webhook Connectivity (Optional - for Git triggers)
-To receive webhooks from GitHub/GitLab on your local machine, use **ngrok** to expose the API:
-```bash
-# Terminal 3: ngrok Tunnel
-ngrok http 8000
-```
-*Note: Update your Repository Webhook URL to the ngrok address (e.g., `https://xyz.ngrok-free.app/webhooks/github`).*
+## Security
 
-### 5. Frontend (Dashboard)
-Configure your `.env.local` in `dashboard/`:
-```env
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-```
+AutoDeploy is designed with multi-tenant ownership and secure credential
+handling. Applications, jobs, and logs are associated with their owners, while
+private repository credentials and environment secrets are protected from
+plain-text display.
 
-Install and start:
-```bash
-# Terminal 4: Frontend
-cd dashboard
-npm install
-npm run dev
-```
+## Technology
 
----
+`FastAPI` `Celery` `Redis` `PostgreSQL` `SQLAlchemy` `Docker` `Traefik`
+`HashiCorp Vault` `Next.js` `TypeScript`
 
-## 📜 Manual Schema Migrations (Supabase)
-Because we use a hybrid cloud model, SQLAlchemy's `create_all()` will NOT automatically update existing tables in Supabase. When updating `models.py`:
-1. Update the Python model.
-2. Go to the **Supabase SQL Editor**.
-3. Run the corresponding `ALTER TABLE` command (e.g., `ALTER TABLE applications ADD COLUMN owner_id UUID;`).
+## Project links
 
----
-
-## 🗺 Roadmap
-For a detailed look at the 13-Phase vision (including CLI development and Enterprise scaling), check out [plan.md](./plan.md).
-
-## 🤝 Contributing
-We follow the **AutoDeploy Standard** for UI/UX and architectural integrity. Please refer to [GEMINI.md](./GEMINI.md) for deep technical constraints and design philosophy before submitting PRs.
+- **Dashboard:** [auto-deploy.tech](https://auto-deploy.tech)
+- **API health:** [api.auto-deploy.tech/health](https://api.auto-deploy.tech/health)
+- **Source code:** [GitHub](https://github.com/KanishkMishra143/AutoDeploy)
+- **Issues and feature requests:** [GitHub Issues](https://github.com/KanishkMishra143/AutoDeploy/issues)
