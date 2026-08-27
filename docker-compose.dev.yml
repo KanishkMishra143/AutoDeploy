@@ -1,0 +1,150 @@
+services:
+  # --- Control Plane (Our Apps) ---
+  api:
+    build:
+      context: ./asynctasks
+      dockerfile: Dockerfile
+    container_name: autodeploy-dev-api
+    restart: unless-stopped
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000
+    env_file:
+      - ./asynctasks/.env
+    ports:
+      - "127.0.0.1:18000:8000"
+    depends_on:
+      - db
+      - redis
+      - vault
+    networks:
+      - autodeploy-net
+
+  worker:
+    build:
+      context: ./asynctasks
+      dockerfile: Dockerfile.worker
+    container_name: autodeploy-dev-worker
+    restart: unless-stopped
+    env_file:
+      - ./asynctasks/.env
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - db
+      - redis
+      - api
+    networks:
+      - autodeploy-net
+
+  beat:
+    build:
+      context: ./asynctasks
+      dockerfile: Dockerfile.worker
+    container_name: autodeploy-dev-beat
+    restart: unless-stopped
+    command: celery -A worker.celery_app beat --loglevel=info
+    env_file:
+      - ./asynctasks/.env
+    depends_on:
+      - redis
+      - api
+    networks:
+      - autodeploy-net
+
+  # --- Infrastructure ---
+  db:
+    image: postgres:15
+    container_name: autodeploy-dev-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: kanishk
+      POSTGRES_PASSWORD: kanishk
+      POSTGRES_DB: asynctasks
+    ports:
+      - "127.0.0.1:15432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - autodeploy-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: autodeploy-dev-redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:16379:6379"
+    networks:
+      - autodeploy-net
+
+  vault:
+    image: hashicorp/vault:1.15
+    container_name: autodeploy-dev-vault-1
+    restart: unless-stopped
+    command: vault server -config=/vault/config/vault.hcl
+    volumes:
+      - ./vault_data-dev:/vault/file
+      - ./vault.hcl:/vault/config/vault.hcl:ro
+    ports:
+      - "127.0.0.1:18200:8200"
+    cap_add:
+      - IPC_LOCK
+    networks:
+      - autodeploy-net
+
+  vault-unsealer:
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM python:3.11-slim
+        RUN pip install supabase requests cryptography python-dotenv
+        COPY vault_unsealer.py /app/unsealer.py
+        WORKDIR /app
+        CMD ["python", "-u", "unsealer.py"]
+    container_name: autodeploy-dev-vault-unsealer
+    restart: unless-stopped
+    depends_on:
+      - vault
+    env_file:
+      - ./asynctasks/.env
+    environment:
+      VAULT_ADDR: http://vault:8200
+    networks:
+      - autodeploy-net
+
+  traefik:
+    image: traefik:v2.11
+    container_name: autodeploy-dev-traefik
+    restart: unless-stopped
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.endpoint=unix:///var/run/docker.sock"
+      - "--entrypoints.web.address=:80"
+    ports:
+      - "127.0.0.1:18080:80"
+      - "127.0.0.1:18090:8080"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    networks:
+      - autodeploy-net
+
+  # --- Server Management ---
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: autodeploy-dev-portainer
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:19000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+    networks:
+      - autodeploy-net
+
+networks:
+  autodeploy-net:
+    name: autodeploy-net-dev
+
+volumes:
+  postgres_data:
+  portainer_data:
