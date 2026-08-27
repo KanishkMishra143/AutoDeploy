@@ -39,7 +39,7 @@ app.include_router(auth_router)
 async def startup_event():
     """Trigger maintenance sweep on startup to clean up any 'ghost' state."""
     from worker.tasks import maintenance_sweep
-    print("🚀 API STARTUP: Triggering global maintenance sweep...")
+    print("API STARTUP: Triggering global maintenance sweep...")
     maintenance_sweep.delay()
 
 
