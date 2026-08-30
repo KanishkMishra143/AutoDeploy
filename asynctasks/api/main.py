@@ -10,7 +10,6 @@ from api.routes.webhooks import router as webhooks_router
 from api.routes.apps import router as apps_router
 from api.routes.auth import router as auth_router
 
-Base.metadata.create_all(bind=engine)
 ENABLE_API_DOCS = os.getenv("ENABLE_API_DOCS", "false").lower() == "true"
 app = FastAPI(
     title="AsyncTasks API",

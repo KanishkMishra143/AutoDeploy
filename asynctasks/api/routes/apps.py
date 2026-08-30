@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Query
 from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
 from pydantic import BaseModel
@@ -69,6 +69,48 @@ def detect_app_port(app_id: UUID, current_user: dict = Depends(get_current_user)
     except Exception as e:
         # Include detailed error for frontend debugging
         return {"detected_port": None, "source": None, "error": f"Repository Scan Failed: {str(e)}"}
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+@router.get("/{app_id}/detect-env-conflicts")
+def detect_app_env_conflicts(app_id: UUID, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    app = db.query(Application).filter(Application.id == app_id).first()
+    if not app:
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    get_app_with_access(app_id, current_user["sub"], db)
+
+    temp_dir = tempfile.mkdtemp(prefix="env_detect_")
+    try:
+        from worker.tasks import clone_repository, discover_config
+        from core.crypto import decrypt_string
+
+        credential_data = None
+        if app.credential:
+            credential_data = {
+                "type": app.credential.type,
+                "value": decrypt_string(app.credential.encrypted_value)
+            }
+
+        clone_repository(app.repo_url, temp_dir, branch=app.branch, credential=credential_data)
+        effective_path = os.path.join(temp_dir, app.root_dir.lstrip("/")) if app.root_dir else temp_dir
+        config = discover_config(effective_path)
+        repo_env = config.get("env_vars") or {}
+        dashboard_env = vault.get_env_vars(app_id) or {}
+
+        conflicts = []
+        for key, repo_value in repo_env.items():
+            dashboard_value = dashboard_env.get(key)
+            if dashboard_value is not None and str(dashboard_value) != str(repo_value):
+                conflicts.append({
+                    "key": key,
+                    "repo_value": str(repo_value),
+                    "dashboard_value": str(dashboard_value),
+                })
+
+        return {"conflicts": conflicts}
+    except Exception as e:
+        return {"conflicts": [], "error": f"Repository Scan Failed: {str(e)}"}
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
 
@@ -304,7 +346,13 @@ def get_app(app_id: UUID, db: Session = Depends(get_db), current_user: dict = De
     return app_with_access
 
 @router.post("/{app_id}/deploy", response_model=JobResponse)
-def deploy_app(app_id: UUID, trigger_reason: str = "Manual", db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+def deploy_app(
+    app_id: UUID,
+    trigger_reason: str = "Manual",
+    env_precedence: str = Query("dashboard", regex="^(dashboard|repo)$"),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
     """Triggers a manual deployment with a concurrency lock to prevent 'double-click' build floods."""
     # 1. Fetch app with a row-level lock
     app = db.query(Application).with_for_update().filter(Application.id == app_id).first()
@@ -351,7 +399,8 @@ def deploy_app(app_id: UUID, trigger_reason: str = "Manual", db: Session = Depen
             "healthcheck": app.healthcheck,
             "restart": app.restart,
             "labels": app.labels,
-            "build_args": app.build_args
+            "build_args": app.build_args,
+            "env_precedence": env_precedence,
         }
     )
     db.add(new_job)

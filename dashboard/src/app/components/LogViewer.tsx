@@ -57,11 +57,18 @@ export default function LogViewer({ jobId, onClose }: { jobId: string; onClose: 
         if (res.ok) {
           const data = await res.json();
           if (data.logs) {
-            setLogs(data.logs);
-            // Pre-populate seenKeys to avoid duplicates from WebSocket
-            data.logs.forEach((log: any) => {
-              const key = `${log.created_at}-${log.message}`;
-              seenKeys.current.add(key);
+            setLogs((previousLogs) => {
+              const mergedLogs = [...previousLogs];
+              data.logs.forEach((log: any) => {
+                const key = `${log.created_at}-${log.message}`;
+                if (!seenKeys.current.has(key)) {
+                  seenKeys.current.add(key);
+                  mergedLogs.push(log);
+                }
+              });
+              return mergedLogs.sort((left, right) =>
+                new Date(left.created_at).getTime() - new Date(right.created_at).getTime()
+              );
             });
           }
         }
@@ -72,7 +79,10 @@ export default function LogViewer({ jobId, onClose }: { jobId: string; onClose: 
 
     fetchJob();
     fetchLogs();
-    const interval = setInterval(fetchJob, 2000);
+    const interval = setInterval(() => {
+      fetchJob();
+      fetchLogs();
+    }, 2000);
     return () => clearInterval(interval);
   }, [jobId]);
 
@@ -99,7 +109,7 @@ export default function LogViewer({ jobId, onClose }: { jobId: string; onClose: 
               seenKeys.current.add(key);
               return true;
             });
-            
+
             if (newLogs.length === 0) return prev;
             return [...prev, ...newLogs];
           });
@@ -213,7 +223,7 @@ export default function LogViewer({ jobId, onClose }: { jobId: string; onClose: 
   };
 
   return (
-    <div 
+    <div
       id="log-viewer-wrapper"
       onClick={(e) => e.target === e.currentTarget && onClose()}
       className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/90 backdrop-blur-md p-0 md:p-4 animate-in fade-in duration-300"
@@ -224,34 +234,34 @@ export default function LogViewer({ jobId, onClose }: { jobId: string; onClose: 
         <div className="bg-[#111] px-4 md:px-6 py-3 md:py-4 border-b border-card-border flex justify-between items-center select-none">
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-2 md:gap-3">
-                <Terminal className="w-4 h-4 text-accent" />
-                <span 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    navigator.clipboard.writeText(jobId);
-                    toast.success("FULL JOB ID COPIED TO CLIPBOARD", {
-                      style: { background: '#111', color: '#fff', border: '1px solid rgba(255,255,255,0.1)', fontSize: '10px', fontWeight: '900', letterSpacing: '0.1em' },
-                      icon: '📋'
-                    });
-                  }}
-                  className="text-[9px] md:text-[10px] font-black font-mono text-gray-400 uppercase tracking-widest cursor-pointer hover:text-accent transition-colors group/id"
-                  title="Click to copy full UUID"
-                >
-                  {activeTab === "logs" ? "Live Stream" : "Resource Audit"} ~ {job?.build_number ? `BUILD #${job.build_number}` : jobId.split('-')[0]}
-                  <span className="ml-2 opacity-0 group-hover/id:opacity-100 transition-opacity text-[8px] font-black uppercase tracking-tighter text-accent/50 hidden md:inline">Click to copy</span>
-                </span>
+              <Terminal className="w-4 h-4 text-accent" />
+              <span
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigator.clipboard.writeText(jobId);
+                  toast.success("FULL JOB ID COPIED TO CLIPBOARD", {
+                    style: { background: '#111', color: '#fff', border: '1px solid rgba(255,255,255,0.1)', fontSize: '10px', fontWeight: '900', letterSpacing: '0.1em' },
+                    icon: '📋'
+                  });
+                }}
+                className="text-[9px] md:text-[10px] font-black font-mono text-gray-400 uppercase tracking-widest cursor-pointer hover:text-accent transition-colors group/id"
+                title="Click to copy full UUID"
+              >
+                {activeTab === "logs" ? "Live Stream" : "Resource Audit"} ~ {job?.build_number ? `BUILD #${job.build_number}` : jobId.split('-')[0]}
+                <span className="ml-2 opacity-0 group-hover/id:opacity-100 transition-opacity text-[8px] font-black uppercase tracking-tighter text-accent/50 hidden md:inline">Click to copy</span>
+              </span>
             </div>
 
             {/* Tab Toggles */}
             {isViolation && (
               <div className="flex bg-black/40 p-1 rounded-xl border border-white/5">
-                <button 
+                <button
                   onClick={() => setActiveTab("logs")}
                   className={`px-4 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${activeTab === 'logs' ? 'bg-accent text-white shadow-lg' : 'text-gray-500 hover:text-gray-300'}`}
                 >
                   Logs
                 </button>
-                <button 
+                <button
                   onClick={() => setActiveTab("audit")}
                   className={`px-4 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${activeTab === 'audit' ? 'bg-red-500 text-white shadow-lg' : 'text-gray-500 hover:text-gray-300'}`}
                 >
@@ -278,7 +288,7 @@ export default function LogViewer({ jobId, onClose }: { jobId: string; onClose: 
                 </h4>
                 <p className="text-white text-xs md:text-sm font-bold">This application was terminated due to resource abuse.</p>
                 <p className="text-gray-400 text-[10px] md:text-xs mt-1 font-medium leading-tight">
-                  Violation Type: <span className="text-red-400 uppercase">{job.result?.violation_type}</span> | 
+                  Violation Type: <span className="text-red-400 uppercase">{job.result?.violation_type}</span> |
                   Peak Memory: <span className="text-red-400">{job.result?.peak_mem?.toFixed(1)} MiB</span>
                 </p>
 
@@ -303,8 +313,8 @@ export default function LogViewer({ jobId, onClose }: { jobId: string; onClose: 
           )}
 
           {/* Content Area */}
-          <div 
-            className="flex-1 bg-[#050505] overflow-y-auto custom-scrollbar selection:bg-accent/30" 
+          <div
+            className="flex-1 bg-[#050505] overflow-y-auto custom-scrollbar selection:bg-accent/30"
             ref={scrollRef}
             onScroll={handleScroll}
           >
@@ -327,22 +337,21 @@ export default function LogViewer({ jobId, onClose }: { jobId: string; onClose: 
                 )}
 
                 <div className="space-y-1">
-                    {logs.map((log, i) => {
+                  {logs.map((log, i) => {
                     const isLiveLine = log.message.includes("Application is live at");
                     const isError = log.message.toLowerCase().includes("error") || log.message.toLowerCase().includes("failed");
                     const isWarning = log.message.toLowerCase().includes("warning");
 
                     return (
-                        <div 
-                        key={i} 
-                        className={`group flex gap-5 px-3 py-1 rounded-lg transition-all ${
-                            isLiveLine 
-                            ? "bg-green-500/10 border border-green-500/20 py-4 my-4 shadow-[0_0_30px_rgba(34,197,94,0.1)] animate-in zoom-in-95" 
+                      <div
+                        key={i}
+                        className={`group flex gap-5 px-3 py-1 rounded-lg transition-all ${isLiveLine
+                            ? "bg-green-500/10 border border-green-500/20 py-4 my-4 shadow-[0_0_30px_rgba(34,197,94,0.1)] animate-in zoom-in-95"
                             : "hover:bg-white/[0.03]"
-                        }`}
-                        >
+                          }`}
+                      >
                         <span className="text-gray-700 shrink-0 text-[10px] mt-1 font-bold select-none">
-                            [{new Date(log.created_at).toLocaleTimeString([], { hour12: false })}]
+                          [{new Date(log.created_at).toLocaleTimeString([], { hour12: false })}]
                         </span>
                         <span className={`shrink-0 text-[10px] mt-1 font-black ${isError ? 'text-red-500' : 'text-accent/50'}`}>❯</span>
                         <span className={`
@@ -351,13 +360,13 @@ export default function LogViewer({ jobId, onClose }: { jobId: string; onClose: 
                             ${isWarning ? "text-yellow-400" : ""}
                             break-words leading-relaxed
                         `}>
-                            {renderLogMessage(log.message)}
+                          {renderLogMessage(log.message)}
                         </span>
-                        </div>
+                      </div>
                     );
-                    })}
-                    {/* Sentinel for sticky scroll */}
-                    <div ref={bottomRef} className="h-4 w-full" />
+                  })}
+                  {/* Sentinel for sticky scroll */}
+                  <div ref={bottomRef} className="h-4 w-full" />
                 </div>
               </div>
             ) : (
@@ -385,47 +394,47 @@ export default function LogViewer({ jobId, onClose }: { jobId: string; onClose: 
                 </div>
 
                 <div className="space-y-4">
-                   <h4 className="text-[10px] font-black text-white uppercase tracking-[0.3em] flex items-center gap-3">
-                     <Activity className="w-4 h-4 text-red-500" />
-                     Execution Snapshots
-                   </h4>
-                   <div className="border border-white/5 rounded-2xl overflow-hidden bg-[#080808]">
-                     <table className="w-full text-left text-[10px] font-mono">
-                        <thead className="bg-white/5 text-gray-500 uppercase font-black">
-                          <tr>
-                            <th className="px-6 py-4">Timestamp</th>
-                            <th className="px-6 py-4">CPU %</th>
-                            <th className="px-6 py-4">Memory (MiB)</th>
-                            <th className="px-6 py-4">PIDs</th>
-                            <th className="px-6 py-4">Status</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-white/5">
-                          {job?.result?.audit_trail?.map((entry: any, idx: number) => {
-                            const isDanger = entry.mem > entry.limit_mem * 0.95;
-                            return (
-                              <tr key={idx} className="hover:bg-white/[0.02] transition-colors">
-                                <td className="px-6 py-4 text-gray-600">
-                                  {new Date(entry.timestamp).toLocaleTimeString([], { hour12: false, fractionalSecondDigits: 1 })}
-                                </td>
-                                <td className="px-6 py-4 text-gray-300 font-bold">{entry.cpu.toFixed(1)}%</td>
-                                <td className={`px-6 py-4 font-black ${isDanger ? 'text-red-500' : 'text-gray-300'}`}>
-                                  {entry.mem.toFixed(1)} MiB
-                                </td>
-                                <td className="px-6 py-4 text-gray-400">{entry.pids}</td>
-                                <td className="px-6 py-4">
-                                  {isDanger ? (
-                                    <span className="bg-red-500/20 text-red-500 px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-tighter">RED-LINE</span>
-                                  ) : (
-                                    <span className="text-gray-700">NOMINAL</span>
-                                  )}
-                                </td>
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                     </table>
-                   </div>
+                  <h4 className="text-[10px] font-black text-white uppercase tracking-[0.3em] flex items-center gap-3">
+                    <Activity className="w-4 h-4 text-red-500" />
+                    Execution Snapshots
+                  </h4>
+                  <div className="border border-white/5 rounded-2xl overflow-hidden bg-[#080808]">
+                    <table className="w-full text-left text-[10px] font-mono">
+                      <thead className="bg-white/5 text-gray-500 uppercase font-black">
+                        <tr>
+                          <th className="px-6 py-4">Timestamp</th>
+                          <th className="px-6 py-4">CPU %</th>
+                          <th className="px-6 py-4">Memory (MiB)</th>
+                          <th className="px-6 py-4">PIDs</th>
+                          <th className="px-6 py-4">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/5">
+                        {job?.result?.audit_trail?.map((entry: any, idx: number) => {
+                          const isDanger = entry.mem > entry.limit_mem * 0.95;
+                          return (
+                            <tr key={idx} className="hover:bg-white/[0.02] transition-colors">
+                              <td className="px-6 py-4 text-gray-600">
+                                {new Date(entry.timestamp).toLocaleTimeString([], { hour12: false, fractionalSecondDigits: 1 })}
+                              </td>
+                              <td className="px-6 py-4 text-gray-300 font-bold">{entry.cpu.toFixed(1)}%</td>
+                              <td className={`px-6 py-4 font-black ${isDanger ? 'text-red-500' : 'text-gray-300'}`}>
+                                {entry.mem.toFixed(1)} MiB
+                              </td>
+                              <td className="px-6 py-4 text-gray-400">{entry.pids}</td>
+                              <td className="px-6 py-4">
+                                {isDanger ? (
+                                  <span className="bg-red-500/20 text-red-500 px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-tighter">RED-LINE</span>
+                                ) : (
+                                  <span className="text-gray-700">NOMINAL</span>
+                                )}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
             )}
@@ -433,62 +442,62 @@ export default function LogViewer({ jobId, onClose }: { jobId: string; onClose: 
 
           {/* Floating Actions */}
           <div className="absolute bottom-8 right-8 flex flex-col gap-3 items-end">
-             {job?.status === "success" && job.result?.url && (
-                <a 
-                  href={job.result.url} 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="bg-green-500 hover:bg-green-600 text-white px-8 py-3 rounded-2xl text-[10px] font-black shadow-2xl transition-all flex items-center gap-3 animate-in fade-in slide-in-from-right-4 uppercase tracking-widest"
-                >
-                  <Globe className="w-4 h-4" />
-                  Launch Application
-                </a>
-             )}
+            {job?.status === "success" && job.result?.url && (
+              <a
+                href={job.result.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="bg-green-500 hover:bg-green-600 text-white px-8 py-3 rounded-2xl text-[10px] font-black shadow-2xl transition-all flex items-center gap-3 animate-in fade-in slide-in-from-right-4 uppercase tracking-widest"
+              >
+                <Globe className="w-4 h-4" />
+                Launch Application
+              </a>
+            )}
 
-             {["queued", "running", "pending"].includes(job?.status || "") && (
-                <button 
-                  onClick={() => setIsConfirmCancelOpen(true)}
-                  disabled={isCancelling}
-                  className="bg-red-500 hover:bg-red-600 text-white px-8 py-3 rounded-2xl text-[10px] font-black shadow-2xl transition-all flex items-center gap-3 animate-in fade-in slide-in-from-right-4 uppercase tracking-widest disabled:opacity-50"
-                >
-                  {isCancelling ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                  Cancel Deployment
-                </button>
-             )}
+            {["queued", "running", "pending"].includes(job?.status || "") && (
+              <button
+                onClick={() => setIsConfirmCancelOpen(true)}
+                disabled={isCancelling}
+                className="bg-red-500 hover:bg-red-600 text-white px-8 py-3 rounded-2xl text-[10px] font-black shadow-2xl transition-all flex items-center gap-3 animate-in fade-in slide-in-from-right-4 uppercase tracking-widest disabled:opacity-50"
+              >
+                {isCancelling ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                Cancel Deployment
+              </button>
+            )}
 
-             {!isAtBottom && logs.length > 0 && (
-                <button 
-                  onClick={() => {
-                    setIsAtBottom(true);
-                    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-                  }}
-                  className="bg-accent hover:bg-accent/90 text-white px-6 py-3 rounded-2xl text-[10px] font-black shadow-2xl transition-all animate-in fade-in slide-in-from-bottom-4 uppercase tracking-widest flex items-center gap-2"
-                >
-                  <ArrowDown className="w-4 h-4 animate-bounce" />
-                  Resume Live Stream
-                </button>
-             )}
+            {!isAtBottom && logs.length > 0 && (
+              <button
+                onClick={() => {
+                  setIsAtBottom(true);
+                  bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+                }}
+                className="bg-accent hover:bg-accent/90 text-white px-6 py-3 rounded-2xl text-[10px] font-black shadow-2xl transition-all animate-in fade-in slide-in-from-bottom-4 uppercase tracking-widest flex items-center gap-2"
+              >
+                <ArrowDown className="w-4 h-4 animate-bounce" />
+                Resume Live Stream
+              </button>
+            )}
           </div>
         </div>
 
         {/* Footer info */}
         <div className="bg-[#080808] px-6 py-2 border-t border-card-border flex justify-between items-center text-[9px] font-bold text-gray-700 uppercase tracking-[0.3em]">
-            <div className="flex items-center gap-6">
-                <div className="flex items-center gap-2">
-                    <div className={`w-1.5 h-1.5 rounded-full ${logs.length > 0 ? 'bg-green-500 animate-pulse' : 'bg-yellow-500'}`} />
-                    <span>SYSTEM HEALTH: NOMINAL</span>
-                </div>
-                <div className="flex items-center gap-2 border-l border-white/5 pl-6">
-                    <Activity className="w-3 h-3 text-accent" />
-                    <span>PUB/SUB ENGINE: ACTIVE</span>
-                </div>
-            </div>
+          <div className="flex items-center gap-6">
             <div className="flex items-center gap-2">
-                <span>ORCHESTRATOR: v0.5 ALPHA</span>
+              <div className={`w-1.5 h-1.5 rounded-full ${logs.length > 0 ? 'bg-green-500 animate-pulse' : 'bg-yellow-500'}`} />
+              <span>SYSTEM HEALTH: NOMINAL</span>
             </div>
+            <div className="flex items-center gap-2 border-l border-white/5 pl-6">
+              <Activity className="w-3 h-3 text-accent" />
+              <span>PUB/SUB ENGINE: ACTIVE</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <span>ORCHESTRATOR: v0.5 ALPHA</span>
+          </div>
         </div>
       </div>
-      
+
       <ConfirmationModal
         isOpen={isConfirmCancelOpen}
         title="Abort Deployment?"

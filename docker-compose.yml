@@ -1,10 +1,11 @@
+name: autodeploy-prod
 services:
   # --- Control Plane (Our Apps) ---
   api:
     build:
       context: ./asynctasks
       dockerfile: Dockerfile
-    container_name: autodeploy-api
+    container_name: autodeploy-prod-api
     restart: unless-stopped
     command: uvicorn api.main:app --host 0.0.0.0 --port 8000
     env_file:
@@ -15,15 +16,20 @@ services:
       - db
       - redis
       - vault
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.autodeploy-api.rule=Host(`api.auto-deploy.tech`)"
+      - "traefik.http.services.autodeploy-api.loadbalancer.server.port=8000"
     networks:
-      - autodeploy-net
+      - autodeploy-prod-net
 
   worker:
     build:
       context: ./asynctasks
       dockerfile: Dockerfile.worker
-    container_name: autodeploy-worker
+    container_name: autodeploy-prod-worker
     restart: unless-stopped
+    command: celery -A worker.celery_app worker --loglevel=info --concurrency=2
     env_file:
       - ./asynctasks/.env
     volumes:
@@ -33,13 +39,13 @@ services:
       - redis
       - api
     networks:
-      - autodeploy-net
+      - autodeploy-prod-net
 
   beat:
     build:
       context: ./asynctasks
       dockerfile: Dockerfile.worker
-    container_name: autodeploy-beat
+    container_name: autodeploy-prod-beat
     restart: unless-stopped
     command: celery -A worker.celery_app beat --loglevel=info
     env_file:
@@ -48,12 +54,12 @@ services:
       - redis
       - api
     networks:
-      - autodeploy-net
+      - autodeploy-prod-net
 
   # --- Infrastructure ---
   db:
     image: postgres:15
-    container_name: autodeploy-db
+    container_name: autodeploy-prod-db
     restart: unless-stopped
     environment:
       POSTGRES_USER: kanishk
@@ -64,20 +70,20 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
-      - autodeploy-net
+      - autodeploy-prod-net
 
   redis:
     image: redis:7-alpine
-    container_name: autodeploy-redis
+    container_name: autodeploy-prod-redis
     restart: unless-stopped
     ports:
       - "127.0.0.1:6379:6379"
     networks:
-      - autodeploy-net
+      - autodeploy-prod-net
 
   vault:
     image: hashicorp/vault:1.15
-    container_name: autodeploy-vault-1
+    container_name: autodeploy-prod-vault-1
     restart: unless-stopped
     command: vault server -config=/vault/config/vault.hcl
     volumes:
@@ -88,7 +94,7 @@ services:
     cap_add:
       - IPC_LOCK
     networks:
-      - autodeploy-net
+      - autodeploy-prod-net
 
   vault-unsealer:
     build:
@@ -99,7 +105,7 @@ services:
         COPY vault_unsealer.py /app/unsealer.py
         WORKDIR /app
         CMD ["python", "-u", "unsealer.py"]
-    container_name: autodeploy-vault-unsealer
+    container_name: autodeploy-prod-vault-unsealer
     restart: unless-stopped
     depends_on:
       - vault
@@ -108,11 +114,11 @@ services:
     environment:
       VAULT_ADDR: http://vault:8200
     networks:
-      - autodeploy-net
+      - autodeploy-prod-net
 
   traefik:
     image: traefik:v2.11
-    container_name: autodeploy-traefik
+    container_name: autodeploy-prod-traefik
     restart: unless-stopped
     command:
       - "--api.insecure=true"
@@ -126,12 +132,12 @@ services:
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
     networks:
-      - autodeploy-net
+      - autodeploy-prod-net
 
   # --- Server Management ---
   portainer:
     image: portainer/portainer-ce:latest
-    container_name: autodeploy-portainer
+    container_name: autodeploy-prod-portainer
     restart: unless-stopped
     ports:
       - "127.0.0.1:9000:9000"
@@ -139,11 +145,11 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - portainer_data:/data
     networks:
-      - autodeploy-net
+      - autodeploy-prod-net
 
 networks:
-  autodeploy-net:
-    name: autodeploy-net
+  autodeploy-prod-net:
+    name: autodeploy-prod-net
 
 volumes:
   postgres_data:

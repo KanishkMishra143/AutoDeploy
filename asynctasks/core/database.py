@@ -7,10 +7,18 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
-# We prefer Supabase for Phase 10 hybrid architecture
-DATABASE_URL = os.getenv("SUPABASE_DB_URL", "postgresql://kanishk:kanishk@localhost:5432/asynctasks")
+# Supabase is the production database source. Local Postgres remains only as fallback.
+DATABASE_URL = os.getenv("SUPABASE_DB_URL") or os.getenv("LOCAL_DB_URL") or "postgresql://kanishk:kanishk@localhost:5432/asynctasks"
 
-engine = create_engine(DATABASE_URL)
+engine = create_engine(
+    DATABASE_URL,
+    pool_pre_ping=True,
+    pool_size=5,
+    max_overflow=5,
+    pool_recycle=300,
+    pool_timeout=30,
+    connect_args={"connect_timeout": 10},
+)
 SessionLocal = sessionmaker(
     autocommit=False,
     autoflush=False,

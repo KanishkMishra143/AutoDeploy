@@ -158,6 +158,14 @@ EXPOSE {port}
 
 logger = get_task_logger(__name__)
 
+SENTINEL_STABLE_UTILIZATION_FLOOR = 0.80
+SENTINEL_PRESSURE_UTILIZATION_FLOOR = 0.90
+SENTINEL_CRITICAL_UTILIZATION_FLOOR = 0.95
+SENTINEL_SUSTAINED_PRESSURE_SAMPLES = 12
+REAPER_PRESSURE_UTILIZATION_FLOOR = 0.90
+REAPER_RELIEF_UTILIZATION_FLOOR = 0.85
+REAPER_SUSTAINED_PRESSURE_CYCLES = 3
+
 def save_log(db, job_id, message, owner_id=None, buffer=None):
     """Helper to publish log to Redis (Real-time) and buffer for DB (Persistence)"""
     timestamp = datetime.utcnow().isoformat()
@@ -190,6 +198,103 @@ def save_log(db, job_id, message, owner_id=None, buffer=None):
         db.commit()
     
     print(f"DEBUG LOG [{job_id[:8]}]: {message}")
+
+def parse_docker_stats(stats_output):
+    """Parses docker stats output into cpu %, memory MiB, and PID count."""
+    cpu_str, mem_str, pids_str = stats_output.strip().split("||")
+    cpu_val = float(cpu_str.replace("%", ""))
+    pids_val = int(pids_str)
+
+    mem_used = mem_str.split("/")[0].strip()
+    if "GiB" in mem_used:
+        mem_val = float(mem_used.split("GiB")[0].strip()) * 1024
+    elif "MiB" in mem_used:
+        mem_val = float(mem_used.split("MiB")[0].strip())
+    elif "KiB" in mem_used:
+        mem_val = float(mem_used.split("KiB")[0].strip()) / 1024
+    elif "B" in mem_used:
+        mem_val = float(mem_used.split("B")[0].strip()) / (1024 * 1024)
+    else:
+        mem_val = float(mem_used)
+
+    return cpu_val, mem_val, pids_val
+
+def build_resource_snapshot(cpu_val, mem_val, pids_val, memory_limit_mb, cpu_limit, pids_limit):
+    cpu_max_pct = cpu_limit * 100
+    return {
+        "cpu": cpu_val,
+        "mem": mem_val,
+        "pids": pids_val,
+        "cpu_limit_pct": cpu_max_pct,
+        "limit_mem": memory_limit_mb,
+        "limit_cpu": cpu_limit,
+        "limit_pids": pids_limit,
+        "cpu_ratio": (cpu_val / cpu_max_pct) if cpu_max_pct else 0,
+        "mem_ratio": (mem_val / memory_limit_mb) if memory_limit_mb else 0,
+        "pids_ratio": (pids_val / pids_limit) if pids_limit else 0,
+    }
+
+def dominant_pressure_type(snapshot, threshold):
+    """Returns the dominant resource above a utilization threshold."""
+    candidates = []
+    if snapshot["mem_ratio"] >= threshold:
+        candidates.append(("Memory", snapshot["mem_ratio"]))
+    if snapshot["cpu_ratio"] >= threshold:
+        candidates.append(("CPU", snapshot["cpu_ratio"]))
+    if snapshot["pids_ratio"] >= threshold:
+        candidates.append(("PIDs", snapshot["pids_ratio"]))
+
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda item: item[1], reverse=True)
+    return candidates[0][0]
+
+def resolve_env_precedence(repo_env: Dict[str, str], dashboard_env: Dict[str, str], precedence: str = "dashboard") -> Dict[str, str]:
+    """Returns the merged env dict with either repo or dashboard values winning for conflicts."""
+    if precedence == "repo":
+        return {**dashboard_env, **repo_env}
+    return {**repo_env, **dashboard_env}
+
+
+def preserve_failed_job_result(previous_result: dict | None, error: str, task_name: str) -> dict:
+    """Keeps violation metadata when a pipeline step fails so the red status remains visible."""
+    prior = previous_result or {}
+    return {
+        **prior,
+        "error": error,
+        "step": task_name,
+        "progress_msg": prior.get("progress_msg", "Pipeline Failed"),
+        "progress_pct": prior.get("progress_pct", 0),
+    }
+
+
+def update_pressure_state(state, snapshot, trigger_floor, relief_floor):
+    """Tracks sustained pressure across sampling intervals."""
+    current = state or {"cpu": 0, "mem": 0, "pids": 0}
+    next_state = {}
+
+    for key, ratio_key in (("cpu", "cpu_ratio"), ("mem", "mem_ratio"), ("pids", "pids_ratio")):
+        ratio = snapshot[ratio_key]
+        previous = int(current.get(key, 0))
+        if ratio >= trigger_floor:
+            next_state[key] = previous + 1
+        elif ratio <= relief_floor:
+            next_state[key] = 0
+        else:
+            next_state[key] = previous
+
+    return next_state
+
+def pressure_messages(snapshot, floor):
+    messages = []
+    if snapshot["mem_ratio"] >= floor:
+        messages.append(f"MEM: {snapshot['mem']:.1f}MiB")
+    if snapshot["cpu_ratio"] >= floor:
+        messages.append(f"CPU: {snapshot['cpu']:.1f}%")
+    if snapshot["pids_ratio"] >= floor:
+        messages.append(f"PIDs: {snapshot['pids']}")
+    return messages
 
 def run_command(db, job_id, command, cwd=None, owner_id=None):
     """Executes a shell command and streams its output line-by-line to our Log Engine."""
@@ -278,7 +383,7 @@ def run_container(db, job_id, image_tag, env_vars=None, app_name=None, internal_
         clean_name = "unknown"
         container_name = f"ad-{str(job_id)[:8]}"
         hostname = f"{container_name}.{base_domain}"        
-    network_name = "autodeploy-net"
+    network_name = os.getenv("DOCKER_NETWORK_NAME", "autodeploy-prod-net")
     
     # --- TASK 7 SECURITY HARDENING (DATABASE DRIVEN) ---
     # Resource Quotas: Prevent resource exhaustion / DoS attacks
@@ -424,9 +529,12 @@ def run_container(db, job_id, image_tag, env_vars=None, app_name=None, internal_
     max_mem_seen = 0
     max_cpu_seen = 0
     consecutive_danger_samples = 0
+    sustained_pressure_samples = {"cpu": 0, "mem": 0, "pids": 0}
     
     # Trend Analysis & Audit Trail state
     mem_history = []
+    cpu_history = []
+    pids_history = []
     audit_trail = []
     stable_samples = 0
     
@@ -452,22 +560,24 @@ def run_container(db, job_id, image_tag, env_vars=None, app_name=None, internal_
         )
         if stats.stdout:
             try:
-                cpu_str, mem_str, pids_str = stats.stdout.strip().split("||")
-                cpu_val = float(cpu_str.replace("%", ""))
-                pids_val = int(pids_str)
-                
-                # Precise Memory Parsing
-                if "GiB" in mem_str:
-                    mem_val = float(mem_str.split("GiB")[0].strip()) * 1024
-                else:
-                    mem_val = float(mem_str.split("MiB")[0].strip())
+                cpu_val, mem_val, pids_val = parse_docker_stats(stats.stdout)
+                snapshot = build_resource_snapshot(
+                    cpu_val,
+                    mem_val,
+                    pids_val,
+                    memory_limit_mb,
+                    cpu_limit,
+                    pids_limit,
+                )
                 
                 max_mem_seen = max(max_mem_seen, mem_val)
                 max_cpu_seen = max(max_cpu_seen, cpu_val)
                 mem_history.append(mem_val)
+                cpu_history.append(cpu_val)
+                pids_history.append(pids_val)
                 
                 # Add to Audit Trail for high-fidelity diagnostics
-                snapshot = {
+                audit_snapshot = {
                     "timestamp": datetime.utcnow().isoformat(),
                     "cpu": cpu_val,
                     "mem": mem_val,
@@ -476,40 +586,60 @@ def run_container(db, job_id, image_tag, env_vars=None, app_name=None, internal_
                     "limit_cpu": cpu_limit,
                     "limit_pids": pids_limit
                 }
-                audit_trail.append(snapshot)
+                audit_trail.append(audit_snapshot)
 
                 # --- SMART TREND ANALYSIS ---
-                if len(mem_history) >= 10:
+                if len(mem_history) >= 10 and len(cpu_history) >= 10 and len(pids_history) >= 10:
                     recent_history = mem_history[-10:]
                     growth = recent_history[-1] - recent_history[0]
+                    avg_mem = sum(recent_history) / len(recent_history)
+                    avg_cpu = sum(cpu_history[-10:]) / 10
+                    avg_pids = sum(pids_history[-10:]) / 10
+                    has_safe_headroom = (
+                        avg_mem < (memory_limit_mb * SENTINEL_STABLE_UTILIZATION_FLOOR) and
+                        avg_cpu < (snapshot["cpu_limit_pct"] * SENTINEL_STABLE_UTILIZATION_FLOOR) and
+                        avg_pids < (pids_limit * SENTINEL_STABLE_UTILIZATION_FLOOR)
+                    )
                     
-                    if abs(growth) < 1.0:
+                    if abs(growth) < 1.0 and has_safe_headroom:
                         stable_samples += 1
                     else:
                         stable_samples = 0
                         
                     if stable_samples >= 10:
-                        save_log(db, job_id, f"✨ App appears stable (Usage flat at {mem_val:.1f}MiB). Ending sentinel early.", owner_id=owner_id)
+                        save_log(
+                            db,
+                            job_id,
+                            (
+                                f"✨ App appears stable (CPU {avg_cpu:.1f}% | "
+                                f"MEM {avg_mem:.1f}MiB | PIDs {avg_pids:.0f}). Ending sentinel early."
+                            ),
+                            owner_id=owner_id
+                        )
                         break
 
                 # PREDICTIVE FAILURE (95% rule for MEM, CPU, PIDs)
-                cpu_max_pct = cpu_limit * 100
-                is_mem_danger = mem_val > (memory_limit_mb * 0.95)
-                is_cpu_danger = cpu_val > (cpu_max_pct * 0.95)
-                is_pids_danger = pids_val > (pids_limit * 0.95)
+                is_mem_danger = snapshot["mem_ratio"] >= SENTINEL_CRITICAL_UTILIZATION_FLOOR
+                is_cpu_danger = snapshot["cpu_ratio"] >= SENTINEL_CRITICAL_UTILIZATION_FLOOR
+                is_pids_danger = snapshot["pids_ratio"] >= SENTINEL_CRITICAL_UTILIZATION_FLOOR
 
                 if is_mem_danger or is_cpu_danger or is_pids_danger:
                     consecutive_danger_samples += 1
-                    danger_msgs = []
-                    if is_mem_danger: danger_msgs.append(f"MEM: {mem_val:.1f}MiB")
-                    if is_cpu_danger: danger_msgs.append(f"CPU: {cpu_val:.1f}%")
-                    if is_pids_danger: danger_msgs.append(f"PIDs: {pids_val}")
+                    danger_msgs = pressure_messages(snapshot, SENTINEL_CRITICAL_UTILIZATION_FLOOR)
                     save_log(db, job_id, f"⚠️ DANGER: {' | '.join(danger_msgs)}", owner_id=owner_id)
                 else:
                     consecutive_danger_samples = 0
+
+                sustained_pressure_samples = update_pressure_state(
+                    sustained_pressure_samples,
+                    snapshot,
+                    SENTINEL_PRESSURE_UTILIZATION_FLOOR,
+                    SENTINEL_STABLE_UTILIZATION_FLOOR,
+                )
                 
                 if consecutive_danger_samples >= 3:
-                    v_type = "Predictive CPU" if is_cpu_danger else ("Predictive PIDs" if is_pids_danger else "Predictive Memory")
+                    dominant = dominant_pressure_type(snapshot, SENTINEL_CRITICAL_UTILIZATION_FLOOR) or "Resource"
+                    v_type = f"Predictive {dominant}"
                     save_log(db, job_id, f"🚨 PREDICTIVE FAILURE: Resource spike detected ({v_type}). Terminating.", owner_id=owner_id)
                     subprocess.run(["docker", "rm", "-f", container_name], capture_output=True)
                     
@@ -528,9 +658,48 @@ def run_container(db, job_id, image_tag, env_vars=None, app_name=None, internal_
                     # Use a custom exception or move outside the try-except to avoid being swallowed
                     return {"error": f"Predictive OOM/Resource Limit: Application exceeded 95% quota"}
 
+                if max(sustained_pressure_samples.values()) >= SENTINEL_SUSTAINED_PRESSURE_SAMPLES:
+                    dominant = max(sustained_pressure_samples, key=sustained_pressure_samples.get).upper()
+                    save_log(
+                        db,
+                        job_id,
+                        (
+                            f"🚨 PREDICTIVE FAILURE: Sustained {dominant} pressure detected "
+                            f"for {SENTINEL_SUSTAINED_PRESSURE_SAMPLES * 0.5:.0f}s. Terminating."
+                        ),
+                        owner_id=owner_id
+                    )
+                    subprocess.run(["docker", "rm", "-f", container_name], capture_output=True)
+
+                    job = db.query(Job).filter(Job.id == job_id).first()
+                    if job:
+                        current_result = job.result or {}
+                        job.result = {
+                            **current_result,
+                            "is_violation": True,
+                            "violation_type": f"Sustained {dominant.title()} Pressure",
+                            "audit_trail": audit_trail,
+                            "peak_mem": max_mem_seen
+                        }
+                        db.commit()
+                    return {"error": "Sustained resource pressure detected during startup verification"}
+
                 if i % 4 == 0: # Log every 2 seconds
                     trend_indicator = "↗️" if (len(mem_history) > 1 and mem_history[-1] > mem_history[-2]) else "➡️"
-                    save_log(db, job_id, f"📊 [Sentinel] CPU: {cpu_val:>5.1f}% | MEM: {mem_val:>6.1f}MiB {trend_indicator}", owner_id=owner_id)
+                    pressure_counts = (
+                        f"C{sustained_pressure_samples['cpu']}/"
+                        f"M{sustained_pressure_samples['mem']}/"
+                        f"P{sustained_pressure_samples['pids']}"
+                    )
+                    save_log(
+                        db,
+                        job_id,
+                        (
+                            f"📊 [Sentinel] CPU: {cpu_val:>5.1f}% | MEM: {mem_val:>6.1f}MiB | "
+                            f"PIDs: {pids_val:>3} {trend_indicator} | Pressure {pressure_counts}"
+                        ),
+                        owner_id=owner_id
+                    )
             except RuntimeError as re:
                 # Re-raise explicit runtime errors
                 raise re
@@ -584,14 +753,14 @@ def run_container(db, job_id, image_tag, env_vars=None, app_name=None, internal_
     assigned_port = inspect_result.stdout.strip()
 
     save_log(db, job_id, f"✅ Container verified and running! ID: {container_id[:12]}", owner_id=owner_id)
-    save_log(db, job_id, f"🌐 Dynamic URL: http://{hostname}", owner_id=owner_id)
+    save_log(db, job_id, f"🌐 Dynamic URL: https://{hostname}", owner_id=owner_id)
 
     return {
         "container_id": container_id,
         "container_name": container_name,
         "hostname": hostname,
         "port": assigned_port,
-        "url": f"http://{hostname}"
+        "url": f"https://{hostname}"
     }
 
 def clone_repository(repo_url: str, dest_dir: str, branch: str = "main", credential: dict = None) -> None:
@@ -1012,7 +1181,24 @@ def pipeline_build(prev_result: dict):
         # 🔑 ENFORCE PORT ENV: Most frameworks (Express, Uvicorn, Gunicorn) respect PORT env
         save_log(db, job_id, f"🔑 Injecting PORT={final_port} into runtime environment.", owner_id=owner_id)
         current_vault_env = vault.get_env_vars(job.app_id)
-        new_vault_env = {**current_vault_env, **config["env_vars"], "PORT": str(final_port)}
+        repo_env_vars = config["env_vars"] or {}
+        env_precedence = job.payload.get("env_precedence", "dashboard")
+        conflicting_keys = []
+
+        for key, repo_value in repo_env_vars.items():
+            if key in current_vault_env and str(current_vault_env[key]) != str(repo_value):
+                conflicting_keys.append(key)
+
+        if conflicting_keys:
+            override_list = ", ".join(sorted(conflicting_keys))
+            if env_precedence == "repo":
+                message = f"🧭 Repository environment overrides dashboard config for: {override_list}"
+            else:
+                message = f"🧭 Dashboard environment overrides repository config for: {override_list}"
+            save_log(db, job_id, message, owner_id=owner_id)
+
+        new_vault_env = resolve_env_precedence(repo_env_vars, current_vault_env, env_precedence)
+        new_vault_env["PORT"] = str(final_port)
         vault.store_env_vars(job.app_id, new_vault_env)
         
         # Update DB with masked version for UI consistency
@@ -1195,15 +1381,33 @@ def pipeline_finalize(prev_result: dict):
     """Final Step: Cleanup and mark success."""
     job_id = prev_result["job_id"]
     workspace_dir = prev_result["workspace_dir"]
-    deploy_info = prev_result["deploy_info"]
+    deploy_info = prev_result.get("deploy_info", {})
     owner_id = prev_result.get("owner_id")
     
     with session_scope() as db:
         job = db.query(Job).filter(Job.id == job_id).first()
+        if not job:
+            return "Job Not Found"
+
+        existing_result = job.result or {}
+        if existing_result.get("is_violation") or existing_result.get("status") in {"crashed", "failed"}:
+            job.status = "failed"
+            job.result = {
+                **existing_result,
+                "progress_msg": existing_result.get("progress_msg", "Policy Violation"),
+                "progress_pct": existing_result.get("progress_pct", 0),
+                "message": existing_result.get("message", "Deployment stopped due to a policy violation."),
+            }
+            db.commit()
+            save_log(db, job_id, "🧹 Finalization preserved violation state; pipeline terminated without marking success.", owner_id=owner_id)
+            shutil.rmtree(workspace_dir, ignore_errors=True)
+            return "Violation Preserved"
+
         job.status = "success"
         job.result = {
+            **existing_result,
             "message": "Pipeline complete",
-            "url": deploy_info["url"],
+            "url": deploy_info.get("url"),
             "container": deploy_info,
             "progress_msg": "Deployment Live",
             "progress_pct": 100
@@ -1237,12 +1441,7 @@ def pipeline_error_handler(request, exc, traceback, job_id):
                 return "Handled (Cancelled)"
                 
             job.status = "failed"
-            job.result = {
-                "error": str(exc), 
-                "step": task_name,
-                "progress_msg": "Pipeline Failed",
-                "progress_pct": 0
-            }
+            job.result = preserve_failed_job_result(job.result, str(exc), task_name)
             db.commit()
             save_log(db, job_id, f"🚨 PIPELINE FAILURE in {task_name}: {str(exc)}")
     return "Handled"
@@ -1415,6 +1614,7 @@ def reconcile_container_statuses():
         for line in result.stdout.strip().split("\n"):
             if "||" not in line: continue
             name, status_str, owner_id = line.split("||")
+            pressure_key = f"runtime-pressure:{name}"
             
             # Find the App and Job for this container
             app_name_part = name.replace("ad-", "").rsplit("-", 1)[0]
@@ -1438,6 +1638,7 @@ def reconcile_container_statuses():
 
             # --- CASE A: OOM KILL DETECTED (Fatal) ---
             if oom_killed:
+                redis_client.delete(pressure_key)
                 save_log(db, str(latest_job.id), f"🚨 REAPER: Termination triggered! Container was flagged for OOM Violation.", owner_id=owner_id)
                 subprocess.run(["docker", "rm", "-f", name], capture_output=True)
                 
@@ -1453,9 +1654,11 @@ def reconcile_container_statuses():
 
             # --- CASE B: Container is Dead (but not OOM) ---
             if status != "running":
-                if latest_job.result.get("status") != "crashed":
+                redis_client.delete(pressure_key)
+                current_result = latest_job.result or {}
+                if current_result.get("status") != "crashed":
                     save_log(db, str(latest_job.id), f"🚨 REAPER: Container died unexpectedly (Exit Code: {exit_code}).", owner_id=owner_id)
-                    latest_job.result = {**latest_job.result, "status": "crashed", "exit_code": exit_code}
+                    latest_job.result = {**current_result, "status": "crashed", "exit_code": exit_code}
                     latest_job.status = "failed"
                 continue
 
@@ -1466,14 +1669,7 @@ def reconcile_container_statuses():
             
             if stats_proc.stdout:
                 try:
-                    cpu_s, mem_s, pids_s = stats_proc.stdout.strip().split("||")
-                    cpu_v = float(cpu_s.replace("%", ""))
-                    pids_v = int(pids_s)
-                    
-                    if "GiB" in mem_s:
-                        mem_v = float(mem_s.split("GiB")[0].strip()) * 1024
-                    else:
-                        mem_v = float(mem_s.split("MiB")[0].strip())
+                    cpu_v, mem_v, pids_v = parse_docker_stats(stats_proc.stdout)
 
                     # Fetch limits from Profile
                     profile = db.query(Profile).filter(Profile.user_id == owner_id).first()
@@ -1481,22 +1677,30 @@ def reconcile_container_statuses():
                     cpu_limit = profile.cpu_limit if profile else 0.5
                     pids_limit = profile.pids_limit if profile else 100
 
-                    cpu_max_pct = cpu_limit * 100
-                    
-                    is_mem_viol = mem_v > (mem_limit * 0.98)
-                    is_cpu_viol = cpu_v > (cpu_max_pct * 0.98)
-                    is_pids_viol = pids_v > (pids_limit * 0.98)
+                    snapshot = build_resource_snapshot(
+                        cpu_v,
+                        mem_v,
+                        pids_v,
+                        mem_limit,
+                        cpu_limit,
+                        pids_limit,
+                    )
 
                     # REAPER LOGIC: Hard-Stop (100%) on ANY resource
                     # We use 100% here because the OS/Docker cgroup already provides a tiny buffer,
                     # and we don't want to be 'too aggressive' (e.g. killing at 410MB for a 512MB limit).
-                    is_mem_viol = mem_v >= mem_limit
-                    is_cpu_viol = cpu_v >= cpu_max_pct
-                    is_pids_viol = pids_v >= pids_limit
+                    is_mem_viol = snapshot["mem_ratio"] >= 1.0
+                    is_cpu_viol = snapshot["cpu_ratio"] >= 1.0
+                    is_pids_viol = snapshot["pids_ratio"] >= 1.0
 
                     if is_mem_viol or is_cpu_viol or is_pids_viol:
+                        redis_client.delete(pressure_key)
                         v_type = "Memory Limit" if is_mem_viol else ("CPU Limit" if is_cpu_viol else "PIDs Limit")
-                        v_msg = f"{mem_v:.1f}MiB/{mem_limit}MiB" if is_mem_viol else (f"{cpu_v:.1f}%/{cpu_max_pct}%" if is_cpu_viol else f"{pids_v}/{pids_limit}")
+                        v_msg = (
+                            f"{mem_v:.1f}MiB/{mem_limit}MiB"
+                            if is_mem_viol
+                            else (f"{cpu_v:.1f}%/{cpu_limit * 100}%" if is_cpu_viol else f"{pids_v}/{pids_limit}")
+                        )
                         
                         save_log(db, str(latest_job.id), f"🚨 REAPER: Termination triggered! {v_type} abuse detected ({v_msg}).", owner_id=owner_id)
                         print(f"DEBUG REAPER: Killing {name} for {v_type} violation. Value: {v_msg}")
@@ -1508,6 +1712,43 @@ def reconcile_container_statuses():
                             "status": "crashed", 
                             "is_violation": True,
                             "violation_type": f"Runtime {v_type} Reaper",
+                            "peak_mem": mem_v
+                        }
+                        latest_job.status = "failed"
+                        continue
+
+                    pressure_state_raw = redis_client.get(pressure_key)
+                    pressure_state = json.loads(pressure_state_raw) if pressure_state_raw else None
+                    pressure_state = update_pressure_state(
+                        pressure_state,
+                        snapshot,
+                        REAPER_PRESSURE_UTILIZATION_FLOOR,
+                        REAPER_RELIEF_UTILIZATION_FLOOR,
+                    )
+                    redis_client.setex(pressure_key, 120, json.dumps(pressure_state))
+
+                    if max(pressure_state.values()) >= REAPER_SUSTAINED_PRESSURE_CYCLES:
+                        dominant = max(pressure_state, key=pressure_state.get).upper()
+                        pressure_msg = " | ".join(pressure_messages(snapshot, REAPER_PRESSURE_UTILIZATION_FLOOR))
+                        save_log(
+                            db,
+                            str(latest_job.id),
+                            (
+                                f"🚨 REAPER: Sustained {dominant} pressure detected across "
+                                f"{REAPER_SUSTAINED_PRESSURE_CYCLES} runtime audits ({pressure_msg})."
+                            ),
+                            owner_id=owner_id
+                        )
+                        print(f"DEBUG REAPER: Killing {name} for sustained {dominant} pressure. State: {pressure_state}")
+                        subprocess.run(["docker", "rm", "-f", name], capture_output=True)
+                        redis_client.delete(pressure_key)
+
+                        current_result = latest_job.result or {}
+                        latest_job.result = {
+                            **current_result,
+                            "status": "crashed",
+                            "is_violation": True,
+                            "violation_type": f"Runtime Sustained {dominant.title()} Pressure",
                             "peak_mem": mem_v
                         }
                         latest_job.status = "failed"
